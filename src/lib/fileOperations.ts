@@ -106,6 +106,55 @@ export async function saveFileAs(editor: Editor): Promise<void> {
   updateWindowTitle();
 }
 
+export async function openFileFromTree(
+  editor: Editor,
+  filePath: string,
+): Promise<void> {
+  const store = useTabsStore.getState();
+  const existing = store.tabs.find((t) => t.filePath === filePath);
+  if (existing) {
+    if (existing.id !== store.activeTabId) {
+      switchTab(editor, store.activeTabId!, existing.id);
+    }
+    return;
+  }
+
+  const content = await readTextFile(filePath);
+
+  const activeTab = getActiveTab();
+  const reuseActive =
+    activeTab && !activeTab.filePath && !activeTab.isDirty && !activeTab.content;
+
+  if (reuseActive) {
+    editor.commands.setContent(content, {
+      emitUpdate: false,
+      contentType: "markdown",
+    });
+    store.updateTab(activeTab.id, {
+      filePath,
+      content,
+      isDirty: false,
+      editorState: null,
+    });
+  } else {
+    const prevActiveId = store.activeTabId;
+    if (prevActiveId) {
+      store.updateTab(prevActiveId, {
+        editorState: editor.state,
+        content: editor.getMarkdown(),
+      });
+    }
+    store.addTab({ filePath, content });
+    editor.commands.setContent(content, {
+      emitUpdate: false,
+      contentType: "markdown",
+    });
+  }
+
+  editor.commands.focus("start");
+  updateWindowTitle();
+}
+
 export function newFile(editor: Editor): void {
   const store = useTabsStore.getState();
   const currentId = store.activeTabId;

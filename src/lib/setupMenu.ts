@@ -1,6 +1,7 @@
 import { Menu, Submenu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { editorRef } from "./editorRef";
 import { openFile, saveFile, saveFileAs, newFile } from "./fileOperations";
+import { openFolder } from "./folderOperations";
 import { useTabsStore } from "../store/tabsStore";
 import { closeTabAndFocus } from "./tabSwitch";
 
@@ -16,10 +17,19 @@ export async function setupMenu(): Promise<void> {
 
   const openItem = await MenuItem.new({
     id: "file-open",
-    text: "Open...",
+    text: "Open File...",
     accelerator: "CmdOrCtrl+O",
     action: () => {
       if (editorRef.current) openFile(editorRef.current);
+    },
+  });
+
+  const openFolderItem = await MenuItem.new({
+    id: "file-open-folder",
+    text: "Open Folder...",
+    accelerator: "CmdOrCtrl+Shift+O",
+    action: () => {
+      openFolder();
     },
   });
 
@@ -73,6 +83,7 @@ export async function setupMenu(): Promise<void> {
       newFileItem,
       await PredefinedMenuItem.new({ item: "Separator" }),
       openItem,
+      openFolderItem,
       await PredefinedMenuItem.new({ item: "Separator" }),
       saveItem,
       saveAsItem,

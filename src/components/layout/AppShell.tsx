@@ -2,11 +2,16 @@ import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { RichEditor } from "../editor/RichEditor";
 import { TabBar } from "./TabBar";
+import { Sidebar } from "../filetree/Sidebar";
 import { useTabsStore } from "../../store/tabsStore";
 import { updateWindowTitle } from "../../lib/fileOperations";
 import { confirmCloseWindow } from "../../lib/tabSwitch";
 
-export function AppShell() {
+interface AppShellProps {
+  folderPath: string | null;
+}
+
+export function AppShell({ folderPath }: AppShellProps) {
   const activeTabId = useTabsStore((s) => s.activeTabId);
   const activeTab = useTabsStore((s) =>
     s.tabs.find((t) => t.id === s.activeTabId),
@@ -35,11 +40,14 @@ export function AppShell() {
   }, [activeTabId, activeTab?.filePath, activeTab?.isDirty]);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <TabBar />
-      <main className="flex-1 overflow-y-auto bg-[var(--color-bg)]">
-        <RichEditor />
-      </main>
+    <div className="flex h-screen w-screen overflow-hidden">
+      {folderPath && <Sidebar />}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <TabBar />
+        <main className="flex-1 overflow-y-auto bg-[var(--color-bg)]">
+          <RichEditor />
+        </main>
+      </div>
     </div>
   );
 }
