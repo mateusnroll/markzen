@@ -3,7 +3,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import { useEditorStore } from "../../store/editorStore";
-import { useFileStore } from "../../store/fileStore";
+import { useTabsStore } from "../../store/tabsStore";
 import { editorRef } from "../../lib/editorRef";
 
 export function RichEditor() {
@@ -13,7 +13,16 @@ export function RichEditor() {
     extensions: [StarterKit, Markdown],
     onCreate: () => setReady(true),
     onUpdate: () => {
-      useFileStore.getState().setDirty(true);
+      const { activeTabId, updateTab } = useTabsStore.getState();
+      if (activeTabId) {
+        updateTab(activeTabId, { isDirty: true });
+      }
+    },
+    onBlur: ({ editor: e }) => {
+      const { activeTabId, updateTab } = useTabsStore.getState();
+      if (activeTabId) {
+        updateTab(activeTabId, { content: e.getMarkdown() });
+      }
     },
     onDestroy: () => setReady(false),
   });

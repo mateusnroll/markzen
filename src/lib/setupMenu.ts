@@ -1,8 +1,19 @@
 import { Menu, Submenu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { editorRef } from "./editorRef";
-import { openFile, saveFile, saveFileAs } from "./fileOperations";
+import { openFile, saveFile, saveFileAs, newFile } from "./fileOperations";
+import { useTabsStore } from "../store/tabsStore";
+import { closeTabAndFocus } from "./tabSwitch";
 
 export async function setupMenu(): Promise<void> {
+  const newFileItem = await MenuItem.new({
+    id: "file-new",
+    text: "New File",
+    accelerator: "CmdOrCtrl+N",
+    action: () => {
+      if (editorRef.current) newFile(editorRef.current);
+    },
+  });
+
   const openItem = await MenuItem.new({
     id: "file-open",
     text: "Open...",
@@ -30,6 +41,17 @@ export async function setupMenu(): Promise<void> {
     },
   });
 
+  const closeTabItem = await MenuItem.new({
+    id: "file-close-tab",
+    text: "Close Tab",
+    accelerator: "CmdOrCtrl+W",
+    action: () => {
+      const { activeTabId } = useTabsStore.getState();
+      if (!activeTabId || !editorRef.current) return;
+      closeTabAndFocus(editorRef.current, activeTabId);
+    },
+  });
+
   const appSubmenu = await Submenu.new({
     text: "Markzen",
     items: [
@@ -48,11 +70,14 @@ export async function setupMenu(): Promise<void> {
   const fileSubmenu = await Submenu.new({
     text: "File",
     items: [
+      newFileItem,
+      await PredefinedMenuItem.new({ item: "Separator" }),
       openItem,
       await PredefinedMenuItem.new({ item: "Separator" }),
       saveItem,
       saveAsItem,
       await PredefinedMenuItem.new({ item: "Separator" }),
+      closeTabItem,
       await PredefinedMenuItem.new({ item: "CloseWindow" }),
     ],
   });
