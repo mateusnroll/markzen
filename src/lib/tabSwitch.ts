@@ -1,5 +1,7 @@
 import type { Editor } from "@tiptap/react";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTabsStore } from "../store/tabsStore";
+import { extractFilename } from "./fileOperations";
 
 function getScrollContainer(): HTMLElement | null {
   return document.querySelector(".ProseMirror")?.parentElement ?? null;
@@ -61,8 +63,45 @@ export function loadTabIntoEditor(editor: Editor, tabId: string): void {
   });
 }
 
-export function closeTabAndFocus(editor: Editor, tabId: string): void {
+export function getDirtyTabCount(): number {
+  return useTabsStore.getState().tabs.filter((t) => t.isDirty).length;
+}
+
+export async function confirmCloseWindow(): Promise<boolean> {
+  const dirtyCount = getDirtyTabCount();
+  if (dirtyCount === 0) return true;
+
+  if (dirtyCount === 1) {
+    const dirty = useTabsStore.getState().tabs.find((t) => t.isDirty)!;
+    const name = dirty.filePath ? extractFilename(dirty.filePath) : "Untitled";
+    return confirm(
+      `Are you sure you want to close ${name}? Unsaved changes will be lost.`,
+      { title: "Markzen", kind: "warning" },
+    );
+  }
+
+  return confirm(
+    `Are you sure you want to close Markzen? Unsaved changes in ${dirtyCount} files will be lost.`,
+    { title: "Markzen", kind: "warning" },
+  );
+}
+
+export async function closeTabAndFocus(
+  editor: Editor,
+  tabId: string,
+): Promise<void> {
   const store = useTabsStore.getState();
+  const tab = store.tabs.find((t) => t.id === tabId);
+  if (!tab) return;
+
+  if (tab.isDirty) {
+    const name = tab.filePath ? extractFilename(tab.filePath) : "Untitled";
+    const ok = await confirm(
+      `Are you sure you want to close ${name}? Unsaved changes will be lost.`,
+      { title: "Markzen", kind: "warning" },
+    );
+    if (!ok) return;
+  }
 
   if (tabId === store.activeTabId) {
     store.updateTab(tabId, {
