@@ -3,3 +3,5 @@ dist/
 src-tauri/target/
 .vite/
 *.tsbuildinfo
+.claude/worktrees/
+.claude/settings.local.json
