@@ -48,9 +48,16 @@ function TabItem({
   );
 }
 
-export function TabBar() {
+const isMacOS = navigator.userAgent.includes("Mac");
+
+interface TabBarProps {
+  hasSidebar?: boolean;
+}
+
+export function TabBar({ hasSidebar }: TabBarProps) {
   const tabs = useTabsStore((s) => s.tabs);
   const activeTabId = useTabsStore((s) => s.activeTabId);
+  const needsTrafficLightPadding = isMacOS && !hasSidebar;
   const handleActivate = (tabId: string) => {
     if (tabId === activeTabId || !editorRef.current || !activeTabId) return;
     switchTab(editorRef.current, activeTabId, tabId);
@@ -64,7 +71,7 @@ export function TabBar() {
 
   return (
     <div
-      className="flex h-9 shrink-0 items-stretch overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-surface)]"
+      className={`flex h-9 shrink-0 items-stretch overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-surface)] ${needsTrafficLightPadding ? "pl-[78px]" : ""}`}
       data-tauri-drag-region
     >
       {tabs.map((tab) => (

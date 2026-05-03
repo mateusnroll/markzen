@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTabsStore } from "../store/tabsStore";
@@ -21,11 +22,16 @@ export async function openFolder(): Promise<void> {
   const shouldCloseThis = isEmptySingleFileWindow();
 
   const label = "folder-" + crypto.randomUUID();
-  new WebviewWindow(label, {
+  const webview = new WebviewWindow(label, {
     url: "/?folder=" + encodeURIComponent(selected),
     title: extractFolderName(selected) + " — Markzen",
     width: 1200,
     height: 800,
+    titleBarStyle: "overlay",
+  });
+
+  webview.once("tauri://created", async () => {
+    await invoke("setup_window_decorum");
   });
 
   if (shouldCloseThis) {

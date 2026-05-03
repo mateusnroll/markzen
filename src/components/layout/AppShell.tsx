@@ -6,6 +6,7 @@ import { Sidebar } from "../filetree/Sidebar";
 import { useTabsStore } from "../../store/tabsStore";
 import { updateWindowTitle } from "../../lib/fileOperations";
 import { confirmCloseWindow } from "../../lib/tabSwitch";
+import { repositionTrafficLights } from "../../lib/trafficLights";
 
 interface AppShellProps {
   folderPath: string | null;
@@ -16,6 +17,15 @@ export function AppShell({ folderPath }: AppShellProps) {
   const activeTab = useTabsStore((s) =>
     s.tabs.find((t) => t.id === s.activeTabId),
   );
+
+  useEffect(() => {
+    // macOS resets traffic light positions during initial window display
+    // (windowDidBecomeKey). Delay the reposition to run after that layout pass.
+    const timer = setTimeout(() => {
+      repositionTrafficLights();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (useTabsStore.getState().tabs.length === 0) {
@@ -43,7 +53,7 @@ export function AppShell({ folderPath }: AppShellProps) {
     <div className="flex h-screen w-screen overflow-hidden">
       {folderPath && <Sidebar />}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <TabBar />
+        <TabBar hasSidebar={!!folderPath} />
         <main className="flex-1 overflow-y-auto bg-[var(--color-bg)]">
           <RichEditor />
         </main>
