@@ -40,6 +40,7 @@ pub fn run() {
         .plugin(tauri_plugin_decorum::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![setup_window_decorum, reposition_traffic_lights])
         .setup(|app| {
             let main_window = app.get_webview_window("main").unwrap();
