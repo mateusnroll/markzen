@@ -99,6 +99,36 @@
   text-decoration: underline;
 }
 
+.ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  overflow: auto;
+}
+
+.ProseMirror th,
+.ProseMirror td {
+  border: 1px solid var(--color-border);
+  padding: 0.5em 0.75em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ProseMirror th {
+  font-weight: 600;
+  background-color: var(--color-surface);
+}
+
+.ProseMirror td[align="center"],
+.ProseMirror th[align="center"] {
+  text-align: center;
+}
+
+.ProseMirror td[align="right"],
+.ProseMirror th[align="right"] {
+  text-align: right;
+}
+
 .ProseMirror p.is-editor-empty:first-child::before {
   content: "Start writing...";
   color: var(--color-text-muted);
