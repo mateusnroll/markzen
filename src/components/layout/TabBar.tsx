@@ -18,13 +18,21 @@ function TabItem({
   const label = tab.filePath ? extractFilename(tab.filePath) : "Untitled";
 
   return (
-    <button
-      className={`group flex h-full items-center gap-1.5 border-r border-[var(--color-border)] px-3 text-xs transition-colors ${
+    <div
+      role="tab"
+      tabIndex={0}
+      className={`group flex h-full cursor-pointer items-center gap-1.5 border-r border-[var(--color-border)] px-3 text-xs transition-colors ${
         isActive
           ? "bg-[var(--color-bg)] text-[var(--color-text)]"
           : "bg-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-bg)]/50"
       }`}
       onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onActivate();
+        }
+      }}
     >
       <span className="max-w-[140px] truncate">{label}</span>
       <span className="flex h-4 w-4 items-center justify-center">
@@ -44,7 +52,7 @@ function TabItem({
           ×
         </button>
       </span>
-    </button>
+    </div>
   );
 }
 
