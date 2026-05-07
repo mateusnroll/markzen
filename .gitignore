@@ -5,3 +5,4 @@ src-tauri/target/
 *.tsbuildinfo
 .claude/worktrees/
 .claude/settings.local.json
+**/.DS_Store
