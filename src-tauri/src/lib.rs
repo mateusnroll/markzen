@@ -1,3 +1,6 @@
+mod fs_watcher;
+
+use std::collections::HashMap;
 use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
 
@@ -41,13 +44,22 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![setup_window_decorum, reposition_traffic_lights])
+        .invoke_handler(tauri::generate_handler![
+            setup_window_decorum,
+            reposition_traffic_lights,
+            fs_watcher::start_watching,
+            fs_watcher::stop_watching,
+        ])
         .setup(|app| {
             let main_window = app.get_webview_window("main").unwrap();
             #[cfg(not(target_os = "macos"))]
             main_window.create_overlay_titlebar().unwrap();
             #[cfg(target_os = "macos")]
             main_window.set_traffic_lights_inset(16.0, 12.0).unwrap();
+
+            app.manage(fs_watcher::FsWatcherState(
+                std::sync::Mutex::new(HashMap::new()),
+            ));
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(

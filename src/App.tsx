@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { AppShell } from "./components/layout/AppShell";
+import { useFileWatcher } from "./hooks/useFileWatcher";
 import { setupMenu } from "./lib/setupMenu";
 import { useFileSystemStore } from "./store/fileSystemStore";
 
@@ -18,6 +19,8 @@ export function App() {
       useFileSystemStore.getState().setFolderPath(folderPath);
     }
   }, [folderPath]);
+
+  useFileWatcher(folderPath);
 
   return <AppShell folderPath={folderPath} />;
 }

@@ -9,6 +9,7 @@ interface FileSystemState {
   loadingDirs: Record<string, boolean>;
   setFolderPath: (path: string) => Promise<void>;
   toggleDir: (dirPath: string) => Promise<void>;
+  refreshDirs: (changedPaths: string[]) => Promise<void>;
 }
 
 function sortEntries(entries: FileTreeEntry[]): FileTreeEntry[] {
@@ -39,6 +40,46 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => ({
   setFolderPath: async (path) => {
     set({ folderPath: path, expandedDirs: new Set<string>(), dirChildren: {} });
     await get().toggleDir(path);
+  },
+
+  refreshDirs: async (changedPaths) => {
+    const { expandedDirs, dirChildren, folderPath } = get();
+    if (!folderPath) return;
+
+    const toRefresh: string[] = [];
+    const toInvalidate: string[] = [];
+
+    for (const changed of changedPaths) {
+      if (expandedDirs.has(changed) || changed === folderPath) {
+        toRefresh.push(changed);
+      } else if (changed in dirChildren) {
+        toInvalidate.push(changed);
+      }
+    }
+
+    if (toInvalidate.length > 0) {
+      set((s) => {
+        const next = { ...s.dirChildren };
+        for (const p of toInvalidate) delete next[p];
+        return { dirChildren: next };
+      });
+    }
+
+    if (toRefresh.length > 0) {
+      const results = await Promise.all(
+        toRefresh.map(async (dir) => ({
+          dir,
+          children: await loadChildren(dir),
+        })),
+      );
+      set((s) => {
+        const next = { ...s.dirChildren };
+        for (const { dir, children } of results) {
+          next[dir] = children;
+        }
+        return { dirChildren: next };
+      });
+    }
   },
 
   toggleDir: async (dirPath) => {

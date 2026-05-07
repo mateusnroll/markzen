@@ -25,7 +25,15 @@ Use **Tauri's built-in plugins** for all standard operations at MVP. The only cu
 Only the file watcher (`notify` crate) requires custom Rust:
 - Watches the open folder for external changes
 - Emits `folder-changed` events to the frontend via Tauri's event system
-- Frontend listens and calls `fileSystemStore.refreshTree()`
+- Frontend listens and calls `fileSystemStore.refreshDirs()`
+
+#### File Watcher Behavior
+
+- The sidebar file tree auto-refreshes when files or folders are created, deleted, renamed, or moved within the watched folder
+- Only currently-expanded directories are refreshed in real-time; collapsed directories have their cache invalidated and reload on next expand
+- Events are debounced at 500ms on the Rust side (`notify-debouncer-full`) to coalesce rapid operations (e.g., `git checkout`, batch renames)
+- Each folder window watches its own root independently via a `HashMap<String, Debouncer>` keyed by folder path
+- The `folder-changed` event payload includes the watched root path so each window can filter for its own events
 
 ### Tauri Permissions
 
