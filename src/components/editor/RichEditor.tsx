@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { useEditor, EditorContent, Extension } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
@@ -11,6 +11,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEditorStore } from "../../store/editorStore";
 import { useTabsStore } from "../../store/tabsStore";
 import { editorRef } from "../../lib/editorRef";
+import { FloatingToolbar } from "./FloatingToolbar";
 
 const TauriLinkOpener = Extension.create({
   name: "tauriLinkOpener",
@@ -43,6 +44,9 @@ const TauriLinkOpener = Extension.create({
 export function RichEditor() {
   const setReady = useEditorStore((s) => s.setReady);
 
+  const [, setTick] = useState(0);
+  const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -61,7 +65,9 @@ export function RichEditor() {
       if (activeTabId) {
         updateTab(activeTabId, { isDirty: true });
       }
+      forceUpdate();
     },
+    onSelectionUpdate: () => forceUpdate(),
     onBlur: ({ editor: e }) => {
       const { activeTabId, updateTab } = useTabsStore.getState();
       if (activeTabId) {
@@ -82,5 +88,10 @@ export function RichEditor() {
     return null;
   }
 
-  return <EditorContent editor={editor} />;
+  return (
+    <div className="editor-wrapper">
+      <EditorContent editor={editor} />
+      <FloatingToolbar editor={editor} />
+    </div>
+  );
 }
