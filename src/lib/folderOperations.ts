@@ -16,7 +16,7 @@ function isEmptySingleFileWindow(): boolean {
 }
 
 export async function openFolder(): Promise<void> {
-  const selected = await open({ directory: true });
+  const selected = await open({ directory: true, recursive: true });
   if (!selected) return;
 
   const shouldCloseThis = isEmptySingleFileWindow();
