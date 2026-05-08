@@ -8,10 +8,12 @@ import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { normalizeUrl } from "../../lib/url";
 import { useEditorStore } from "../../store/editorStore";
 import { useTabsStore } from "../../store/tabsStore";
 import { editorRef } from "../../lib/editorRef";
 import { FloatingToolbar } from "./FloatingToolbar";
+import { LinkHoverTooltip } from "./LinkHoverTooltip";
 
 const TauriLinkOpener = Extension.create({
   name: "tauriLinkOpener",
@@ -25,13 +27,30 @@ const TauriLinkOpener = Extension.create({
               const target = event.target as HTMLElement;
               const link = target.closest("a");
               if (!link) return false;
+              if (!event.metaKey && !event.ctrlKey) return false;
               const href = link.getAttribute("href");
               if (href) {
                 event.preventDefault();
                 event.stopPropagation();
-                openUrl(href);
+                openUrl(normalizeUrl(href));
                 return true;
               }
+              return false;
+            },
+            keydown(view, event) {
+              if (event.key === "Meta" || event.key === "Control") {
+                view.dom.classList.add("mod-held");
+              }
+              return false;
+            },
+            keyup(view, event) {
+              if (event.key === "Meta" || event.key === "Control") {
+                view.dom.classList.remove("mod-held");
+              }
+              return false;
+            },
+            blur(view) {
+              view.dom.classList.remove("mod-held");
               return false;
             },
           },
@@ -77,6 +96,12 @@ export function RichEditor() {
     onDestroy: () => setReady(false),
   });
 
+  const [linkInputVisible, setLinkInputVisible] = useState(false);
+
+  const handleEditLink = useCallback(() => {
+    setLinkInputVisible(true);
+  }, []);
+
   useEffect(() => {
     editorRef.current = editor;
     return () => {
@@ -91,7 +116,12 @@ export function RichEditor() {
   return (
     <div className="editor-wrapper">
       <EditorContent editor={editor} />
-      <FloatingToolbar editor={editor} />
+      <FloatingToolbar
+        editor={editor}
+        linkInputVisible={linkInputVisible}
+        setLinkInputVisible={setLinkInputVisible}
+      />
+      <LinkHoverTooltip editor={editor} onEditLink={handleEditLink} />
     </div>
   );
 }

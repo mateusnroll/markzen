@@ -4,6 +4,8 @@ import { type Editor } from "@tiptap/react";
 
 interface FloatingToolbarProps {
   editor: Editor;
+  linkInputVisible: boolean;
+  setLinkInputVisible: (visible: boolean) => void;
 }
 
 interface ToolbarButton {
@@ -182,8 +184,7 @@ function LinkInputPopover({
   );
 }
 
-export function FloatingToolbar({ editor }: FloatingToolbarProps) {
-  const [linkInputVisible, setLinkInputVisible] = useState(false);
+export function FloatingToolbar({ editor, linkInputVisible, setLinkInputVisible }: FloatingToolbarProps) {
 
   const handleLink = useCallback(() => {
     if (editor.isActive("link")) {

@@ -105,6 +105,11 @@
 .ProseMirror a {
   color: var(--color-accent);
   text-decoration: underline;
+  cursor: text;
+}
+
+.ProseMirror.mod-held a {
+  cursor: pointer;
 }
 
 .ProseMirror table {
@@ -245,4 +250,53 @@
   color: #ffffff;
   cursor: pointer;
   font-size: 14px;
+}
+
+/* Link hover tooltip */
+.link-hover-tooltip {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 15;
+  font-size: 12px;
+  max-width: 400px;
+}
+
+.link-hover-url {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+.link-hover-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.link-hover-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.link-hover-actions button:hover {
+  background-color: var(--color-border);
+  color: var(--color-text);
 }
