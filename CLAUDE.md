@@ -39,6 +39,10 @@ Test layers — test each AC at the lowest layer that can prove it:
 | Playwright-vs-vite | Playwright + `MemoryPlatform` | User journeys with scripted dialogs and fixtures (`?fixture=<name>`) |
 | Shell smoke | Playwright `_electron` | Native integration only — keep it thin |
 
+## Git hygiene
+
+- **Fresh worktree = stale until proven otherwise.** Worktrees branch from *local* `main`, which may be behind the remote. Before starting any work in a new worktree or branch, run `git fetch origin` and compare against `origin/main`; if the base has moved, rebase onto `origin/main` before making changes. Never build on a stale base.
+
 ## Non-negotiable constraints
 
 1. **Nothing outside `src/platform/` imports `electron`** or shell-specific APIs (enforced by ESLint `no-restricted-imports`). All shell access goes through the `Platform` interface — this keeps the core headless-testable and the shell choice reversible.
