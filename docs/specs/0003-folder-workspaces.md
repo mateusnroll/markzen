@@ -149,7 +149,7 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC92: Given watcher failure persists, then retries occur after 1s, 2s, 4s, 8s, 16s, and at most every 30s thereafter; a successful registration resets the delay.
 - AC93: Given a workspace closes, then every watcher, debounce timer, retry timer, and pending watcher-owned refresh for its WindowId is disposed.
 - AC94: Given a disposed WindowId or RootId, then later watcher callbacks and read completions are ignored.
-- AC95: Given MemoryPlatform, when a test emits the normalized watcher contract, then it drives the same invalidation, batching, retry, and disposal logic as chokidar.
+- AC95: Given `MemoryPlatform.fs.watch`, when a test registers watchers and emits a normalized synthetic event, then only active matching registrations receive it, the event drives the same invalidation, batching, retry, and disposal logic as chokidar, and disposing a registration decreases the harness's observable active-watcher count.
 - AC96: Given an app-originated save or rename emits filesystem events, then the tree converges through normal invalidation without duplicating a tab, demoting a pinned tab, or marking an editor dirty.
 
 ### Settings authority and sidebar persistence
@@ -188,6 +188,10 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC125: Given a settings write failure while the app remains open, then automatic retries use 1s, 2s, 4s, 8s, 16s, and at most 30s thereafter; an explicit Retry runs immediately and success resets the delay.
 - AC126: Given a preview tab replaces FileKey A with FileKey B, when B is not already owned, then the app-wide registry reserves B and releases A atomically with the preview state change; if B is owned, its existing window/tab is focused and the preview retains A.
 - AC127: Given workspace tree, preview, watcher-warning, and splitter UI in forced-colors or reduced-motion mode, then every state remains distinguishable, focus remains visible, and non-essential expansion/loading animations are disabled.
+
+### Platform directory-listing contract
+
+- AC128: Given `MemoryPlatform.fs.list`, when a test lists an in-memory directory, then entry names, file/directory/symlink kinds, paths, and typed `not-found`, `not-directory`, `permission-denied`, `unavailable`, and `io` failures match the real main-side directory-listing contract; sorting and hidden-file filtering remain application behavior rather than Platform behavior.
 
 ## Implementation ADR requirements
 
@@ -325,6 +329,7 @@ At the start of this milestone, before the corresponding production subsystem is
 | AC120 | Playwright-vs-vite |
 | AC121-AC126 | Node |
 | AC127 | Browser Mode |
+| AC128 | Node |
 
 ## Open questions
 

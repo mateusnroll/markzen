@@ -194,12 +194,20 @@ The product needs one loss-resistant document lifecycle: parse Markdown into a r
 - AC148: Given app-wide Quit chooses Save All, when every document save succeeds, then all windows dispose their document resources, all `FileKey` ownership is released, and the process exits; any save failure/conflict/cancellation aborts Quit without undoing completed saves.
 - AC149: Given app-wide Quit chooses Don't Save All or there are no dirty tabs, when document close guards finish, then every window and scoped resource is disposed and the process exits on macOS, Windows, and Linux; later milestones may add their own bounded app-owned flush guard before exit.
 
+### Dialog testability and production isolation
+
+- AC150: Given a non-packaged shell-smoke process started with the dedicated dialog-test flag, when the test harness queues a native-dialog result, then the next matching Open, Save, or confirmation dialog consumes that result in FIFO order without displaying native UI.
+- AC151: Given a packaged production artifact, when it starts with the dialog-test flag or receives a dialog-debug-hook-shaped IPC request, then no dialog-scripting hook is registered or callable and normal application behavior remains unchanged.
+- AC152: Given `MemoryPlatform.dialog`, when several typed dialog results are queued, then matching dialog calls consume them in FIFO order and cancellation is represented without application-state mutation.
+- AC153: Given a repository browser fixture extended by this milestone declares dialog state, when the browser application boots with that known fixture, then `MemoryPlatform.dialog` loads exactly the declared queue in addition to the fixture's milestone 0001 filesystem and window state.
+
 ## Constraints
 
 - `Platform.fs.read` returns bytes, an opaque app-wide `FileKey`, and an opaque `DiskVersion`. Renderer code never derives identity or authority from path strings. The Platform owns canonical equality, segment-safe containment and relative paths, existing-parent handling for missing targets, symlink resolution, and actual filesystem case rules.
 - The Electron main process owns a registry with at most one path-backed tab per `FileKey` across all windows. It derives caller identity from the IPC sender and routes focus, reservation, write, and release operations only to live registered windows and tabs.
 - One per-tab persistence coordinator owns Save, Save As, pending rename, overwrite confirmation, target reservation, image rebasing, and close-triggered saves. Disk replacement is conditional on `DiskVersion` and failure-atomic: before destination install, failures preserve committed bytes; after destination install, rename cleanup failure may leave two complete copies but never zero.
 - Every async load, dialog, state capture, serialization, and persistence request captures its owning window/tab ID, operation generation, document revision, `FileKey`, and, when applicable, `DiskVersion` before awaiting. Cancellation is opportunistic; checking ownership and generation before commit is mandatory.
+- Dialog scripting is enabled only for a non-packaged process with the explicit test flag. Its queue and controls are exposed through the test harness rather than the application-facing port, and the production artifact contains no registered debug IPC capability.
 - Input rules and disk serialization are separate layers. Tests exercise input rules by typing character by character; file loading uses document parsing and bypasses input rules. The serializer never runs on each editor transaction.
 - Canonical edited Markdown uses the official `@tiptap/markdown` pipeline, extended only through explicit supported or opaque-preservation nodes. The fixture expected models and golden files are hand-authored test oracles and must never be refreshed automatically from production parser/serializer output.
 - Parsing must account for every source byte as supported syntax or opaque source before enabling rich editing. Failure to prove complete coverage selects whole-document preservation fallback.
@@ -241,6 +249,9 @@ The product needs one loss-resistant document lifecycle: parse Markdown into a r
 | AC143-AC145 | Playwright-vs-vite |
 | AC146 | Node |
 | AC147-AC149 | Shell smoke |
+| AC150-AC151 | Shell smoke |
+| AC152 | Node |
+| AC153 | Playwright-vs-vite |
 
 ## Open questions
 

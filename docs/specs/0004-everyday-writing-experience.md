@@ -21,7 +21,7 @@ Once document and workspace safety are established, everyday writing still needs
 - The toolbar, link popover, search panel, and settings dialog use one overlay system for stacking, viewport collision, outside-click handling, Escape priority, and cleanup on tab/window changes.
 - Commands that move DOM focus away from the editor capture a ProseMirror selection bookmark. They act on that bookmark and restore an appropriate editor selection afterward.
 - The main-process settings service from milestone 0003 remains authoritative. This milestone adds theme and toolbar consumers; renderers never read or write `settings.json` directly.
-- All default navigation is prevented in the renderer. External destinations go only through milestone 0001's validated `Platform.shell.openExternal` capability.
+- All default navigation is prevented in the renderer. This milestone introduces one validated `openExternal` application capability; the renderer never receives Electron's `shell`, a generic URL opener, or a generic IPC send method.
 - A link destination may serialize even when Markzen does not follow it. Editing support never implies permission to open a scheme.
 - Theme colors are expressed as shared tokens and include focus, search, error, disabled, blocked-content, and overlay states in light, dark, system, and forced-color modes.
 
@@ -109,6 +109,11 @@ Once document and workspace safety are established, everyday writing still needs
 - AC66: Given a tab switch, editor-pane scroll, window resize, zoom change, or owning node deletion, when an anchored overlay remains valid, then it repositions; otherwise it closes and cannot act on stale state.
 - AC67: Given this milestone extends the settings schema, then `theme` accepts only `system`, `light`, or `dark` with default `system`, and `toolbarMode` accepts only `minimal` or `regular` with default `minimal`; invalid persisted or requested values fall back or reject through milestone 0003's per-key rules.
 
+### External-opening capability
+
+- AC68: Given the typed `openExternal` application capability and a syntactically valid, credential-free `https:`, `http:`, or `mailto:` URL supplied by one of AC19's explicit user actions, when the capability is invoked, then the main process validates the live sender and delegates that URL once to the operating-system handler without navigating a Markzen window.
+- AC69: Given the typed `openExternal` application capability and a relative path, fragment, `javascript:`, `data:`, `file:`, malformed, credential-bearing, or unapproved custom-scheme URL, when invocation is attempted, then it returns a typed rejection and does not call the operating-system shell.
+
 ## Test mapping
 
 | AC | Primary layer | Supporting coverage |
@@ -127,6 +132,7 @@ Once document and workspace safety are established, everyday writing still needs
 | AC60–AC63 | Browser Mode | AC58 Playwright-vs-vite multi-window fake |
 | AC64–AC66 | Browser Mode | Playwright-vs-vite resize/zoom journey |
 | AC67 | Node | Browser Mode default-consumer assertion |
+| AC68–AC69 | Node | AC68 Shell smoke system-handler journey |
 
 ## Open questions
 
