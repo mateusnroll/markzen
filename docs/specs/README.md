@@ -27,7 +27,7 @@ Each AC maps to exactly one layer (test at the lowest layer that can prove it):
 
 1. **Spec** — draft from `TEMPLATE.md` with the next number; resolve open questions; mark **Approved**.
 2. **Implement** — write tests named after the ACs (`test('AC3: closing a dirty tab prompts…')`), then the feature, then `npm run verify`.
-3. **Close** — flip the spec to **Shipped**. Anything learned that changes the rules goes into CLAUDE.md or an ADR — that's the compound step.
+3. **Close** — flip the spec to **Shipped**. Anything learned that changes the rules goes into the canonical `CLAUDE.md` instruction source (also exposed to Codex as `AGENTS.md`) or an ADR — that's the compound step.
 
 ## Index
 

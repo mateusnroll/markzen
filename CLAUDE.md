@@ -2,9 +2,13 @@
 
 Open-source, cross-platform Markdown editor — Electron + React + TypeScript + TipTap. This is a ground-up rewrite of `markzen-old` (Tauri); the rewrite's reasoning lives in the old repo's `docs/desktop-rewrite-analysis.md`.
 
+## Agent compatibility
+
+`CLAUDE.md` and `.claude/skills/` are the canonical instruction and skill sources. Git-tracked symlinks expose the same content to Codex as `AGENTS.md` and `.agents/skills/`; edit the canonical Claude paths only and preserve the aliases. On Windows, clone with Git symlink support enabled (`core.symlinks=true`, normally with Developer Mode enabled), or the aliases may be checked out as plain text files and agent discovery will not work.
+
 ## The one rule: spec before code
 
-**No feature work without a spec.** Every behavior change starts as a numbered spec in [docs/specs/](docs/specs/) (copy `TEMPLATE.md`, take the next free number) and follows the workflow in [docs/specs/README.md](docs/specs/README.md). Two project skills drive it: **`/spec <feature>`** drafts a spec (interviews for non-goals/edge cases, sweeps other specs for ripples), and **`/implement <spec>`** builds it — refusing to start unless the spec is Approved with no open questions:
+**No feature work without a spec.** Every behavior change starts as a numbered spec in [docs/specs/](docs/specs/) (copy `TEMPLATE.md`, take the next free number) and follows the workflow in [docs/specs/README.md](docs/specs/README.md). Two project skills drive it: **`/spec`** in Claude Code or **`$spec`** in Codex drafts a spec (interviews for non-goals/edge cases, sweeps other specs for ripples), and **`/implement`** or **`$implement`** builds it — refusing to start unless the spec is Approved with no open questions:
 
 1. **Spec** — Problem, Non-goals, numbered Given/When/Then acceptance criteria, edge cases, AC→test-layer mapping. Open questions must be resolved and the spec marked **Approved** before implementation starts.
 2. **Implement** — write tests named after the ACs first (`test('AC3: closing a dirty tab prompts…')`), then the feature, then run `npm run verify`.

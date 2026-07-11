@@ -1,11 +1,11 @@
 ---
 name: spec
-description: Draft a new numbered feature spec in docs/specs/. Use when the user says /spec <feature>, asks to write/draft a spec, or wants to promote a BACKLOG.md idea into a spec. Not for implementing specs (use /implement) or architecture decisions (those are ADRs).
+description: Draft a new numbered feature spec in docs/specs/. Use when the user invokes /spec in Claude Code or $spec in Codex, asks to write or draft a spec, or wants to promote a BACKLOG.md idea into a spec. Do not use for implementing specs (use /implement or $implement) or architecture decisions (use ADRs).
 ---
 
 # Draft a feature spec
 
-Produce a one-page behavior spec that doubles as the test plan, following `docs/specs/README.md`. The spec you write will gate implementation: `/implement` refuses anything not Approved.
+Produce a one-page behavior spec that doubles as the test plan, following `docs/specs/README.md`. The spec you write will gate implementation: the implement skill refuses anything not Approved.
 
 ## Steps
 
@@ -17,7 +17,7 @@ Produce a one-page behavior spec that doubles as the test plan, following `docs/
    - **Non-goals** — push for them; this is where scope creep dies, and users rarely volunteer them.
    - **Edge cases** — propose the ones you found in research and ask what you're missing.
    - **Judgment calls** — where multiple designs are defensible, present options with a recommendation instead of silently choosing.
-   Use AskUserQuestion for genuine either-way decisions; don't ask about things research already settles.
+   Use the host's structured user-input tool (`AskUserQuestion` in Claude Code or `request_user_input` in Codex) for genuine either-way decisions; don't ask about things research already settles.
 
 4. **Draft the spec** from TEMPLATE.md:
    - ACs are numbered Given/When/Then, each independently observable and testable. Group them with sub-headings when there are more than ~8.
