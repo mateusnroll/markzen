@@ -32,6 +32,9 @@ type WindowRecord = {
   readonly window: BrowserWindow
 }
 
+const userDataOverride = app.commandLine.getSwitchValue('user-data-dir')
+if (userDataOverride) app.setPath('userData', nodePath.resolve(userDataOverride))
+
 const windowsByContents = new Map<number, WindowRecord>()
 const owners = new OwnerRegistry<WindowId>()
 let handlersRegistered = false

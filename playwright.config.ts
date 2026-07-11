@@ -19,6 +19,7 @@ export default defineConfig({
     {
       name: 'electron',
       testMatch: /shell\/.*\.spec\.ts/,
+      timeout: 60_000,
       workers: 1,
     },
   ],

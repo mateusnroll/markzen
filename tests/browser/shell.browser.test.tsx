@@ -1,7 +1,7 @@
 import axe from 'axe-core'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, test } from 'vitest'
-import { userEvent } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 
 import { ShellApp } from '../../src/app/ShellApp'
 import { createMemoryPlatform } from '../../src/platform/memory'
@@ -105,7 +105,7 @@ async function renderShell(
       windowPort={memory.platform.window}
     />,
   )
-  await tick()
+  await expect.element(page.getByTestId('app-shell')).toBeVisible()
   return { ...memory, windowId, unmount: () => root?.unmount() }
 }
 

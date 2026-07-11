@@ -72,7 +72,22 @@ describe('spec 0001 repository verification contract', () => {
     expect(workflow).toContain('ubuntu-24.04')
     expect(workflow).toContain('windows-2025')
     expect(workflow).toContain('macos-15')
+    expect(workflow).toContain('sudo apt-get install --yes openbox')
+    expect(workflow).toContain("xvfb-run -a sh -c 'openbox")
     expect(workflow).toContain('npm run test:shell')
+  })
+
+  test('AC55: shell launches use isolated profiles and graceful teardown', async () => {
+    const helper = await readFile('tests/playwright/shell/helpers.ts', 'utf8')
+    const main = await readFile('src/platform/electron/main.ts', 'utf8')
+    expect(helper).toContain('--user-data-dir=')
+    expect(helper).toContain("app.getPath('userData')")
+    expect(helper).toContain('const launchAttempts = 3')
+    expect(helper).toContain('timeout: launchTimeout')
+    expect(helper).toContain('app.quit()')
+    expect(helper).toContain("child.kill('SIGKILL')")
+    expect(main).toContain("app.commandLine.getSwitchValue('user-data-dir')")
+    expect(main).toContain("app.setPath('userData'")
   })
 
   test('AC62: packaging and fuse inspection target one production artifact', async () => {
