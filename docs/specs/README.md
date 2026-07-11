@@ -1,55 +1,75 @@
-# Feature Specs
+# Rewrite Milestone Specs
 
-One spec per feature, written **before** implementation. A spec is ~one page: the problem, what's out of scope, numbered Given/When/Then acceptance criteria, edge cases, and a mapping from each AC to the test layer that proves it. **The spec is the test plan** — "done" means the ACs pass in `npm run verify`, not "it seemed fine when clicked around."
+The Electron rewrite is defined by five linear milestone specs. Each milestone produces a user-visible, independently verifiable checkpoint and is implemented only after the previous milestone is **Implemented**. After the rewrite, new behavior gets the next free numbered spec.
 
-This replaces nothing: ADRs in `docs/decisions/` still record *architecture* choices. Specs record *behavior*.
+The spec is the test plan: every observable in-scope behavior is a numbered acceptance criterion, and every AC has one primary test layer.
 
-## Locked decisions for the rewrite
+## Status lifecycle
 
-These were decided up front (see the old repo's `docs/desktop-rewrite-analysis.md` for full reasoning):
+- **Draft** — still under design; implementation is forbidden.
+- **Approved** — decision-complete, with no open questions, and explicitly approved by the user.
+- **Implemented** — implementation and all mapped tests exist and required verification is green. This does not mean released.
 
-1. **Electron** as the shell — chosen for the mature ecosystem and, above all, testability: Playwright `_electron` and single-engine fidelity (the Chromium you test is the Chromium you ship). The frontend stays shell-agnostic behind a `Platform` port so the decision is cheap to revisit.
-2. **Headless-first testing** — the app core is a browser app that happens to run in a shell. `vite dev` + an in-memory platform fake runs the entire editor in a plain browser; Playwright and Vitest Browser Mode drive it headlessly. A deliberately thin real-shell smoke suite covers only native integration.
-3. **Automated testing is mandatory from day 0** — CI lands in the same PR as the scaffold, and **no feature PR merges without tests derived from its spec's ACs**. No coverage targets; the ratchet is the rule above.
+If Implemented behavior changes, return the spec to Draft, update and reapprove it, then restore Implemented only after verification passes.
+
+## Milestones
+
+| # | Milestone | Verification checkpoint |
+|---|---|---|
+| 0001 | [Secure runtime and verification](0001-secure-runtime-and-verification.md) | Secure multi-window shell, browser fake, CI, and shell smoke |
+| 0002 | [Document lifecycle and tabs](0002-document-lifecycle-and-tabs.md) | Loss-safe editing, opening, saving, renaming, switching, and closing |
+| 0003 | [Folder workspaces](0003-folder-workspaces.md) | Multi-root folder windows, preview tabs, live trees, and persisted workspace settings |
+| 0004 | [Everyday writing experience](0004-everyday-writing-experience.md) | Accessible formatting, links, search, themes, and toolbar preferences |
+| 0005 | [Structured content and assets](0005-structured-content-and-assets.md) | Accessible tables and securely rendered images |
+
+## Scenario routing
+
+- Observable and in scope → numbered AC.
+- Deliberately excluded → Non-goal.
+- Unresolved → Open question.
+- Implementation-shaping invariant → Constraint.
+- Architectural rationale → ADR in `docs/decisions/`.
+- Deferred behavior → [BACKLOG.md](BACKLOG.md).
+
+There is no separate Edge Cases section. Failure, cancellation, concurrency, accessibility, security, privacy, recovery, platform, and performance behavior must be ACs when applicable. Split an AC whenever its outcomes can fail independently or need different proof layers.
 
 ## Test layers
 
-Each AC maps to exactly one layer (test at the lowest layer that can prove it):
+Each AC maps to one primary layer: the lowest layer that can prove the whole criterion. Supporting integration coverage is optional and listed separately.
 
 | Layer | Tool | Proves |
 |---|---|---|
-| Node | Vitest (node) | Pure logic: serialization round-trips, stores, path utils |
-| Browser Mode | Vitest Browser Mode (real Chromium) | Component/editor behavior: input rules, toolbar, tables |
-| Playwright-vs-vite | Playwright against `vite dev` + `MemoryPlatform` | Full user journeys with fake fs and scripted dialogs |
-| Shell smoke | Playwright `_electron` | Native integration only: real fs, menus, dialogs, windows |
+| Static | ESLint + TypeScript | Import boundaries, code rules, and type contracts |
+| Node | Vitest | Pure logic, serialization, schemas, path identity, stores |
+| Browser Mode | Vitest Browser Mode | Components, editor behavior, keyboard/focus/accessibility |
+| Playwright-vs-vite | Playwright + `MemoryPlatform` | Complete browser journeys with fake filesystem and scripted dialogs |
+| Shell smoke | Playwright `_electron` | Native integration only: Electron security, IPC, menus, windows, real filesystem |
+| CI | GitHub Actions | Verification orchestration, platform matrix, and required artifacts |
+
+Tests are named after the AC: `test('AC12: a later edit remains dirty after save completes')`.
 
 ## Workflow
 
-1. **Spec** — draft from `TEMPLATE.md` with the next number; resolve open questions; mark **Approved**.
-2. **Implement** — write tests named after the ACs (`test('AC3: closing a dirty tab prompts…')`), then the feature, then `npm run verify`.
-3. **Close** — flip the spec to **Shipped**. Anything learned that changes the rules goes into the canonical `CLAUDE.md` instruction source (also exposed to Codex as `AGENTS.md`) or an ADR — that's the compound step.
+1. **Draft** — use [TEMPLATE.md](TEMPLATE.md), resolve decisions, sweep related specs and backlog entries, and leave status Draft.
+2. **Approve** — the user reviews the approval checklist and explicitly changes status to Approved.
+3. **Implement** — write mapped AC tests first, implement, add required ADRs, and run `npm run verify` plus mapped shell smoke.
+4. **Close** — mark Implemented only when every AC passes and required verification is green.
 
-## Index
+## Approval checklist
 
-Ordered foundation-first; each spec builds on the ones before it.
+- Open questions are empty and non-goals are explicit.
+- Every normative in-scope behavior is a numbered, independently testable AC.
+- Every AC has exactly one primary test mapping; supporting coverage is explicit.
+- Failure/recovery, cancellation, concurrency, platform behavior, and performance are resolved where applicable.
+- Accessibility, security, and privacy have been reviewed and expressed as ACs where applicable.
+- Cross-spec references, backlog entries, and required ADRs are accurate.
 
-| # | Spec | Depends on |
-|---|---|---|
-| 0001 | [Application shell & platform foundation](0001-application-shell-and-platform-foundation.md) | — |
-| 0002 | [Rich Markdown editing core](0002-rich-markdown-editing-core.md) | 0001 |
-| 0003 | [File operations & native menu](0003-file-operations-and-native-menu.md) | 0002 |
-| 0004 | [Tab system](0004-tab-system.md) | 0003 |
-| 0005 | [Folder mode & file tree sidebar](0005-folder-mode-and-file-tree.md) | 0004 |
-| 0006 | [Peeking (preview) tabs](0006-peeking-tabs.md) | 0005 |
-| 0007 | [File system watcher](0007-file-system-watcher.md) | 0005 |
-| 0008 | [Formatting toolbar](0008-formatting-toolbar.md) | 0002 |
-| 0009 | [Links](0009-links.md) | 0008 |
-| 0010 | [Tables](0010-tables.md) | 0008 |
-| 0011 | [Filename field & rename](0011-filename-field-and-rename.md) | 0003, 0005 |
-| 0012 | [In-document search](0012-in-document-search.md) | 0002 |
-| 0013 | [Images](0013-images.md) | 0008 |
-| 0014 | [Settings & theming](0014-settings-and-theming.md) | 0001 |
+## Decisions and local research
 
-## Future spec candidates
+Specs describe behavior and constraints. ADRs describe why architecture takes a particular shape. Milestone 0001 creates `docs/decisions/` and the first security/capability ADR.
 
-Tracked in [BACKLOG.md](BACKLOG.md) — auto-update, source mode, fuzzy file finder, full-text search, expanded settings, external-change conflict handling, sidebar root management. Each entry keeps enough context to draft the spec without re-research; picking one up means drafting it with the next free number and deleting the entry.
+The old repository may be consulted locally when present, but no old code, fixtures, ADRs, or documents are copied into this repository during the rewrite. Origins may retain references that identify prior behavior.
+
+## Future work
+
+Future candidates live in [BACKLOG.md](BACKLOG.md). Picking one up means drafting the next free spec and deleting or narrowing its backlog entry.

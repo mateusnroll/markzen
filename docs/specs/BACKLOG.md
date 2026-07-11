@@ -21,7 +21,7 @@ Raw-Markdown editing in CodeMirror 6, toggled per-tab with Cmd/Ctrl+E. Designed 
 
 ## Fuzzy file finder & tab quick switcher
 
-Cmd/Ctrl+P subsequence matching (VS Code style) over a flat list of all Markdown files in the folder, plus a tab switcher modal. Old ADR 0011 chose `fuzzysort` and specified the flat-list scan kept fresh by the watcher; never built. Multi-root (spec 0005) means the flat list now spans all roots.
+Cmd/Ctrl+P subsequence matching (VS Code style) over a flat list of all Markdown files in the folder, plus a tab switcher modal. Old ADR 0011 chose `fuzzysort` and specified the flat-list scan kept fresh by the watcher; never built. Multi-root workspaces (milestone 0003) mean the flat list spans all roots.
 
 ## Full-text content search
 
@@ -29,12 +29,20 @@ Search across body text of all files in the open folder with ranking and excerpt
 
 ## Expanded settings
 
-Font family/size, line width, auto-save (+ delay), spell check. Old ADR 0013 designed the persistence format for all of these; only theme, toolbar mode, and sidebar width shipped. The settings mechanism (spec 0014) was specced to accommodate them — each becomes a small spec (auto-save is the only behavior-heavy one: dirty-state interplay, rename-pending interplay with spec 0011).
+Font family/size, line width, auto-save (+ delay), spell check. Old ADR 0013 designed the persistence format for all of these; the rewrite milestones implement only theme, toolbar mode, and sidebar width. The settings service in milestone 0003 accommodates future keys; each becomes a small spec. Auto-save is behavior-heavy because it must extend milestone 0002's dirty-state, save-transaction, and pending-rename rules.
 
-## External-change conflict handling
+## Proactive external-document updates
 
-The watcher (spec 0007) deliberately covers the sidebar only. What happens when an *open document* changes or disappears on disk (reload if clean, prompt if dirty, mark deleted?) needs its own spec.
+Milestone 0002 checks the disk version before every destructive Save and refuses silent overwrite; milestone 0003's directory watcher updates the sidebar only. A future spec may add live detection for *open document* changes: auto-reload clean tabs, preserve and warn dirty tabs, and mark deleted files before the next save attempt.
+
+## Internal and fragment link navigation
+
+Milestone 0004 preserves relative paths and `#fragment` destinations but does not follow them. A future spec should define whether Markdown-file links focus/open a Markzen tab, how fragments resolve to headings, how paths interact with multi-root workspaces, and how missing or ambiguous targets surface.
+
+## Active SVG images
+
+Milestone 0005 preserves SVG sources but deliberately blocks active SVG rendering. A future security-focused spec may permit SVG after choosing and testing a sanitization or rasterization boundary that cannot execute script, navigate, fetch subresources, or escape the asset capability model.
 
 ## Remove / reorder sidebar roots & file tree CRUD
 
-Spec 0005 non-goals, deferred together: removing a root from a folder window, reordering roots, and create/delete/rename/move from the tree — all want context-menu infrastructure that doesn't exist yet.
+Milestone 0003 non-goals, deferred together: removing or reordering roots and create/delete/rename/move from the tree. These operations share context-menu infrastructure and must preserve canonical identity, preview tabs, watchers, and the shared save transaction.

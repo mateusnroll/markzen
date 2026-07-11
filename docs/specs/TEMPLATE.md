@@ -1,7 +1,7 @@
-# Spec NNNN: <Feature>
+# Spec NNNN: <Feature or Milestone>
 
-**Status:** Draft | Approved | Shipped   **Date:** YYYY-MM
-**Origin:** <optional: pointer to old-repo implementation, ADR, or prior art>
+**Status:** Draft | Approved | Implemented   **Date:** YYYY-MM
+**Origin:** <optional: earlier spec, old-repo behavior, ADR, or prior art>
 
 ## Problem
 
@@ -9,26 +9,28 @@
 
 ## Non-goals
 
-Bullets. The most valuable section — scope creep dies here.
+- Explicitly excluded behavior.
+
+## Constraints and shared invariants
+
+- Include only implementation-shaping rules that ACs cannot express. Put architectural rationale in an ADR.
 
 ## Behavior (acceptance criteria)
 
-- AC1: Given a doc with a table, when the user clicks the row handle and drags, then the row reorders and the serialized Markdown reflects it.
+- AC1: Given ..., when ..., then ...
 - AC2: Given ..., when ..., then ...
 
-(Numbered. Each observable and testable. This section IS the test plan.)
-
-## Edge cases
-
-- Empty document; unsaved buffer; 10k-line file; non-ASCII path; ...
+Include in-scope success, failure, cancellation, concurrency, accessibility, security/privacy, recovery, platform, and measurable performance behavior. Split outcomes that can fail independently or require different proof layers.
 
 ## Test mapping
 
-| AC | Layer |
-|----|-------|
-| AC1 | Browser Mode |
-| AC2 | Playwright-vs-vite |
+| AC | Primary layer | Supporting coverage |
+|----|---------------|---------------------|
+| AC1 | Browser Mode | — |
+| AC2 | Playwright-vs-vite | Shell smoke |
+
+Every AC has exactly one primary layer. Supporting coverage is optional.
 
 ## Open questions
 
-Anything unresolved. Empty before implementation starts.
+- Anything unresolved. Must be empty before approval.

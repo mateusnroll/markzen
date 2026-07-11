@@ -1,58 +1,65 @@
 # Markzen
 
-Open-source, cross-platform Markdown editor — Electron + React + TypeScript + TipTap. This is a ground-up rewrite of `markzen-old` (Tauri); the rewrite's reasoning lives in the old repo's `docs/desktop-rewrite-analysis.md`.
+Repository instructions for any coding agent or development environment.
 
-## Agent compatibility
-
-`CLAUDE.md` and `.claude/skills/` are the canonical instruction and skill sources. Git-tracked symlinks expose the same content to Codex as `AGENTS.md` and `.agents/skills/`; edit the canonical Claude paths only and preserve the aliases. On Windows, clone with Git symlink support enabled (`core.symlinks=true`, normally with Developer Mode enabled), or the aliases may be checked out as plain text files and agent discovery will not work.
+Markzen is an open-source, cross-platform Markdown editor built with Electron, React, TypeScript, and TipTap. This is a ground-up rewrite of `markzen-old` (Tauri). Read [docs/specs/README.md](docs/specs/README.md) before changing behavior.
 
 ## The one rule: spec before code
 
-**No feature work without a spec.** Every behavior change starts as a numbered spec in [docs/specs/](docs/specs/) (copy `TEMPLATE.md`, take the next free number) and follows the workflow in [docs/specs/README.md](docs/specs/README.md). Two project skills drive it: **`/spec`** in Claude Code or **`$spec`** in Codex drafts a spec (interviews for non-goals/edge cases, sweeps other specs for ripples), and **`/implement`** or **`$implement`** builds it — refusing to start unless the spec is Approved with no open questions:
+**No feature work without a numbered spec.** The initial rewrite is organized as five linear, verifiable milestones in [docs/specs/](docs/specs/):
 
-1. **Spec** — Problem, Non-goals, numbered Given/When/Then acceptance criteria, edge cases, AC→test-layer mapping. Open questions must be resolved and the spec marked **Approved** before implementation starts.
-2. **Implement** — write tests named after the ACs first (`test('AC3: closing a dirty tab prompts…')`), then the feature, then run `npm run verify`.
-3. **Close** — flip the spec to **Shipped**. Feed durable learnings back into this file or an ADR (the compound step).
+1. **Spec** — resolve the behavior, non-goals, numbered acceptance criteria, constraints, and AC-to-test mapping. Status stays **Draft** until the user explicitly marks it **Approved**.
+2. **Implement** — write AC-named tests first, implement the behavior, record durable architecture in ADRs, and run verification.
+3. **Close** — when every mapped test and required verification passes, mark the spec **Implemented**.
+
+The five rewrite milestones are implemented in order. Later feature work takes the next free number and must identify any prerequisite behavior it relies on.
+
+Scenario routing is strict:
+
+- Observable and in scope → numbered AC.
+- Deliberately excluded → Non-goal.
+- Unresolved → Open question; Approved specs have none.
+- Architectural rationale → Constraint or ADR.
+- Deferred behavior → [BACKLOG.md](docs/specs/BACKLOG.md).
 
 Corollaries:
 
-- **The spec is the test plan.** "Done" means the ACs pass in `npm run verify` — not "it looked fine when clicked around".
-- **No feature PR merges without tests derived from its spec's ACs.** This is the ratchet; there are deliberately no coverage targets.
-- Bug fixes don't need a new spec, but they do need a regression test — and if the fix changes specced behavior, update the spec's ACs in the same PR.
-- Ideas that aren't scheduled yet go to [docs/specs/BACKLOG.md](docs/specs/BACKLOG.md) with enough context to draft the spec later without re-research. Picking one up = draft it under the next free number, delete the entry.
-- Architecture decisions get ADRs in `docs/decisions/`; specs record *behavior*, ADRs record *why the stack looks like this*. Don't mix them.
-
-## Locked decisions
-
-Decided up front — don't relitigate casually (changing one means updating the affected specs first):
-
-- **Electron** as the shell, **electron-builder** as the packager (spec 0001). Chosen for testability (Playwright `_electron`, single-engine fidelity) and a zero-cost auto-update path (see BACKLOG.md).
-- **Headless-first testing.** The app core is a browser app behind a `Platform` port; `MemoryPlatform` makes everything except native integration testable without building Electron.
-- **Automated testing is mandatory from day 0.** The verify pipeline and CI land with the scaffold (spec 0001), not after.
+- **The spec is the test plan.** Done means every AC passes at its mapped layer.
+- Split ACs when outcomes can fail independently or require different proof layers.
+- Each AC has one primary proof layer; additional integration coverage is optional and explicit.
+- Bug fixes need a regression test. If behavior changes, update and reapprove the affected spec.
+- Architecture decisions live in `docs/decisions/`. Milestone 0001 creates the directory and its first ADR; later milestones add decisions when they become executable.
+- Local `~/dev/markzen-old` material may be researched when available, but do not copy its code, fixtures, ADRs, or documents into this repository.
 
 ## Verification
 
-`npm run verify` is **the** verification step for every change: `tsc --noEmit` + Vitest (node + Browser Mode) + Playwright against `vite dev` + `MemoryPlatform`. `npm run verify:shell` adds the thin Playwright `_electron` smoke suite. (Both are defined by spec 0001 — until it ships, verify means the closest available subset, starting with `tsc --noEmit`.)
-
-Test layers — test each AC at the lowest layer that can prove it:
+`npm run verify` is **the** verification step: ESLint + `tsc --noEmit` + Vitest (Node and Browser Mode) + Playwright against `vite dev` with `MemoryPlatform`. `npm run verify:shell` adds the thin Playwright `_electron` smoke suite. Until milestone 0001 is Implemented, run the closest available subset.
 
 | Layer | Tool | Scope |
 |---|---|---|
-| Node | Vitest | Pure logic: serialization round-trips, stores, path utils |
-| Browser Mode | Vitest Browser Mode (real Chromium) | Component/editor behavior, input rules (typed character-by-character) |
-| Playwright-vs-vite | Playwright + `MemoryPlatform` | User journeys with scripted dialogs and fixtures (`?fixture=<name>`) |
-| Shell smoke | Playwright `_electron` | Native integration only — keep it thin |
+| Static | ESLint + TypeScript | Import boundaries, code rules, and type contracts |
+| Node | Vitest | Pure logic, schemas, serialization, path identity, stores |
+| Browser Mode | Vitest Browser Mode | Components, editor behavior, keyboard/focus/accessibility |
+| Playwright-vs-vite | Playwright + `MemoryPlatform` | Complete browser journeys with scripted dialogs and fixtures |
+| Shell smoke | Playwright `_electron` | Native integration, IPC security, menus, windows, real filesystem |
+| CI | GitHub Actions | Verification orchestration, platform matrix, and required artifacts |
+
+## Non-negotiable engineering constraints
+
+1. **Platform boundary.** Nothing outside `src/platform/` imports Electron or shell-specific APIs. The preload exposes only typed capabilities; the main process validates IPC senders and payloads.
+2. **Secure renderers.** Keep Node integration disabled, context isolation and sandboxing enabled, CSP restrictive, permissions denied by default, and renderer navigation/popups blocked.
+3. **Window-scoped authority.** Main-owned `WindowId`, `TabId`, and `RootId` values scope resources and events. Renderer-provided IDs never grant authority.
+4. **Canonical identity.** UI uses display paths; equality, deduplication, containment, and reservations use Platform-provided canonical `FileKey` values.
+5. **Async ownership.** Async work captures its owner and generation before awaiting and commits only if both remain current. Never write through “the active tab/root” after an await.
+6. **Shared save transaction.** All document writes use the save coordinator and failure-atomic writer. A save clears only the snapshot it committed; later edits remain dirty.
+7. **Serialization integrity.** Parsing must match independently authored expected models, serialization must match approved goldens, and unsupported/raw content must be preserved or saving blocked. Silent loss is a release blocker.
+8. **Editor state.** Content lives in ProseMirror state, not React/Zustand. Sync metadata on blur/save as required; never serialize on keystroke.
+9. **Input-rule tests.** Type character-by-character. `setContent()` bypasses input rules and cannot prove typing behavior.
+10. **Accessibility.** Every pointer action has a keyboard path; hover UI appears on focus; state is not visual-only; roles/names/states and focus behavior are correct; reduced motion and forced colors are respected.
+11. **Selectors.** Functional tests use stable `data-testid` values. Accessibility assertions may query roles, accessible names, labels, and states.
+12. **Types.** TypeScript strict mode; no `any` in production code.
 
 ## Git hygiene
 
-- **Fresh worktree = stale until proven otherwise.** Worktrees branch from *local* `main`, which may be behind the remote. Before starting any work in a new worktree or branch, run `git fetch origin` and compare against `origin/main`; if the base has moved, rebase onto `origin/main` before making changes. Never build on a stale base.
-
-## Non-negotiable constraints
-
-1. **Nothing outside `src/platform/` imports `electron`** or shell-specific APIs (enforced by ESLint `no-restricted-imports`). All shell access goes through the `Platform` interface — this keeps the core headless-testable and the shell choice reversible.
-2. **Round-trip serialization integrity is critical.** `parse(serialize(doc))` must equal `parse(original)` across the fixture corpus. Failures mean user data loss.
-3. **Two editor layers, never confused:** input rules (live typing → rich nodes) vs. `@tiptap/markdown` serialization (disk I/O, on open/save only). Never disable input rules; never serialize on keystroke.
-4. **Editor content lives in ProseMirror state**, not React/Zustand. Sync to the store on blur and before save only.
-5. **Every interactive element gets a stable `data-testid`.** Tests select by test id, not by CSS or text.
-6. **TypeScript strict mode; no `any` in production code.**
-7. **Editor-behavior tests type character-by-character** — `setContent()` bypasses input rules and proves nothing about typing.
+- A fresh worktree is stale until proven otherwise. Fetch `origin`, compare with `origin/main`, and rebase before starting if the base moved.
+- Preserve unrelated worktree changes and never use destructive resets to solve local conflicts.
