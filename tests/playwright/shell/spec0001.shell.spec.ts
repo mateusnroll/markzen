@@ -38,11 +38,26 @@ test('AC2: the main-owned factory creates a second distinct window', async () =>
 test('AC3: a window state event is delivered only to its owning renderer', async () => {
   const app = await launchMarkzen()
   try {
-    const first = await app.firstWindow()
-    await expect(first.getByTestId('app-shell')).toHaveAttribute('data-window-state-ready', 'true')
-    const secondPagePromise = app.waitForEvent('window')
+    const initialPage = await app.firstWindow()
+    await expect(initialPage.getByTestId('app-shell')).toHaveAttribute('data-window-state-ready', 'true')
+    const firstId = await initialPage.getByTestId('window-id').textContent()
+    if (!firstId) throw new Error('Expected the initial window to have an ID')
+
     const secondId = await callMain<string>(app, 'createMarkzenWindow')
-    const second = await secondPagePromise
+    await expect.poll(() => app.windows().length).toBe(2)
+    await Promise.all(app.windows().map(async (window) => {
+      await expect(window.getByTestId('window-id')).not.toHaveText('')
+    }))
+
+    const windowsById = new Map<string, (typeof initialPage)>()
+    for (const window of app.windows()) {
+      const windowId = await window.getByTestId('window-id').textContent()
+      if (windowId) windowsById.set(windowId, window)
+    }
+    const first = windowsById.get(firstId)
+    const second = windowsById.get(secondId)
+    if (!first || !second) throw new Error('Expected both main-owned windows to have renderer pages')
+
     await expect(second.getByTestId('app-shell')).toHaveAttribute('data-window-state-ready', 'true')
     await callMain(app, 'emitWindowStateForShellTest', [secondId, { focused: true, status: 'maximized' }])
     await expect(second.getByTestId('app-shell')).toHaveAttribute('data-window-status', 'maximized')
