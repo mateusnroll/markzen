@@ -57,7 +57,7 @@ Keep `Summary`, `Changes`, and `Verification`. Include `Decisions` only when the
 ## Open or update the PR
 
 1. Target `main` and use the pushed branch as head. Check for an existing open PR from that branch; update its title and body instead of opening a duplicate.
-2. Prefer the connected GitHub app for creation or update. If it cannot express the repository or branch cleanly, pass the generated Markdown through standard input. Create with `gh pr create --base main --head <branch> --title <title> --body-file -`, adding `--draft` unless ready-for-review was explicitly requested; update the discovered PR with `gh pr edit <PR> --title <title> --body-file -`.
-3. Open a draft PR unless the user explicitly asks for ready-for-review.
+2. Prefer the connected GitHub app for creation or update. If it cannot express the repository or branch cleanly, pass the generated Markdown through standard input. Create with `gh pr create --base main --head <branch> --title <title> --body-file -`, adding `--draft` only when the user explicitly requests a draft; update the discovered PR with `gh pr edit <PR> --title <title> --body-file -`.
+3. Open a ready-for-review PR unless the user explicitly asks for a draft.
 4. If push or PR creation fails, preserve the completed local state, report exactly what succeeded, and do not claim a PR exists.
 5. Return the branch, commit SHA, PR URL and target, draft status, and verification performed.
