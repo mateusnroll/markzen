@@ -1,35 +1,34 @@
 ---
 name: implement
-description: Implement an approved spec from docs/specs/ with tests first, verification, and Shipped status. Use when the user invokes /implement in Claude Code or $implement in Codex, or asks to build an approved specced feature. Do not use for drafting specs (use /spec or $spec).
+description: Implement an Approved spec from docs/specs/ with AC-named tests, verification, ADRs, and an Implemented status flip. Not for Drafting specs.
 ---
 
-# Implement a spec
+# Implement an Approved spec
 
-Turn an Approved spec's ACs into passing tests and working code. The spec is the contract; the ACs are the test plan.
+Turn an Approved behavior contract into passing tests and working code.
 
-## Gate — check before any work
+## Gate
 
-Read the spec. **Stop and tell the user** (do not start implementing) if any of these fail:
+Read `CLAUDE.md`, `docs/specs/README.md`, and the target spec. Stop before changing code if:
 
-- Status is not **Approved** (Draft needs the user's approval; Shipped is already done).
-- **Open questions** is non-empty — list them and ask for resolutions.
-- A dependency in README.md's index isn't Shipped yet — warn; proceed only if the user says so.
+- Status is not **Approved**.
+- Open questions is non-empty.
+- An AC lacks exactly one primary test mapping.
+- Normative behavior remains outside numbered ACs.
+- For rewrite milestones 0002–0005, the previous milestone is not **Implemented**.
 
 ## Steps
 
-1. **Plan first.** Read the spec's Origin references (old-repo code, ADRs) and the current code it touches. For anything non-trivial, present the implementation approach before writing code (plan mode when available). Architecture choices worth remembering become ADRs in `docs/decisions/`, not comments.
+1. **Plan the milestone.** Read Origin references and affected code. Identify the Platform, data, accessibility, security, and failure paths. Record durable architectural choices in `docs/decisions/`; milestone 0001 creates that directory and its index before shell implementation.
 
-2. **Tests before code.** For each AC, write a test named after it — `test('AC3: closing a dirty tab prompts before discarding')` — at the layer assigned in the spec's test mapping. House rules that commonly bite:
-   - Editor input-rule tests must type character-by-character; `setContent()` bypasses input rules.
-   - Select elements by `data-testid` only; add the test id to any element that lacks one.
-   - Dialogs and fs go through the platform fake (`MemoryPlatform`), never mocked at the IPC layer.
+2. **Write tests first.** Add at least one AC-named test at each primary mapped layer. Add supporting coverage where the spec calls for it. Input-rule tests type character-by-character.
 
-3. **Implement to green.** Follow the repository instructions loaded from canonical `CLAUDE.md` (also exposed to Codex as `AGENTS.md`) — especially: no `electron` imports outside `src/platform/`, no serialization on keystroke, content lives in ProseMirror state.
+3. **Implement to green.** Follow `CLAUDE.md`, especially the Platform boundary, shared save transaction, canonical identity, async ownership, serialization integrity, and accessibility baseline.
 
-4. **Verify honestly.** Run `npm run verify` (plus `npm run verify:shell` when the spec maps ACs to Shell smoke). Report failures with their output — never claim done with red tests, never skip an AC's test because it's hard to write (that's a design smell worth surfacing).
+4. **Verify honestly.** Run `npm run verify` and `npm run verify:shell` when any AC maps to or explicitly requires shell smoke. Report failures; never skip an AC because it is difficult.
 
-5. **If an AC is wrong**, don't silently deviate: explain the conflict, agree the new behavior with the user, and edit the spec's AC in the same branch.
+5. **Correct the contract when needed.** If an AC is wrong, return the spec to Draft, agree on revised behavior with the user, update tests and spec together, and obtain approval again.
 
-6. **Close.** When every AC passes: flip the spec's status to **Shipped**. One spec = one branch = one PR containing the status flip, tests, and implementation together.
+6. **Close.** When every AC and required verification passes, mark the spec **Implemented** in the same implementation PR. One rewrite milestone is one implementation unit; later feature specs follow the same lifecycle.
 
-7. **Compound.** Before finishing, ask: what did this teach us that changes the rules? Route each learning to its home — the canonical `CLAUDE.md` instruction source (also exposed as `AGENTS.md`), an ADR, a spec correction, or a BACKLOG.md entry for follow-up work discovered along the way. If the answer is genuinely nothing, say so and stop; don't invent learnings.
+7. **Compound.** Route durable learnings to `CLAUDE.md`, an ADR, a spec correction, or BACKLOG.md. Do not invent learnings.
