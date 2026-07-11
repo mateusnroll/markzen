@@ -8,7 +8,7 @@ The spec is the test plan: every observable in-scope behavior is a numbered acce
 
 - **Draft** — still under design; implementation is forbidden.
 - **Approved** — decision-complete, with no open questions, and explicitly approved by the user.
-- **Implemented** — implementation and all mapped tests exist and required verification is green. This does not mean released.
+- **Implemented** — implementation and all mapped tests exist, required verification is green, and the simplicity review is dispositioned. This does not mean released.
 
 If Implemented behavior changes, return the spec to Draft, update and reapprove it, then restore Implemented only after verification passes.
 
@@ -50,10 +50,11 @@ Tests are named after the AC: `test('AC12: a later edit remains dirty after save
 
 ## Workflow
 
-1. **Draft** — use [TEMPLATE.md](TEMPLATE.md), resolve decisions, sweep related specs and backlog entries, and leave status Draft.
+1. **Draft** — use [TEMPLATE.md](TEMPLATE.md), resolve decisions, sweep related specs and backlog entries, run an independent simplicity challenge, and leave status Draft.
 2. **Approve** — the user reviews the approval checklist and explicitly changes status to Approved.
 3. **Implement** — write mapped AC tests first, implement, add required ADRs, and run `npm run verify` plus mapped shell smoke.
-4. **Close** — mark Implemented only when every AC passes and required verification is green.
+4. **Review** — after the first green verification, run an independent simplicity review, apply or rebut every finding, and rerun required verification after edits.
+5. **Close** — mark Implemented only when every AC passes, required verification is green, and no simplicity finding remains unresolved.
 
 ## Approval checklist
 
@@ -62,6 +63,7 @@ Tests are named after the AC: `test('AC12: a later edit remains dirty after save
 - Every AC has exactly one primary test mapping; supporting coverage is explicit.
 - Failure/recovery, cancellation, concurrency, platform behavior, and performance are resolved where applicable.
 - Accessibility, security, and privacy have been reviewed and expressed as ACs where applicable.
+- The independent simplicity challenge is dispositioned; current behavior is necessary, and existing, standard, or native alternatives have been considered.
 - Cross-spec references, backlog entries, and required ADRs are accurate.
 
 ## Decisions and local research

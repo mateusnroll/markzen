@@ -10,7 +10,7 @@ Markzen is an open-source, cross-platform Markdown editor built with Electron, R
 
 1. **Spec** — resolve the behavior, non-goals, numbered acceptance criteria, constraints, and AC-to-test mapping. Status stays **Draft** until the user explicitly marks it **Approved**.
 2. **Implement** — write AC-named tests first, implement the behavior, record durable architecture in ADRs, and run verification.
-3. **Close** — when every mapped test and required verification passes, mark the spec **Implemented**.
+3. **Close** — when every mapped test and required verification passes and every simplicity finding is resolved, mark the spec **Implemented**.
 
 The five rewrite milestones are implemented in order. Later feature work takes the next free number and must identify any prerequisite behavior it relies on.
 
@@ -30,6 +30,15 @@ Corollaries:
 - Bug fixes need a regression test. If behavior changes, update and reapprove the affected spec.
 - Architecture decisions live in `docs/decisions/`. Milestone 0001 creates the directory and its first ADR; later milestones add decisions when they become executable.
 - Local `~/dev/markzen-old` material may be researched when available, but do not copy its code, fixtures, ADRs, or documents into this repository.
+
+## Simplicity discipline
+
+1. Do not build behavior outside the current Approved spec.
+2. Reuse an existing helper, type, or pattern before adding another.
+3. Prefer the standard library, browser or Electron capabilities, and already-installed dependencies over custom code or new packages.
+4. Do not add speculative abstractions, configuration, extension points, dependencies, or scaffolding.
+5. Choose the smallest clear implementation that satisfies every acceptance criterion; line count is a diagnostic, not a target.
+6. Never simplify away trust-boundary validation, data-loss handling, security, serialization integrity, async ownership, accessibility, cross-platform behavior, or required verification.
 
 ## Verification
 
