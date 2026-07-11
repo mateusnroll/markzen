@@ -29,6 +29,8 @@ export async function launchMarkzen(): Promise<ElectronApplication> {
       return electronApp
     } catch (error) {
       lastError = error
+      const message = error instanceof Error ? error.message : String(error)
+      process.stderr.write(`[shell] Electron launch attempt ${attempt}/${launchAttempts} failed: ${message}\n`)
       await removeProfile(profile)
     }
   }

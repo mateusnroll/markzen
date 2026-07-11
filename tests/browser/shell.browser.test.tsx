@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 
 import { ShellApp } from '../../src/app/ShellApp'
+import { asWindowId, ok, type PlatformResult, type WindowPort, type WindowState } from '../../src/platform/contracts'
 import { createMemoryPlatform } from '../../src/platform/memory'
 
 let root: Root | undefined
@@ -15,6 +16,43 @@ afterEach(() => {
 })
 
 describe('spec 0001 accessible custom chrome', () => {
+  test('AC3: a late initial state cannot overwrite a newer window event', async () => {
+    const windowId = asWindowId('window-regression')
+    let resolveInitial!: (result: PlatformResult<WindowState>) => void
+    const initialState = new Promise<PlatformResult<WindowState>>((resolve) => {
+      resolveInitial = resolve
+    })
+    let emitState: ((state: WindowState) => void) | undefined
+    const windowPort: Pick<WindowPort, 'close' | 'getState' | 'minimize' | 'onState' | 'toggleMaximize'> = {
+      close: async () => ok(undefined),
+      getState: async () => initialState,
+      minimize: async () => ok(undefined),
+      onState: (_owner, listener) => {
+        emitState = listener
+        return () => { emitState = undefined }
+      },
+      toggleMaximize: async () => ok(undefined),
+    }
+    const container = document.getElementById('test-root') ?? document.body.appendChild(document.createElement('div'))
+    root = createRoot(container)
+    root.render(
+      <ShellApp
+        environment={{ forcedColors: false, reducedMotion: false }}
+        fixtureName="browser-test"
+        platformName="linux"
+        windowId={windowId}
+        windowPort={windowPort}
+      />,
+    )
+    await expect.element(page.getByTestId('app-shell')).toBeVisible()
+
+    emitState?.({ focused: true, status: 'maximized' })
+    resolveInitial(ok({ focused: true, status: 'normal' }))
+
+    await expect.element(page.getByTestId('app-shell')).toHaveAttribute('data-window-state-ready', 'true')
+    await expect.element(page.getByTestId('app-shell')).toHaveAttribute('data-window-status', 'maximized')
+  })
+
   test('AC11: Enter and Space activate focused custom title-bar controls', async () => {
     const rendered = await renderShell('win32')
     const minimize = byTestId<HTMLButtonElement>('window-minimize')

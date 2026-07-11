@@ -24,12 +24,24 @@ export function ShellApp({
   windowPort,
 }: ShellAppProps) {
   const [state, setState] = useState<WindowState>({ focused: true, status: 'normal' })
+  const [windowStateReady, setWindowStateReady] = useState(false)
 
   useEffect(() => {
-    void windowPort.getState(windowId).then((result) => {
-      if (result.ok) setState(result.value)
+    let mounted = true
+    let eventReceived = false
+    const dispose = windowPort.onState(windowId, (nextState) => {
+      eventReceived = true
+      setState(nextState)
     })
-    return windowPort.onState(windowId, setState)
+    void windowPort.getState(windowId).then((result) => {
+      if (!mounted) return
+      if (result.ok && !eventReceived) setState(result.value)
+      setWindowStateReady(true)
+    })
+    return () => {
+      mounted = false
+      dispose()
+    }
   }, [windowId, windowPort])
 
   const run = useCallback((operation: () => Promise<unknown>) => {
@@ -75,6 +87,7 @@ export function ShellApp({
       data-forced-colors={String(environment.forcedColors)}
       data-reduced-motion={String(environment.reducedMotion)}
       data-testid="app-shell"
+      data-window-state-ready={String(windowStateReady)}
       data-window-status={state.status}
     >
       <header className="titlebar" data-platform={platformName} data-testid="titlebar">

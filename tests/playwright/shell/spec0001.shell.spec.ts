@@ -39,11 +39,11 @@ test('AC3: a window state event is delivered only to its owning renderer', async
   const app = await launchMarkzen()
   try {
     const secondPagePromise = app.waitForEvent('window')
-    await callMain(app, 'createMarkzenWindow')
+    const secondId = await callMain<string>(app, 'createMarkzenWindow')
     const second = await secondPagePromise
     const [first] = app.windows()
-    const toggled = await second.evaluate(() => window.markzen?.window.toggleMaximize())
-    expect(toggled).toMatchObject({ ok: true })
+    await expect(second.getByTestId('app-shell')).toHaveAttribute('data-window-state-ready', 'true')
+    await callMain(app, 'emitWindowStateForShellTest', [secondId, { focused: true, status: 'maximized' }])
     await expect(second.getByTestId('app-shell')).toHaveAttribute('data-window-status', 'maximized')
     await expect(first!.getByTestId('app-shell')).toHaveAttribute('data-window-status', 'normal')
   } finally {

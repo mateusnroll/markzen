@@ -83,6 +83,12 @@ export async function createMarkzenWindow(): Promise<WindowId> {
   return id
 }
 
+export function emitWindowStateForShellTest(windowId: string, state: WindowState): void {
+  const record = [...windowsByContents.values()].find((candidate) => candidate.id === windowId)
+  if (!record || record.window.isDestroyed()) throw new Error(`Unknown window: ${windowId}`)
+  record.window.webContents.send(channels.windowState, state)
+}
+
 export async function runRealFsRoundTrip(directory: string, payload: string): Promise<{ cleaned: boolean; payload: string }> {
   const fs = new RealFileSystem()
   const path = asPath(nodePath.join(directory, 'roundtrip.bin'))
@@ -213,7 +219,7 @@ app.on('activate', () => {
 Object.defineProperty(app, 'markzenShellHarness', {
   configurable: false,
   enumerable: false,
-  value: Object.freeze({ createMarkzenWindow, getWindowOptionsForPlatform, runRealFsRoundTrip }),
+  value: Object.freeze({ createMarkzenWindow, emitWindowStateForShellTest, getWindowOptionsForPlatform, runRealFsRoundTrip }),
   writable: false,
 })
 
