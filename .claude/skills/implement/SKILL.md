@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Implement an approved spec from docs/specs/ — tests first, then code, then verify, then flip to Shipped. Use when the user says /implement <spec number or name> or asks to build/implement a specced feature. Not for drafting specs (use /spec).
+description: Implement an approved spec from docs/specs/ with tests first, verification, and Shipped status. Use when the user invokes /implement in Claude Code or $implement in Codex, or asks to build an approved specced feature. Do not use for drafting specs (use /spec or $spec).
 ---
 
 # Implement a spec
@@ -24,7 +24,7 @@ Read the spec. **Stop and tell the user** (do not start implementing) if any of 
    - Select elements by `data-testid` only; add the test id to any element that lacks one.
    - Dialogs and fs go through the platform fake (`MemoryPlatform`), never mocked at the IPC layer.
 
-3. **Implement to green.** Follow CLAUDE.md's non-negotiables — especially: no `electron` imports outside `src/platform/`, no serialization on keystroke, content lives in ProseMirror state.
+3. **Implement to green.** Follow the repository instructions loaded from canonical `CLAUDE.md` (also exposed to Codex as `AGENTS.md`) — especially: no `electron` imports outside `src/platform/`, no serialization on keystroke, content lives in ProseMirror state.
 
 4. **Verify honestly.** Run `npm run verify` (plus `npm run verify:shell` when the spec maps ACs to Shell smoke). Report failures with their output — never claim done with red tests, never skip an AC's test because it's hard to write (that's a design smell worth surfacing).
 
@@ -32,4 +32,4 @@ Read the spec. **Stop and tell the user** (do not start implementing) if any of 
 
 6. **Close.** When every AC passes: flip the spec's status to **Shipped**. One spec = one branch = one PR containing the status flip, tests, and implementation together.
 
-7. **Compound.** Before finishing, ask: what did this teach us that changes the rules? Route each learning to its home — a CLAUDE.md constraint, an ADR, a spec correction, or a BACKLOG.md entry for follow-up work discovered along the way. If the answer is genuinely nothing, say so and stop; don't invent learnings.
+7. **Compound.** Before finishing, ask: what did this teach us that changes the rules? Route each learning to its home — the canonical `CLAUDE.md` instruction source (also exposed as `AGENTS.md`), an ADR, a spec correction, or a BACKLOG.md entry for follow-up work discovered along the way. If the answer is genuinely nothing, say so and stop; don't invent learnings.
