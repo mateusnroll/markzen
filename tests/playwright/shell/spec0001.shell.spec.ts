@@ -59,9 +59,13 @@ test('AC3: a window state event is delivered only to its owning renderer', async
     if (!first || !second) throw new Error('Expected both main-owned windows to have renderer pages')
 
     await expect(second.getByTestId('app-shell')).toHaveAttribute('data-window-state-ready', 'true')
-    await callMain(app, 'emitWindowStateForShellTest', [secondId, { focused: true, status: 'maximized' }])
-    await expect(second.getByTestId('app-shell')).toHaveAttribute('data-window-status', 'maximized')
-    await expect(first.getByTestId('app-shell')).toHaveAttribute('data-window-status', 'normal')
+    const firstStatus = await first.getByTestId('app-shell').getAttribute('data-window-status')
+    if (!firstStatus) throw new Error('Expected the initial window to expose its current state')
+    const targetedStatus = firstStatus === 'maximized' ? 'normal' : 'maximized'
+
+    await callMain(app, 'emitWindowStateForShellTest', [secondId, { focused: true, status: targetedStatus }])
+    await expect(second.getByTestId('app-shell')).toHaveAttribute('data-window-status', targetedStatus)
+    await expect(first.getByTestId('app-shell')).toHaveAttribute('data-window-status', firstStatus)
   } finally {
     await quitMarkzen(app)
   }
