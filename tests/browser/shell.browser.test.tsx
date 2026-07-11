@@ -1,0 +1,120 @@
+import axe from 'axe-core'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, describe, expect, test } from 'vitest'
+import { userEvent } from 'vitest/browser'
+
+import { ShellApp } from '../../src/app/ShellApp'
+import { createMemoryPlatform } from '../../src/platform/memory'
+
+let root: Root | undefined
+
+afterEach(() => {
+  root?.unmount()
+  root = undefined
+  document.body.innerHTML = '<div id="test-root"></div>'
+})
+
+describe('spec 0001 accessible custom chrome', () => {
+  test('AC11: Enter and Space activate focused custom title-bar controls', async () => {
+    const rendered = await renderShell('win32')
+    const minimize = byTestId<HTMLButtonElement>('window-minimize')
+    minimize.focus()
+    await userEvent.keyboard('{Enter}')
+    await tick()
+    expect(await rendered.platform.window.getState(rendered.windowId)).toMatchObject({
+      ok: true,
+      value: { status: 'minimized' },
+    })
+
+    const maximize = byTestId<HTMLButtonElement>('window-maximize')
+    maximize.focus()
+    await userEvent.keyboard(' ')
+    await tick()
+    expect(await rendered.platform.window.getState(rendered.windowId)).toMatchObject({
+      ok: true,
+      value: { status: 'maximized' },
+    })
+  })
+
+  test('AC12: custom controls expose stable names, state, and focus styling', async () => {
+    await renderShell('linux')
+    const maximize = byTestId<HTMLButtonElement>('window-maximize')
+    maximize.focus()
+
+    expect(maximize.getAttribute('aria-label')).toBe('Maximize window')
+    expect(maximize.getAttribute('aria-pressed')).toBe('false')
+    expect(getComputedStyle(maximize).outlineStyle).not.toBe('none')
+  })
+
+  test('AC13: reduced motion disables non-essential chrome transitions', async () => {
+    await renderShell('linux', { reducedMotion: true })
+    const chrome = byTestId<HTMLElement>('titlebar')
+
+    expect(getComputedStyle(chrome).transitionDuration).toBe('0s')
+  })
+
+  test('AC64: every interactive shell element has native semantics and state', async () => {
+    await renderShell('win32')
+    const controls = ['window-minimize', 'window-maximize', 'window-close'].map((id) => byTestId<HTMLButtonElement>(id))
+
+    expect(controls.every((control) => control.tagName === 'BUTTON')).toBe(true)
+    expect(controls.every((control) => Boolean(control.getAttribute('aria-label')))).toBe(true)
+    expect(controls[1]?.hasAttribute('aria-pressed')).toBe(true)
+  })
+
+  test('AC65: keyboard traversal follows a deterministic custom-chrome order', async () => {
+    await renderShell('win32')
+    const controls = ['window-minimize', 'window-maximize', 'window-close'].map((id) => byTestId<HTMLButtonElement>(id))
+
+    expect(controls.map((control) => control.tabIndex)).toEqual([0, 0, 0])
+    controls[0]?.focus()
+    expect(document.activeElement).toBe(controls[0])
+    controls[1]?.focus()
+    expect(document.activeElement).toBe(controls[1])
+    controls[2]?.focus()
+    expect(document.activeElement).toBe(controls[2])
+  })
+
+  test('AC66: platform, zoom, contrast, and motion variants pass the shell audit', async () => {
+    for (const platform of ['darwin', 'win32', 'linux'] as const) {
+      const rendered = await renderShell(platform, { forcedColors: true, reducedMotion: true })
+      document.documentElement.style.zoom = '2'
+      const audit = await axe.run(document.body, { resultTypes: ['violations'] })
+      expect(audit.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact ?? ''))).toEqual([])
+      expect(byTestId('titlebar').getAttribute('data-platform')).toBe(platform)
+      rendered.unmount()
+      document.body.innerHTML = '<div id="test-root"></div>'
+    }
+  })
+})
+
+async function renderShell(
+  platformName: 'darwin' | 'win32' | 'linux',
+  environment: { forcedColors?: boolean; reducedMotion?: boolean } = {},
+) {
+  const memory = createMemoryPlatform({ platform: platformName === 'win32' ? 'win32' : 'posix', caseSensitive: platformName !== 'win32' })
+  const windowId = await memory.platform.window.create()
+  const container = document.getElementById('test-root') ?? document.body.appendChild(document.createElement('div'))
+  root = createRoot(container)
+  root.render(
+    <ShellApp
+      environment={{ forcedColors: environment.forcedColors ?? false, reducedMotion: environment.reducedMotion ?? false }}
+      fixtureName="browser-test"
+      platformName={platformName}
+      windowId={windowId}
+      windowPort={memory.platform.window}
+    />,
+  )
+  await tick()
+  return { ...memory, windowId, unmount: () => root?.unmount() }
+}
+
+function byTestId<T extends Element = HTMLElement>(testId: string): T {
+  const element = document.querySelector(`[data-testid="${testId}"]`)
+  if (!element) throw new Error(`Missing data-testid=${testId}`)
+  return element as T
+}
+
+async function tick(): Promise<void> {
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+}
