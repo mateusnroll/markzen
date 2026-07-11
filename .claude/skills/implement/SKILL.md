@@ -27,8 +27,12 @@ Read `CLAUDE.md`, `docs/specs/README.md`, and the target spec. Stop before chang
 
 4. **Verify honestly.** Run `npm run verify` and `npm run verify:shell` when any AC maps to or explicitly requires shell smoke. Report failures; never skip an AC because it is difficult.
 
-5. **Correct the contract when needed.** If an AC is wrong, return the spec to Draft, agree on revised behavior with the user, update tests and spec together, and obtain approval again.
+5. **Run the simplicity gate.** After the first green verification, give a fresh independent agent `CLAUDE.md`, `docs/specs/README.md`, the Approved spec, the implementation diff against its starting base, and relevant source; do not provide the implementer's rationale. Have it use `$review-simplicity`. The reviewer reports findings and never edits files. Apply each valid cut or rebut it in one sentence with the AC or constraint that requires the complexity. No finding may remain unresolved.
 
-6. **Close.** When every AC and required verification passes, mark the spec **Implemented** in the same implementation PR. One rewrite milestone is one implementation unit; later feature specs follow the same lifecycle.
+6. **Correct the contract when needed.** If an AC is wrong or a proposed simplification changes Approved behavior, return the spec to Draft, agree on revised behavior with the user, update tests and spec together, and obtain approval again.
 
-7. **Compound.** Route durable learnings to `CLAUDE.md`, an ADR, a spec correction, or BACKLOG.md. Do not invent learnings.
+7. **Verify the reviewed result.** After simplicity edits, rerun the complete verification required by step 4. Run one more fresh simplicity review only when remediation introduced a dependency, abstraction, or material design.
+
+8. **Close.** Only after every AC passes, required verification is green, and every simplicity finding is applied or rebutted, mark the spec **Implemented** in the same implementation PR. One rewrite milestone is one implementation unit; later feature specs follow the same lifecycle.
+
+9. **Compound.** Route durable learnings to `CLAUDE.md`, an ADR, a spec correction, or BACKLOG.md. Do not invent learnings.

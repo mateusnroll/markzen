@@ -21,4 +21,6 @@ Produce a decision-complete feature spec that doubles as the test plan. `/implem
 
 6. **Sweep ripples.** Update affected specs, cross-references, workflow docs, and backlog entries in the same change. During the five rewrite milestones, preserve their linear order; afterward take the next free number and never renumber existing specs.
 
-7. **Apply the approval checklist.** Confirm the checklist in `docs/specs/README.md`. Report decisions and unresolved questions. Only the user may mark a spec Approved.
+7. **Challenge the Draft for simplicity.** Give a fresh independent agent `CLAUDE.md`, `docs/specs/README.md`, the target Draft, its prerequisite specs, affected backlog entries, and relevant modules; do not provide the drafting rationale. Have it use `$review-simplicity`. Apply unambiguously redundant cuts, but present any product-scope decision to the user and never silently remove behavior. Review each rewrite milestone immediately before its approval, in linear order.
+
+8. **Apply the approval checklist.** Confirm the checklist in `docs/specs/README.md`, including disposition of the simplicity findings. Report decisions and unresolved questions. Only the user may mark a spec Approved.
