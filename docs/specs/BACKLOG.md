@@ -31,10 +31,6 @@ Search across body text of all files in the open folder with ranking and excerpt
 
 Font family/size, line width, auto-save (+ delay), spell check. Old ADR 0013 designed the persistence format for all of these; the rewrite milestones implement only theme, toolbar mode, and sidebar width. The settings service in milestone 0003 accommodates future keys; each becomes a small spec. Auto-save is behavior-heavy because it must extend milestone 0002's dirty-state, save-transaction, and pending-rename rules.
 
-## Proactive external-document updates
-
-Milestone 0002 checks the disk version before every destructive Save and refuses silent overwrite; milestone 0003's directory watcher updates the sidebar only. A future spec may add live detection for *open document* changes: auto-reload clean tabs, preserve and warn dirty tabs, and mark deleted files before the next save attempt.
-
 ## Internal and fragment link navigation
 
 Milestone 0004 preserves relative paths and `#fragment` destinations but does not follow them. A future spec should define whether Markdown-file links focus/open a Markzen tab, how fragments resolve to headings, how paths interact with multi-root workspaces, and how missing or ambiguous targets surface.

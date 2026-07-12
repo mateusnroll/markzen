@@ -1,20 +1,26 @@
 import {
   asFileKey,
+  asDiskVersion,
   asPath,
   asWindowId,
   fail,
   ok,
   type CanonicalPath,
+  type DiskVersion,
+  type DialogPort,
+  type DialogResult,
   type FileRead,
   type FileStat,
   type FileSystemPort,
   type FsFailureCode,
+  type ExpectedDiskVersion,
   type Path,
   type Platform,
   type PlatformResult,
   type WindowId,
   type WindowPort,
   type WindowState,
+  type WatchPort,
 } from './contracts'
 
 type MemoryPlatformOptions = {
@@ -40,11 +46,13 @@ type WindowRecord = {
 }
 
 export type MemoryPlatformHarness = {
+  externalWrite(path: string, bytes: Uint8Array): Promise<void>
   fileCount(): number
   hardlink(path: string, target: string): void
   mkdir(path: string): void
   operationCount(): number
   path(value: string): Path
+  queueDialog(...results: readonly DialogResult[]): void
   setAccess(path: string, access: Partial<Access>): void
   setUnavailable(path: string, unavailable: boolean): void
   symlink(path: string, target: string): void
@@ -57,13 +65,23 @@ export function createMemoryPlatform(options: MemoryPlatformOptions): {
   readonly platform: Platform
 } {
   const fileSystem = new MemoryFileSystem(options)
+  const dialogs = new MemoryDialogPort()
+  const watches = new MemoryWatchPort()
   const windowPort = new MemoryWindowPort()
   return {
     harness: {
+      externalWrite: async (path, bytes) => {
+        const validated = fileSystem.validate(path)
+        if (!validated.ok) throw new Error(`Invalid external path: ${path}`)
+        const result = await fileSystem.overwrite(validated.value, bytes)
+        if (!result.ok) throw new Error(`External write failed: ${result.error.code}`)
+        watches.invalidate(validated.value)
+      },
       fileCount: () => fileSystem.fileCount(),
       hardlink: (path, target) => fileSystem.hardlink(path, target),
       mkdir: (path) => fileSystem.mkdir(path),
       operationCount: () => fileSystem.operationCount,
+      queueDialog: (...results) => dialogs.queue(...results),
       path: (value) => {
         const result = fileSystem.validate(value)
         if (!result.ok) throw new Error(`Invalid test path: ${value}`)
@@ -75,7 +93,56 @@ export function createMemoryPlatform(options: MemoryPlatformOptions): {
       validatePath: (value) => fileSystem.validate(value),
       windowIds: () => windowPort.ids(),
     },
-    platform: { fs: fileSystem, kind: 'memory', window: windowPort },
+    platform: { dialog: dialogs, fs: fileSystem, kind: 'memory', watch: watches, window: windowPort },
+  }
+}
+
+class MemoryWatchPort implements WatchPort {
+  readonly #listeners = new Map<string, Set<() => void>>()
+
+  invalidate(path: Path): void {
+    for (const listener of this.#listeners.get(String(path)) ?? []) queueMicrotask(listener)
+  }
+
+  subscribe(path: Path, listener: () => void): () => void {
+    const key = String(path)
+    const listeners = this.#listeners.get(key) ?? new Set()
+    listeners.add(listener)
+    this.#listeners.set(key, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) this.#listeners.delete(key)
+    }
+  }
+}
+
+class MemoryDialogPort implements DialogPort {
+  readonly #queue: DialogResult[] = []
+
+  async confirm(): Promise<PlatformResult<number, 'blocked'>> {
+    const result = this.#take('confirm')
+    return result.ok ? ok(result.value.choice) : result
+  }
+
+  async open(): Promise<PlatformResult<Path | undefined, 'blocked'>> {
+    const result = this.#take('open')
+    return result.ok ? ok(result.value.path) : result
+  }
+
+  queue(...results: readonly DialogResult[]): void {
+    this.#queue.push(...results)
+  }
+
+  async save(): Promise<PlatformResult<Path | undefined, 'blocked'>> {
+    const result = this.#take('save')
+    return result.ok ? ok(result.value.path) : result
+  }
+
+  #take<Kind extends DialogResult['kind']>(kind: Kind): PlatformResult<Extract<DialogResult, { kind: Kind }>, 'blocked'> {
+    const next = this.#queue[0]
+    if (!next || next.kind !== kind) return fail('blocked')
+    this.#queue.shift()
+    return ok(next as Extract<DialogResult, { kind: Kind }>)
   }
 }
 
@@ -90,6 +157,25 @@ class MemoryFileSystem implements FileSystemPort {
     this.#platform = options.platform
     const root = options.platform === 'win32' ? 'C:/' : '/'
     this.#entries.set(this.#key(root), directory(root))
+  }
+
+  async atomicReplace(
+    path: Path,
+    bytes: Uint8Array,
+    expected: ExpectedDiskVersion,
+  ): Promise<PlatformResult<FileRead, FsFailureCode | 'conflict'>> {
+    const prepared = this.#prepareLeaf(path)
+    if (!prepared.ok) return prepared
+    const existing = prepared.value.existing
+    if (existing && existing.kind !== 'file') return fail('not-file')
+    if (existing?.unavailable) return fail('unavailable')
+    if (existing && !existing.access.writable) return fail('permission-denied')
+    if (expected === 'missing' && existing) return fail('conflict')
+    if (expected !== 'missing' && !existing) return fail('not-found')
+    if (expected !== 'missing' && existing && asDiskVersion(version(existing.data.bytes)) !== expected) return fail('conflict')
+    this.operationCount += 1
+    this.#entries.set(this.#key(prepared.value.path), file(prepared.value.path, bytes))
+    return this.read(asPath(this.#external(prepared.value.path)))
   }
 
   async canonicalize(path: Path): Promise<PlatformResult<CanonicalPath, FsFailureCode>> {
@@ -127,6 +213,30 @@ class MemoryFileSystem implements FileSystemPort {
     })
   }
 
+  async move(
+    source: Path,
+    target: Path,
+    expected: DiskVersion,
+  ): Promise<PlatformResult<FileRead, FsFailureCode | 'conflict'>> {
+    const resolved = this.#resolveValidated(source, false)
+    if (!resolved.ok) return resolved
+    const entry = resolved.value.entry
+    if (!entry) return fail('not-found')
+    if (entry.kind !== 'file') return fail('not-file')
+    if (entry.unavailable) return fail('unavailable')
+    if (!entry.access.writable) return fail('permission-denied')
+    if (asDiskVersion(version(entry.data.bytes)) !== expected) return fail('conflict')
+    const targetLeaf = this.#prepareLeaf(target)
+    if (!targetLeaf.ok) return targetLeaf
+    const sameKey = this.#key(resolved.value.path) === this.#key(targetLeaf.value.path)
+    if (targetLeaf.value.existing && !sameKey) return fail('already-exists')
+    this.operationCount += 1
+    this.#entries.delete(this.#key(resolved.value.path))
+    entry.path = targetLeaf.value.path
+    this.#entries.set(this.#key(targetLeaf.value.path), entry)
+    return this.read(asPath(this.#external(targetLeaf.value.path)))
+  }
+
   mkdir(path: string): void {
     const internal = this.#internal(this.#mustValidate(path))
     if (this.#entries.has(this.#key(internal))) return
@@ -158,6 +268,7 @@ class MemoryFileSystem implements FileSystemPort {
     if (!entry.access.readable) return fail('permission-denied')
     return ok({
       bytes: entry.data.bytes.slice(),
+      diskVersion: asDiskVersion(version(entry.data.bytes)),
       fileKey: asFileKey(this.#key(resolved.value.path)),
       path: asPath(this.#external(resolved.value.path)),
     })
@@ -404,4 +515,10 @@ const parentPath = (path: string): string | undefined => {
 const splitAbsolute = (path: string): { root: string; segments: string[] } => {
   if (/^[A-Za-z]:\//.test(path)) return { root: path.slice(0, 3), segments: path.slice(3).split('/') }
   return { root: '/', segments: path.slice(1).split('/') }
+}
+
+const version = (bytes: Uint8Array): string => {
+  let hash = 2_166_136_261
+  for (const byte of bytes) hash = Math.imul(hash ^ byte, 16_777_619)
+  return `${bytes.byteLength}:${(hash >>> 0).toString(16)}`
 }

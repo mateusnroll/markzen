@@ -16,7 +16,7 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - Restoring workspace root sets, expanded directories, open tabs, previews, or scroll positions after restart.
 - Converting a non-pristine single-file window into a workspace window; Open Folder creates a new window.
 - Naming or saving root sets as reusable workspace files.
-- Reloading or merging the content of an open document changed externally; the watcher in this milestone invalidates the tree only.
+- Redefining milestone 0002's open-document reload and explicit external-conflict decisions; this milestone adds directory-tree invalidation and reuses the existing document watcher/coordinator behavior.
 - Previewing file types other than the recognized `.md`, `.markdown`, and `.txt` document extensions.
 - More than one preview tab in a workspace.
 - Changes to milestone 0002's filename editing or on-disk rename behavior; this milestone adds only workspace-relative secondary path context to the existing editable title.
@@ -32,7 +32,7 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - Tab uniqueness is enforced by FileKey across the entire application. A request from another workspace focuses the existing owner window and tab rather than creating a second editor for the file.
 - Every asynchronous directory read, preview read, and watcher refresh carries its owning WindowId/RootId plus a monotonically increasing request generation. Results whose owner was disposed or whose generation is no longer current are ignored. Accepted settings revisions are application-service-owned and outlive the initiating window.
 - Main-process filesystem access is exposed through `Platform`; renderer modules do not import Electron, Node filesystem APIs, or chokidar.
-- The real watcher backend is chokidar in the main process. Raw events invalidate directory snapshots; they never directly patch renderer tree nodes.
+- The real watcher backend is the main-process chokidar service introduced for exact-document watching by milestone 0002. This milestone extends it to workspace roots; raw events invalidate directory snapshots and never directly patch renderer tree nodes or document content.
 - Tree rows are windowed so the DOM size is proportional to the viewport, not the number of loaded entries.
 - A single flat `settings.json` in the platform configuration directory (Electron `userData`) is owned and written only by the main process. Renderers submit validated patches and apply ordered snapshots; they never read or write the file directly.
 

@@ -5,3 +5,7 @@ Accepted architecture decisions for the Electron rewrite live here. Specs define
 | ADR | Status | Decision |
 |---|---|---|
 | [0001](0001-electron-security-and-capabilities.md) | Accepted | Electron security, application origin, capability boundary, window authority, and production fuse posture |
+| [0002](0002-document-identity-and-persistence.md) | Accepted | Disk versions, application-wide document registration, reservations, and failure-atomic persistence |
+| [0003](0003-markdown-serialization-integrity.md) | Accepted | TipTap Markdown semantic models, source coverage, opaque nodes, and preservation fallback |
+| [0004](0004-tab-state-and-persistence-scheduling.md) | Accepted | Per-tab editor ownership, revisions, baseline equality, IME boundaries, and save scheduling |
+| [0005](0005-document-watching-and-conflicts.md) | Accepted | Exact-document watching, invalidation, self-event correlation, and external-change conflicts |

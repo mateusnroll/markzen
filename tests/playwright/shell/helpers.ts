@@ -45,7 +45,13 @@ export async function quitMarkzen(electronApp: ElectronApplication): Promise<voi
     if (child.exitCode !== null) return
     const exited = once(child, 'exit')
     try {
-      await electronApp.evaluate(({ app }) => app.quit())
+      await electronApp.evaluate(({ app, dialog }) => {
+        Object.defineProperty(dialog, 'showMessageBox', {
+          configurable: true,
+          value: async () => ({ checkboxChecked: false, response: 1 }),
+        })
+        app.quit()
+      })
       await withTimeout(exited, 5_000)
     } catch {
       if (child.exitCode === null) child.kill('SIGKILL')

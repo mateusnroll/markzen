@@ -1,0 +1,17 @@
+{
+  "type": "doc",
+  "content": [{
+    "type": "paragraph",
+    "content": [
+      { "type": "text", "text": "Escaped *literal* and " },
+      { "type": "text", "text": "strike", "marks": [{ "type": "strike" }] },
+      { "type": "text", "text": ", " },
+      { "type": "text", "text": "bold ", "marks": [{ "type": "bold" }] },
+      { "type": "text", "text": "nested", "marks": [{ "type": "bold" }, { "type": "italic" }] },
+      { "type": "text", "text": ", " },
+      { "type": "text", "text": "code", "marks": [{ "type": "code" }] },
+      { "type": "hardBreak" },
+      { "type": "text", "text": "next 👋🏽 東京" }
+    ]
+  }]
+}

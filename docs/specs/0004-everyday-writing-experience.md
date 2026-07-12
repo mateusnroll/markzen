@@ -23,6 +23,7 @@ Once document and workspace safety are established, everyday writing still needs
 - The main-process settings service from milestone 0003 remains authoritative. This milestone adds theme and toolbar consumers; renderers never read or write `settings.json` directly.
 - All default navigation is prevented in the renderer. This milestone introduces one validated `openExternal` application capability; the renderer never receives Electron's `shell`, a generic URL opener, or a generic IPC send method.
 - A link destination may serialize even when Markzen does not follow it. Editing support never implies permission to open a scheme.
+- Implementing this milestone replaces milestone 0002's temporary inert-link AC166 and its negative tests with this spec's explicit user-intent, scheme-validation, no-ambient-navigation, and system-handler coverage; the milestone 0002 spec must be narrowed and reapproved as part of that change.
 - Theme colors are expressed as shared tokens and include focus, search, error, disabled, blocked-content, and overlay states in light, dark, system, and forced-color modes.
 
 ## Behavior (acceptance criteria)

@@ -83,16 +83,12 @@ test('AC6: macOS activation recreates one disposed window', async () => {
   test.skip(process.platform !== 'darwin', 'AC6 applies to macOS')
   const app = await launchMarkzen()
   try {
-    await app.firstWindow()
+    const first = await app.firstWindow()
+    const firstClosed = first.waitForEvent('close')
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
+    await firstClosed
     const nextWindow = app.waitForEvent('window')
-    await app.evaluate(async ({ app, BrowserWindow }) => {
-      const windows = BrowserWindow.getAllWindows()
-      await Promise.all(windows.map((window) => new Promise<void>((resolve) => {
-        window.once('closed', resolve)
-        window.close()
-      })))
-      app.emit('activate')
-    })
+    await app.evaluate(({ app }) => app.emit('activate'))
     await expect((await nextWindow).getByTestId('app-shell')).toBeVisible()
     expect(app.windows()).toHaveLength(1)
   } finally {
@@ -236,7 +232,7 @@ test('AC21: preload exposes one frozen versioned narrow capability', async () =>
     })
     expect(surface.version).toBe(1)
     expect(surface.frozen).toBe(true)
-    expect(surface.keys).toEqual(['bootstrap', 'version', 'window'])
+    expect(surface.keys).toEqual(['bootstrap', 'document', 'version', 'window'])
   } finally {
     await quitMarkzen(app)
   }

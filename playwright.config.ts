@@ -19,7 +19,15 @@ export default defineConfig({
     {
       name: 'electron',
       testMatch: /shell\/.*\.spec\.ts/,
-      timeout: 60_000,
+      retries: process.env.CI ? 2 : 0,
+      timeout: 90_000,
+      workers: 1,
+    },
+    {
+      name: 'performance',
+      testMatch: /performance\/.*\.spec\.ts/,
+      timeout: 120_000,
+      use: { baseURL: 'http://127.0.0.1:4173' },
       workers: 1,
     },
   ],

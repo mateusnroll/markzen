@@ -1,0 +1,47 @@
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "taskList",
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": { "checked": false },
+          "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "todo" }] }]
+        },
+        {
+          "type": "taskItem",
+          "attrs": { "checked": true },
+          "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "done" }] }]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "content": [
+        {
+          "type": "tableRow",
+          "content": [
+            { "type": "tableHeader", "attrs": { "alignment": "left" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Name" }] }] },
+            { "type": "tableHeader", "attrs": { "alignment": "right" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Value" }] }] }
+          ]
+        },
+        {
+          "type": "tableRow",
+          "content": [
+            { "type": "tableCell", "attrs": { "alignment": "left" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "A" }] }] },
+            { "type": "tableCell", "attrs": { "alignment": "right" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "1" }] }] }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "bold link", "marks": [{ "type": "bold" }, { "type": "link", "attrs": { "href": "https://example.com", "title": "Title" } }] },
+        { "type": "text", "text": " and " },
+        { "type": "image", "attrs": { "src": "images/a.png", "alt": "Alt", "title": "Pic" } }
+      ]
+    }
+  ]
+}

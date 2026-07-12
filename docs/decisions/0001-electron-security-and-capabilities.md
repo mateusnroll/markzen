@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Spec:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md)
+**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md)
 
 ## Context
 
@@ -27,6 +27,11 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - Each IPC channel has a closed request schema and a serializable discriminated result. Custom `Error` instances do not cross the bridge.
 - Validate the sender before the payload: it must be the registered main frame at `markzen://app` for a live `BrowserWindow`. A renderer-provided `WindowId` or other owner identifier never establishes authority.
 - Route results and events through the sender-derived `WindowId`. Window registrations and subscriptions have idempotent disposers, and pending operations carry owner plus generation tokens.
+- Document capabilities are individual application intents for opening, saving, renaming, closing, conflict resolution, and observing owned tabs. The preload has no generic invoke/send method and exposes no filesystem method accepting a renderer-selected path.
+- The main process allocates every `TabId`, derives `WindowId` from the sender, and resolves `TabId`, `FileKey`, reservation, path, and generation against main-owned registrations before filesystem or window work. Renderer copies of those values are correlation data only.
+- Document request schemas reject unknown keys, wrong primitive/container types, oversized byte payloads, and stale generations. Sender validation runs before these schemas so malformed payloads cannot be used to probe owner state.
+- Open and Save As paths originate in main-owned native dialogs. Renderer-provided display paths never select a read or write destination. Results and watcher events are delivered only through the registered owning frame.
+- After the renderer registers its document state, native `BrowserWindow` close events are prevented and routed to the owning renderer's existing Close Window guard. The main process permits the subsequent close only through that sender-authorized window intent, while pre-registration startup teardown and an already-approved app-wide Quit bypass the per-window guard.
 
 ### Platform and identity
 
@@ -44,7 +49,7 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 ### Test-only behavior
 
 - Browser fixtures are compile-time development/test data and are absent from packaged behavior.
-- Later dialog scripting is registered only in a non-packaged process with its dedicated test flag and is never exposed through the production preload API.
+- Native-dialog shell tests replace Electron dialog functions from Playwright's inspector-controlled main-process connection. The application registers no dialog queue, test flag, or dialog-debug IPC in development or production.
 - Negative shell tests load the production renderer in controlled windows or origins from the external test runner; production does not register generic debug IPC channels.
 
 ## Consequences
@@ -52,13 +57,13 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - Main-process services and IPC schemas require more explicit code than calling Electron or Node APIs from the renderer, but authority and serialization remain reviewable.
 - The fixed application protocol makes CSP headers and origin checks deterministic and avoids `file:` privileges.
 - Enabling Node inspector arguments preserves test equivalence at the cost of a documented local-launch attack surface. Other unnecessary fuses remain disabled.
-- Future asset, dialog, watcher, settings, and external-opening capabilities must extend the narrow contract in their owning Approved spec and update this ADR when they change its trust model.
+- Future asset, settings, and external-opening capabilities must extend the narrow contract in their owning Approved spec and update this ADR when they change its trust model.
 
 ## Verification
 
 - Static checks enforce production import boundaries and typed preload contracts.
-- Node tests cover schemas, sender-first authorization, ownership, typed results, path identity, and stale-operation disposal.
+- Node tests cover document schemas, sender-first authorization, forged/stale ownership values, typed results, path identity, and stale-operation disposal.
 - Browser Mode tests cover custom chrome semantics, keyboard behavior, focus, forced-color/reduced-motion styling, and accessibility audits.
 - Playwright-vs-Vite tests cover explicit MemoryPlatform boot and fixture failure behavior.
-- Shell smoke inspects effective BrowserWindow preferences, application responses, CSP, preload surface, navigation/popup/permission denial, multi-window routing, custom native chrome operations, real filesystem round-trips, packaged boot failure, and diagnostic capture.
+- Shell smoke inspects effective BrowserWindow preferences, application responses, CSP, the expanded narrow preload surface, navigation/popup/permission denial, forged document capabilities, multi-window event routing, native dialogs and menus, native OS close-control guarding, custom native chrome operations, real filesystem transactions, packaged boot failure, and diagnostic capture.
 - CI reads the fuses and launches the same electron-builder artifact on pinned Linux, Windows, and macOS runners.
