@@ -604,7 +604,7 @@ async function acceptWorkspaceRoot(record: WindowRecord, logicalPath: Path): Pro
   const key = rootKey(record.id, accepted.root.rootId)
   if (accepted.kind === 'accepted') {
     workspaceSnapshots.set(key, listed.value)
-    startWorkspaceWatch(record, accepted.root.rootId, logicalPath)
+    await startWorkspaceWatch(record, accepted.root.rootId, logicalPath)
   }
   const entries = workspaceSnapshots.get(key) ?? listed.value
   return {
@@ -613,7 +613,7 @@ async function acceptWorkspaceRoot(record: WindowRecord, logicalPath: Path): Pro
   }
 }
 
-function startWorkspaceWatch(record: WindowRecord, rootId: RootId, logicalPath: Path): void {
+async function startWorkspaceWatch(record: WindowRecord, rootId: RootId, logicalPath: Path): Promise<void> {
   let pendingRelativePath: string | undefined
   const batcher = new WorkspaceWatchBatcher(() => {
     const relativePath = pendingRelativePath ?? ''
@@ -621,6 +621,15 @@ function startWorkspaceWatch(record: WindowRecord, rootId: RootId, logicalPath: 
     void routeWorkspaceInvalidation(record, rootId, relativePath)
   })
   const watcher = watch(String(logicalPath), { followSymlinks: false, ignoreInitial: true, persistent: true })
+  const initialized = new Promise<void>((resolve) => {
+    const finish = () => {
+      watcher.off('error', finish)
+      watcher.off('ready', finish)
+      resolve()
+    }
+    watcher.once('error', finish)
+    watcher.once('ready', finish)
+  })
   watcher.on('all', (_event, changedPath) => {
     const relative = nodePath.relative(String(logicalPath), String(changedPath)).replaceAll(nodePath.sep, '/')
     if (WorkspaceWatchBatcher.isVisibleInvalidation(relative)) {
@@ -641,6 +650,7 @@ function startWorkspaceWatch(record: WindowRecord, rootId: RootId, logicalPath: 
     batcher.dispose()
     void watcher.close()
   })
+  await initialized
 }
 
 async function routeWorkspaceInvalidation(record: WindowRecord, rootId: RootId, relativePath: string): Promise<void> {
@@ -680,7 +690,7 @@ async function refreshWorkspaceRoot(record: WindowRecord, rootId: RootId): Promi
   const listed = await new RealFileSystem().list(root.path)
   if (!listed.ok) return { kind: 'error' }
   workspaceSnapshots.set(rootKey(record.id, rootId), listed.value)
-  startWorkspaceWatch(record, rootId, root.path)
+  await startWorkspaceWatch(record, rootId, root.path)
   return { kind: 'duplicate', root: { entries: listed.value, path: root.path, rootId } }
 }
 
