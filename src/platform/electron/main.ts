@@ -17,11 +17,14 @@ import {
 
 import {
   asPath,
+  asRootId,
   asTabId,
   fail,
   asWindowId,
   ok,
   type BootstrapPayload,
+  type ApplicationCommand,
+  type DirectoryEntry,
   type PlatformName,
   type DocumentFilePayload,
   type DocumentCommand,
@@ -32,9 +35,13 @@ import {
   type DiskVersion,
   type FileKey,
   type Path,
+  type PlatformResult,
+  type RootId,
   type TabId,
   type WindowId,
   type WindowState,
+  type WindowKind,
+  type WorkspaceRootOutcome,
 } from '../contracts'
 import { OwnerRegistry } from '../ownership'
 import { DocumentRegistry, type DocumentOwner } from '../../documents/registry'
@@ -54,10 +61,15 @@ import { channels } from './channels'
 import { APP_ORIGIN, registerApplicationProtocol } from './protocol'
 import { RealFileSystem } from './real-fs'
 import { buildApplicationMenuTemplate, installApplicationMenu } from './menu'
+import { SettingsFileStore } from './settings-store'
+import { DEFAULT_SETTINGS, parseSettings, SettingsService, type SettingsLoadResult } from '../../settings/settings'
+import { RootRegistry, WorkspaceWatchBatcher, selectContainingRoot } from '../../workspaces/state'
+import { validateWorkspaceEntryRequest } from '../../workspaces/authority'
 
 type WindowRecord = {
   closeApproved: boolean
   readonly id: WindowId
+  readonly kind: WindowKind
   readonly window: BrowserWindow
 }
 
@@ -65,9 +77,11 @@ type MainDocumentRecord = {
   cleanup?: { readonly fileKey: FileKey; readonly path: Path }
   dirty?: boolean
   diskVersion?: DiskVersion
+  displayPath?: Path
   fileKey?: FileKey
   readonly generation: number
   path?: Path
+  secondaryPath?: string
   title?: string
   readonly tabId: TabId
   readonly windowId: WindowId
@@ -94,6 +108,12 @@ const documentWatchState = new DocumentWatchState()
 const documentWatchTokens = new Map<TabId, WatchToken>()
 const menuStates = new Map<WindowId, DocumentMenuState>()
 const quitSaveResolvers = new Map<WindowId, (success: boolean) => void>()
+const workspaceRoots = new RootRegistry()
+const workspaceSnapshots = new Map<string, readonly DirectoryEntry[]>()
+const workspaceGenerations = new Map<string, number>()
+const pendingFolderWindows = new Set<string>()
+let settingsService: SettingsService | undefined
+let settingsWarning: string | undefined
 let handlersRegistered = false
 let allowQuit = false
 let quitGuardRunning = false
@@ -126,15 +146,23 @@ export function getWindowOptionsForPlatform(platformValue: string = process.plat
   }
 }
 
-export async function createMarkzenWindow(): Promise<WindowId> {
+export async function createMarkzenWindow(kind: WindowKind = 'single-file', initialFolder?: Path): Promise<WindowId> {
   if (!app.isReady()) await app.whenReady()
   const window = new BrowserWindow(getWindowOptionsForPlatform())
   const id = asWindowId(randomUUID())
-  const record: WindowRecord = { closeApproved: false, id, window }
+  const record: WindowRecord = { closeApproved: false, id, kind, window }
   windowsByContents.set(window.webContents.id, record)
   owners.open(id)
   secureWebContents(window.webContents)
   bindWindowEvents(record)
+  if (initialFolder) {
+    const accepted = await acceptWorkspaceRoot(record, initialFolder)
+    if (accepted.kind !== 'added' && accepted.kind !== 'duplicate') {
+      record.closeApproved = true
+      window.destroy()
+      throw new Error('Workspace root could not be opened')
+    }
+  }
   const ready = new Promise<void>((resolve) => window.once('ready-to-show', () => resolve()))
   await window.loadURL(`${APP_ORIGIN}/`)
   await ready
@@ -167,18 +195,32 @@ export async function runRealFsRoundTrip(directory: string, payload: string): Pr
   return { cleaned, payload: decoded }
 }
 
+async function openFolderForShellTest(): Promise<void> {
+  const focused = BrowserWindow.getFocusedWindow()
+  await openFolderWorkspace(focused ? windowsByContents.get(focused.webContents.id) : undefined)
+}
+
 async function start(): Promise<void> {
   await app.whenReady()
   await registerApplicationProtocol()
+  await initializeSettings()
   registerSecurityPolicy()
   registerIpcHandlers()
-  installApplicationMenu(normalizePlatform(process.platform), dispatchDocumentCommand)
+  installApplicationMenu(normalizePlatform(process.platform), dispatchApplicationCommand)
   if (BrowserWindow.getAllWindows().length === 0) await createMarkzenWindow()
 }
 
-function dispatchDocumentCommand(command: DocumentCommand): void {
+function dispatchApplicationCommand(command: ApplicationCommand): void {
   const focused = BrowserWindow.getFocusedWindow()
   const record = focused ? windowsByContents.get(focused.webContents.id) : undefined
+  if (command === 'open-folder') {
+    void openFolderWorkspace(record)
+    return
+  }
+  if (command === 'add-folder') {
+    if (record?.kind === 'workspace') void addFolderToWorkspace(record)
+    return
+  }
   if (record && !record.window.isDestroyed()) {
     record.window.webContents.send(channels.documentCommand, command)
     return
@@ -199,6 +241,7 @@ function updateMenuEnablement(): void {
   const state = record ? menuStates.get(record.id) : undefined
   const active = state?.tabs.find((tab) => tab.tabId === state.activeTabId)
   const enabled: Readonly<Record<string, boolean>> = {
+    'add-folder': record?.kind === 'workspace',
     'close-tab': Boolean(state?.tabs.length),
     'close-window': Boolean(record),
     save: Boolean(active?.dirty),
@@ -223,6 +266,7 @@ function getApplicationMenuSnapshot(platform: PlatformName): unknown {
 }
 
 const getDocumentWatcherCount = (): number => documentWatchers.size
+const getWorkspaceWatcherCount = (): number => workspaceRoots.activeWatchCount()
 const getDirtyDocumentCount = (): number => [...documents.values()].filter((document) => document.dirty).length
 
 function registerSecurityPolicy(): void {
@@ -234,7 +278,15 @@ function registerIpcHandlers(): void {
   if (handlersRegistered) return
   handlersRegistered = true
   ipcMain.handle(channels.bootstrap, (event, payload) => withWindow(event, payload, (record) => ok<BootstrapPayload>({
+    kind: record.kind,
     platformName: normalizePlatform(process.platform),
+    roots: workspaceRoots.values(record.id).map((root) => ({
+      entries: workspaceSnapshots.get(rootKey(record.id, root.rootId)) ?? [],
+      path: root.path,
+      rootId: root.rootId,
+    })),
+    settings: settingsService?.snapshot() ?? DEFAULT_SETTINGS,
+    ...(settingsWarning ? { settingsWarning } : {}),
     state: windowState(record.window),
     windowId: record.id,
   })))
@@ -242,6 +294,82 @@ function registerIpcHandlers(): void {
     const tabId = asTabId(randomUUID())
     documents.set(tabId, { generation: 0, tabId, windowId: record.id })
     return ok(tabId)
+  }))
+  ipcMain.handle(channels.settingsPatch, (event, payload) => withAuthorizedWindow(event, () => {
+    const service = settingsService
+    return service ? service.patch(payload) : fail('unavailable')
+  }))
+  ipcMain.handle(channels.settingsRetry, (event, payload) => withWindow(event, payload, () => {
+    settingsService?.retry()
+    return ok(undefined)
+  }))
+  ipcMain.handle(channels.workspaceAddFolder, (event, payload) => withWindow(event, payload, async (record) => {
+    if (record.kind !== 'workspace') return fail('ownership')
+    return ok(await addFolderToWorkspace(record))
+  }))
+  ipcMain.handle(channels.workspaceList, (event, payload) => withAuthorizedWindow(event, async (record) => {
+    if (record.kind !== 'workspace') return fail('ownership')
+    const parsed = validateWorkspaceEntryRequest(payload)
+    if (!parsed.ok) return parsed
+    const root = workspaceRoots.authorize(record.id, parsed.value.rootId)
+    if (!root.ok) return root
+    if (!acceptWorkspaceGeneration(record.id, parsed.value.rootId, `list:${parsed.value.relativePath}`, parsed.value.generation)) return fail('stale')
+    const resolved = await resolveWorkspacePath(root.value.path, root.value.fileKey, parsed.value.relativePath, 'directory')
+    if (!resolved.ok) return resolved
+    const listed = await new RealFileSystem().list(resolved.value.logical)
+    if (!listed.ok) return listed
+    if (!isWorkspaceGenerationCurrent(record.id, parsed.value.rootId, `list:${parsed.value.relativePath}`, parsed.value.generation)) return fail('stale')
+    if (record.window.isDestroyed() || !workspaceRoots.get(record.id, parsed.value.rootId)) return fail('ownership')
+    workspaceSnapshots.set(rootKey(record.id, root.value.rootId), listed.value)
+    return ok(listed.value)
+  }))
+  ipcMain.handle(channels.workspaceOpen, (event, payload) => withAuthorizedWindow(event, async (window) => {
+    if (window.kind !== 'workspace') return fail('ownership')
+    const request = validateWorkspaceOpenRequest(payload)
+    if (!request.ok) return request
+    const root = workspaceRoots.authorize(window.id, request.value.rootId)
+    const document = documents.get(request.value.tabId)
+    if (!root.ok || !document || document.windowId !== window.id) return fail('ownership')
+    if (!acceptWorkspaceGeneration(window.id, request.value.rootId, `open:${request.value.tabId}`, request.value.generation)) return fail('stale')
+    const resolved = await resolveWorkspacePath(root.value.path, root.value.fileKey, request.value.relativePath, 'file')
+    if (!isWorkspaceGenerationCurrent(window.id, request.value.rootId, `open:${request.value.tabId}`, request.value.generation)) return fail('stale')
+    if (!resolved.ok || resolved.value.fileKey !== request.value.fileKey) {
+      releaseRecordIdentity(document)
+      return fail(resolved.ok ? 'stale' : resolved.error.code)
+    }
+    const read = await new RealFileSystem().read(resolved.value.logical)
+    if (!isWorkspaceGenerationCurrent(window.id, request.value.rootId, `open:${request.value.tabId}`, request.value.generation)) return fail('stale')
+    if (!read.ok || read.value.fileKey !== request.value.fileKey || !isContained(root.value.fileKey, read.value.fileKey)) {
+      releaseRecordIdentity(document)
+      return fail(read.ok ? 'stale' : read.error.code)
+    }
+    if (window.window.isDestroyed() || documents.get(request.value.tabId) !== document) return fail('ownership')
+    const owner = ownerOf(document)
+    const transition = document.fileKey
+      ? documentRegistry.replace(document.fileKey, read.value.fileKey, owner)
+      : documentRegistry.claim(read.value.fileKey, owner)
+    if (!transition.ok) {
+      const existing = documentRegistry.owner(read.value.fileKey)
+      if (existing) focusDocumentOwner(existing)
+      return ok<DocumentIntentOutcome>({ kind: 'collision' })
+    }
+    adoptRecord(document, read.value)
+    document.displayPath = resolved.value.logical
+    watchDocument(document)
+    return ok<DocumentIntentOutcome>({
+      file: filePayload(document, { ...read.value, path: resolved.value.logical }),
+      kind: 'opened',
+    })
+  }))
+  ipcMain.handle(channels.workspaceRetryRoot, (event, payload) => withAuthorizedWindow(event, async (record) => {
+    const request = validateWorkspaceRetryRequest(payload)
+    if (!request.ok || record.kind !== 'workspace') return request.ok ? fail('ownership') : request
+    const root = workspaceRoots.authorize(record.id, request.value.rootId)
+    if (!root.ok) return root
+    if (!acceptWorkspaceGeneration(record.id, request.value.rootId, 'retry-root', request.value.generation)) return fail('stale')
+    const refreshed = await refreshWorkspaceRoot(record, root.value.rootId)
+    if (!isWorkspaceGenerationCurrent(record.id, request.value.rootId, 'retry-root', request.value.generation)) return fail('stale')
+    return ok(refreshed)
   }))
   ipcMain.handle(channels.documentOpen, (event, payload) => withDocument(event, 'open', payload, async (record, window) => {
     const selected = await dialog.showOpenDialog(window.window, {
@@ -374,6 +502,268 @@ function registerIpcHandlers(): void {
     record.window.close()
     return ok(undefined)
   }))
+}
+
+async function initializeSettings(): Promise<void> {
+  const store = new SettingsFileStore(app.getPath('userData'))
+  await store.recover().catch(() => undefined)
+  const read = await store.read()
+  let initial: SettingsLoadResult | undefined
+  if (read.kind === 'loaded') {
+    initial = parseSettings(read.raw)
+    if ('corrupt' in initial) {
+      await store.quarantineCorrupt().catch(() => undefined)
+      settingsWarning = 'Settings could not be loaded; defaults are in use.'
+    } else if ('newer' in initial) settingsWarning = 'Settings were created by a newer Markzen version; defaults are in use.'
+    else if ('invalid' in initial) settingsWarning = 'Settings could not be loaded; defaults are in use.'
+  } else if (read.kind === 'oversized') {
+    initial = { oversized: true, snapshot: DEFAULT_SETTINGS }
+    settingsWarning = 'Settings are too large to load; defaults are in use.'
+  } else if (read.kind === 'error') {
+    initial = { invalid: true, snapshot: DEFAULT_SETTINGS }
+    settingsWarning = 'Settings could not be read; defaults are in use.'
+  }
+  settingsService = new SettingsService({
+    ...(initial ? { initial } : {}),
+    onPersistenceWarning: (active) => {
+      settingsWarning = active ? 'Settings could not be saved. Your current preference remains active.' : undefined
+      for (const record of windowsByContents.values()) {
+        if (!record.window.isDestroyed()) record.window.webContents.send(channels.settingsWarning, settingsWarning)
+      }
+    },
+    write: (bytes) => store.write(bytes),
+  })
+  settingsService.subscribe((snapshot) => {
+    for (const record of windowsByContents.values()) {
+      if (!record.window.isDestroyed()) record.window.webContents.send(channels.settingsSnapshot, snapshot)
+    }
+  })
+}
+
+async function openFolderWorkspace(source: WindowRecord | undefined): Promise<void> {
+  const key = source?.id ?? 'no-focused-window'
+  if (pendingFolderWindows.has(key)) return
+  pendingFolderWindows.add(key)
+  try {
+    const options = { properties: ['openDirectory'] as ['openDirectory'], title: 'Open Folder' }
+    const selected = source ? await dialog.showOpenDialog(source.window, options) : await dialog.showOpenDialog(options)
+    const selectedPath = selected.filePaths[0]
+    if (selected.canceled || !selectedPath) return
+    if (source && (source.window.isDestroyed() || ![...windowsByContents.values()].includes(source))) return
+    const pristine = source ? isPristineWindow(source) : false
+    try {
+      await createMarkzenWindow('workspace', asPath(selectedPath))
+      if (source && pristine && !source.window.isDestroyed()) {
+        source.closeApproved = true
+        source.window.close()
+      }
+    } catch {
+      const message = `The folder could not be opened: ${nodePath.basename(selectedPath)}`
+      if (source && !source.window.isDestroyed()) await dialog.showMessageBox(source.window, { message, type: 'error' })
+      else await dialog.showMessageBox({ message, type: 'error' })
+    }
+  } finally {
+    pendingFolderWindows.delete(key)
+  }
+}
+
+async function addFolderToWorkspace(record: WindowRecord): Promise<WorkspaceRootOutcome> {
+  const key = record.id
+  if (pendingFolderWindows.has(key)) return { kind: 'error' }
+  pendingFolderWindows.add(key)
+  try {
+    const selected = await dialog.showOpenDialog(record.window, { properties: ['openDirectory'], title: 'Add Folder' })
+    const selectedPath = selected.filePaths[0]
+    if (selected.canceled || !selectedPath) return { kind: 'cancelled' }
+    if (record.window.isDestroyed() || ![...windowsByContents.values()].includes(record)) return { kind: 'error' }
+    const outcome = await acceptWorkspaceRoot(record, asPath(selectedPath))
+    if (outcome.kind === 'added' || outcome.kind === 'duplicate') {
+      record.window.webContents.send(channels.workspaceEvent, { generation: Date.now(), kind: 'root-added', root: outcome.root })
+      return outcome
+    }
+    await dialog.showMessageBox(record.window, {
+      message: `The folder could not be added: ${nodePath.basename(selectedPath)}`,
+      type: 'error',
+    })
+    return { kind: 'error' }
+  } finally {
+    pendingFolderWindows.delete(key)
+  }
+}
+
+async function acceptWorkspaceRoot(record: WindowRecord, logicalPath: Path): Promise<WorkspaceRootOutcome> {
+  if (record.kind !== 'workspace') return { kind: 'error' }
+  const fs = new RealFileSystem()
+  const canonical = await fs.canonicalize(logicalPath)
+  if (!canonical.ok) return { kind: 'error' }
+  const metadata = await fs.stat(logicalPath)
+  if (!metadata.ok || metadata.value.kind !== 'directory') return { kind: 'error' }
+  const listed = await fs.list(logicalPath)
+  if (!listed.ok) return { kind: 'error' }
+  const accepted = workspaceRoots.accept(record.id, logicalPath, canonical.value.fileKey)
+  const key = rootKey(record.id, accepted.root.rootId)
+  if (accepted.kind === 'accepted') {
+    workspaceSnapshots.set(key, listed.value)
+    startWorkspaceWatch(record, accepted.root.rootId, logicalPath)
+  }
+  const entries = workspaceSnapshots.get(key) ?? listed.value
+  return {
+    kind: accepted.kind === 'accepted' ? 'added' : 'duplicate',
+    root: { entries, path: accepted.root.path, rootId: accepted.root.rootId },
+  }
+}
+
+function startWorkspaceWatch(record: WindowRecord, rootId: RootId, logicalPath: Path): void {
+  let pendingRelativePath: string | undefined
+  const batcher = new WorkspaceWatchBatcher(() => {
+    const relativePath = pendingRelativePath ?? ''
+    pendingRelativePath = undefined
+    void routeWorkspaceInvalidation(record, rootId, relativePath)
+  })
+  const watcher = watch(String(logicalPath), { followSymlinks: false, ignoreInitial: true, persistent: true })
+  watcher.on('all', (_event, changedPath) => {
+    const relative = nodePath.relative(String(logicalPath), String(changedPath)).replaceAll(nodePath.sep, '/')
+    if (WorkspaceWatchBatcher.isVisibleInvalidation(relative)) {
+      const parent = nodePath.posix.dirname(relative)
+      const candidate = parent === '.' ? '' : parent
+      pendingRelativePath = pendingRelativePath === undefined ? candidate : commonLogicalAncestor(pendingRelativePath, candidate)
+      batcher.invalidate()
+    }
+  })
+  watcher.on('error', () => {
+    if (!record.window.isDestroyed()) record.window.webContents.send(channels.workspaceEvent, {
+      generation: nextWorkspaceGeneration(record.id, rootId, 'watch-error'),
+      kind: 'watch-warning',
+      rootId,
+    })
+  })
+  workspaceRoots.attachWatch(record.id, rootId, () => {
+    batcher.dispose()
+    void watcher.close()
+  })
+}
+
+async function routeWorkspaceInvalidation(record: WindowRecord, rootId: RootId, relativePath: string): Promise<void> {
+  const root = workspaceRoots.get(record.id, rootId)
+  if (!root || record.window.isDestroyed()) return
+  const listed = await new RealFileSystem().list(root.path)
+  if (record.window.isDestroyed() || !workspaceRoots.get(record.id, rootId)) return
+  const generation = nextWorkspaceGeneration(record.id, rootId, 'watch')
+  if (!listed.ok) {
+    record.window.webContents.send(channels.workspaceEvent, { generation, kind: 'root-error', rootId })
+    return
+  }
+  workspaceSnapshots.set(rootKey(record.id, rootId), listed.value)
+  record.window.webContents.send(channels.workspaceEvent, {
+    generation,
+    kind: 'invalidated',
+    relativePath,
+    rootId,
+  })
+}
+
+function commonLogicalAncestor(first: string, second: string): string {
+  if (!first || !second) return ''
+  const left = first.split('/')
+  const right = second.split('/')
+  const common: string[] = []
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    if (left[index] !== right[index]) break
+    common.push(left[index]!)
+  }
+  return common.join('/')
+}
+
+async function refreshWorkspaceRoot(record: WindowRecord, rootId: RootId): Promise<WorkspaceRootOutcome> {
+  const root = workspaceRoots.get(record.id, rootId)
+  if (!root) return { kind: 'error' }
+  const listed = await new RealFileSystem().list(root.path)
+  if (!listed.ok) return { kind: 'error' }
+  workspaceSnapshots.set(rootKey(record.id, rootId), listed.value)
+  startWorkspaceWatch(record, rootId, root.path)
+  return { kind: 'duplicate', root: { entries: listed.value, path: root.path, rootId } }
+}
+
+type WorkspaceOpenRequest = {
+  readonly fileKey: FileKey
+  readonly generation: number
+  readonly relativePath: string
+  readonly rootId: RootId
+  readonly tabId: TabId
+}
+
+function validateWorkspaceOpenRequest(value: unknown): PlatformResult<WorkspaceOpenRequest> {
+  if (!isRecord(value) || Object.keys(value).sort().join(',') !== 'fileKey,generation,relativePath,rootId,tabId') return fail('validation')
+  const entry = validateWorkspaceEntryRequest({ generation: value.generation, relativePath: value.relativePath, rootId: value.rootId })
+  if (
+    !entry.ok ||
+    typeof value.fileKey !== 'string' || value.fileKey.length < 1 || value.fileKey.length > 4_096 || value.fileKey.includes('\0') ||
+    typeof value.tabId !== 'string' || value.tabId.length < 1 || value.tabId.length > 128
+  ) return fail('validation')
+  return ok({ ...entry.value, fileKey: value.fileKey as FileKey, tabId: asTabId(value.tabId) })
+}
+
+function validateWorkspaceRetryRequest(value: unknown): import('../contracts').PlatformResult<{ readonly generation: number; readonly rootId: RootId }> {
+  if (!isRecord(value) || Object.keys(value).sort().join(',') !== 'generation,rootId') return fail('validation')
+  if (!Number.isSafeInteger(value.generation) || (value.generation as number) < 0 || typeof value.rootId !== 'string') return fail('validation')
+  return ok({ generation: value.generation as number, rootId: asRootId(value.rootId) })
+}
+
+async function resolveWorkspacePath(
+  rootPath: Path,
+  rootKeyValue: FileKey,
+  relativePath: string,
+  kind: 'directory' | 'file',
+): Promise<import('../contracts').PlatformResult<{ readonly fileKey: FileKey; readonly logical: Path }>> {
+  const logical = asPath(relativePath ? nodePath.join(String(rootPath), ...relativePath.split('/')) : String(rootPath))
+  const fs = new RealFileSystem()
+  const canonical = await fs.canonicalize(logical)
+  if (!canonical.ok) return canonical
+  if (!isContained(rootKeyValue, canonical.value.fileKey)) return fail('ownership')
+  const metadata = await fs.stat(logical)
+  if (!metadata.ok) return metadata
+  if (metadata.value.kind !== kind) return fail(kind === 'file' ? 'not-file' : 'not-directory')
+  return ok({ fileKey: canonical.value.fileKey, logical })
+}
+
+function isContained(root: FileKey, candidate: FileKey): boolean {
+  const relative = nodePath.relative(String(root), String(candidate))
+  return relative === '' || (!relative.startsWith(`..${nodePath.sep}`) && relative !== '..' && !nodePath.isAbsolute(relative))
+}
+
+function acceptWorkspaceGeneration(windowId: WindowId, rootId: RootId, operation: string, generation: number): boolean {
+  const key = `${windowId}:${rootId}:${operation}`
+  const current = workspaceGenerations.get(key) ?? -1
+  if (generation < current) return false
+  workspaceGenerations.set(key, generation)
+  return true
+}
+
+function isWorkspaceGenerationCurrent(windowId: WindowId, rootId: RootId, operation: string, generation: number): boolean {
+  return workspaceGenerations.get(`${windowId}:${rootId}:${operation}`) === generation
+}
+
+function nextWorkspaceGeneration(windowId: WindowId, rootId: RootId, operation: string): number {
+  const key = `${windowId}:${rootId}:${operation}`
+  const next = (workspaceGenerations.get(key) ?? 0) + 1
+  workspaceGenerations.set(key, next)
+  return next
+}
+
+function rootKey(windowId: WindowId, rootId: RootId): string {
+  return `${windowId}:${rootId}`
+}
+
+function isPristineWindow(record: WindowRecord): boolean {
+  const state = menuStates.get(record.id)
+  const tab = state?.tabs[0]
+  if (!state || state.tabs.length !== 1 || !tab || tab.dirty) return false
+  const document = documents.get(tab.tabId)
+  return Boolean(document && !document.fileKey)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function scheduleDocumentSave(task: MainSaveTask): Promise<MainSaveResult> {
@@ -586,19 +976,37 @@ function releaseRecordIdentity(record: MainDocumentRecord): void {
   delete record.fileKey
   delete record.path
   delete record.diskVersion
+  delete record.displayPath
+  delete record.secondaryPath
 }
 
 function adoptRecord(record: MainDocumentRecord, file: { readonly diskVersion: DiskVersion; readonly fileKey: FileKey; readonly path: Path }): void {
   record.diskVersion = file.diskVersion
   record.fileKey = file.fileKey
   record.path = file.path
+  const context = workspaceSecondaryPath(record.windowId, file.path)
+  if (context) record.secondaryPath = context
+  else delete record.secondaryPath
 }
 
 function filePayload(
   record: MainDocumentRecord,
   file: { readonly bytes: Uint8Array; readonly diskVersion: DiskVersion; readonly fileKey: FileKey; readonly path: Path },
 ): DocumentFilePayload {
-  return { ...file, tabId: record.tabId }
+  return {
+    ...file,
+    path: record.displayPath ?? file.path,
+    ...(record.secondaryPath ? { secondaryPath: record.secondaryPath } : {}),
+    tabId: record.tabId,
+  }
+}
+
+function workspaceSecondaryPath(windowId: WindowId, canonicalFile: Path): string | undefined {
+  const root = selectContainingRoot(workspaceRoots.values(windowId), canonicalFile)
+  if (!root) return undefined
+  const relative = nodePath.relative(String(root.fileKey), String(canonicalFile)).replaceAll(nodePath.sep, '/')
+  const directory = nodePath.posix.dirname(relative)
+  return directory === '.' || directory === '/' ? undefined : directory
 }
 
 function isWriteRequest(value: DocumentIdentityRequest | DocumentWriteRequest): value is DocumentWriteRequest {
@@ -717,6 +1125,7 @@ function validQuitCompletion(payload: unknown): payload is { readonly success: b
 }
 
 async function guardQuit(): Promise<void> {
+  await settingsService?.flush(2_000)
   const dirty = [...documents.values()].filter((document) => document.dirty)
   if (dirty.length === 0) {
     allowQuit = true
@@ -816,6 +1225,11 @@ function bindWindowEvents(record: WindowRecord): void {
       }
     }
     windowsByContents.delete(contentsId)
+    for (const root of workspaceRoots.values(record.id)) {
+      const key = rootKey(record.id, root.rootId)
+      workspaceSnapshots.delete(key)
+    }
+    workspaceRoots.disposeWindow(record.id)
     menuStates.delete(record.id)
     owners.dispose(record.id)
   })
@@ -839,10 +1253,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', (event) => {
   if (allowQuit) return
-  if (![...documents.values()].some((document) => document.dirty)) {
-    allowQuit = true
-    return
-  }
   event.preventDefault()
   if (quitGuardRunning) return
   quitGuardRunning = true
@@ -856,7 +1266,7 @@ app.on('activate', () => {
 Object.defineProperty(app, 'markzenShellHarness', {
   configurable: false,
   enumerable: false,
-  value: Object.freeze({ createMarkzenWindow, emitWindowStateForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentWatcherCount, getWindowOptionsForPlatform, runRealFsRoundTrip }),
+  value: Object.freeze({ createMarkzenWindow, emitWindowStateForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentWatcherCount, getWindowOptionsForPlatform, getWorkspaceWatcherCount, openFolderForShellTest, runRealFsRoundTrip }),
   writable: false,
 })
 

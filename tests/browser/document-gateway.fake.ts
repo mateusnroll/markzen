@@ -5,6 +5,7 @@ import type {
   OpenOutcome,
   SaveInput,
   SaveOutcome,
+  WorkspaceOpenInput,
 } from '../../src/documents/gateway'
 
 export class FakeDocumentGateway implements DocumentGatewayPort {
@@ -18,6 +19,10 @@ export class FakeDocumentGateway implements DocumentGatewayPort {
   async completeQuitSaveAll(): Promise<void> {}
   async createTabId(): Promise<string> { return `browser-${this.#nextTab++}` }
   async open(): Promise<OpenOutcome> { return { kind: 'cancelled' } }
+  async openWorkspace(input: WorkspaceOpenInput): Promise<OpenOutcome> {
+    void input
+    return { kind: 'error' }
+  }
   onCommand(): () => void { return () => undefined }
   emitExternal(event: ExternalGatewayEvent): void {
     for (const listener of this.#externalListeners) listener(event)

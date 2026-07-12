@@ -9,6 +9,7 @@ import {
   type DiskVersion,
   type DialogPort,
   type DialogResult,
+  type DirectoryEntry,
   type FileRead,
   type FileStat,
   type FileSystemPort,
@@ -47,6 +48,9 @@ type WindowRecord = {
 
 export type MemoryPlatformHarness = {
   externalWrite(path: string, bytes: Uint8Array): Promise<void>
+  activeWatchCount(): number
+  emitWatch(path: string): void
+  failWatch(path: string): void
   fileCount(): number
   hardlink(path: string, target: string): void
   mkdir(path: string): void
@@ -77,6 +81,9 @@ export function createMemoryPlatform(options: MemoryPlatformOptions): {
         if (!result.ok) throw new Error(`External write failed: ${result.error.code}`)
         watches.invalidate(validated.value)
       },
+      activeWatchCount: () => watches.activeCount(),
+      emitWatch: (path) => watches.invalidate(fileSystem.mustPath(path)),
+      failWatch: (path) => watches.fail(fileSystem.mustPath(path)),
       fileCount: () => fileSystem.fileCount(),
       hardlink: (path, target) => fileSystem.hardlink(path, target),
       mkdir: (path) => fileSystem.mkdir(path),
@@ -98,20 +105,39 @@ export function createMemoryPlatform(options: MemoryPlatformOptions): {
 }
 
 class MemoryWatchPort implements WatchPort {
+  readonly #errors = new Map<string, Set<() => void>>()
   readonly #listeners = new Map<string, Set<() => void>>()
 
-  invalidate(path: Path): void {
-    for (const listener of this.#listeners.get(String(path)) ?? []) queueMicrotask(listener)
+  fail(path: Path): void {
+    for (const listener of this.#errors.get(String(path)) ?? []) listener()
   }
 
-  subscribe(path: Path, listener: () => void): () => void {
+  invalidate(path: Path): void {
+    const changed = String(path).replaceAll('\\', '/')
+    for (const [registered, listeners] of this.#listeners) {
+      const root = registered.replaceAll('\\', '/')
+      if (changed !== root && !changed.startsWith(root.endsWith('/') ? root : `${root}/`)) continue
+      for (const listener of listeners) listener()
+    }
+  }
+
+  activeCount(): number {
+    return [...this.#listeners.values()].reduce((total, listeners) => total + listeners.size, 0)
+  }
+
+  subscribe(path: Path, listener: () => void, onError: () => void): () => void {
     const key = String(path)
     const listeners = this.#listeners.get(key) ?? new Set()
     listeners.add(listener)
     this.#listeners.set(key, listeners)
+    const errors = this.#errors.get(key) ?? new Set()
+    errors.add(onError)
+    this.#errors.set(key, errors)
     return () => {
       listeners.delete(listener)
       if (listeners.size === 0) this.#listeners.delete(key)
+      errors.delete(onError)
+      if (errors.size === 0) this.#errors.delete(key)
     }
   }
 }
@@ -194,6 +220,45 @@ class MemoryFileSystem implements FileSystemPort {
     if (!prepared.value.parent.access.writable) return fail('permission-denied')
     this.#entries.set(this.#key(prepared.value.path), file(prepared.value.path, bytes))
     return ok(undefined)
+  }
+
+  async list(path: Path): Promise<PlatformResult<readonly DirectoryEntry[], FsFailureCode>> {
+    const resolved = this.#resolveValidated(path, false)
+    if (!resolved.ok) return resolved
+    const directoryEntry = resolved.value.entry
+    if (!directoryEntry) return fail('not-found')
+    if (directoryEntry.unavailable) return fail('unavailable')
+    if (directoryEntry.kind !== 'directory') return fail('not-directory')
+    if (!directoryEntry.access.readable) return fail('permission-denied')
+    const parent = resolved.value.path
+    const prefix = parent.endsWith('/') ? parent : `${parent}/`
+    const values: DirectoryEntry[] = []
+    for (const candidate of this.#entries.values()) {
+      if (!candidate.path.startsWith(prefix)) continue
+      const suffix = candidate.path.slice(prefix.length)
+      if (!suffix || suffix.includes('/')) continue
+      if (candidate.kind === 'symlink') {
+        const target = this.#resolve(candidate.target, false)
+        if (!target.ok || !target.value.entry) continue
+        const targetEntry = target.value.entry
+        const targetKind = targetEntry.kind === 'directory' ? 'directory-symlink' : 'file-symlink'
+        values.push({
+          fileKey: asFileKey(this.#key(target.value.path)),
+          kind: targetKind,
+          name: suffix,
+          path: asPath(this.#external(candidate.path)),
+        })
+      } else {
+        values.push({
+          fileKey: asFileKey(this.#key(candidate.path)),
+          kind: candidate.kind,
+          name: suffix,
+          path: asPath(this.#external(candidate.path)),
+        })
+      }
+    }
+    this.operationCount += 1
+    return ok(values)
   }
 
   fileCount(): number {
@@ -333,6 +398,10 @@ class MemoryFileSystem implements FileSystemPort {
     }
     if (!/^[A-Za-z]:[\\/]/.test(value)) return fail('invalid-path')
     return ok(asPath(cleanSeparators(value.replaceAll('/', '\\'), '\\')))
+  }
+
+  mustPath(value: string): Path {
+    return this.#mustValidate(value)
   }
 
   #external(value: string): string {

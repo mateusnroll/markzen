@@ -1,0 +1,148 @@
+.workspace-sidebar {
+  position: relative;
+  display: flex;
+  min-width: 96px;
+  min-height: 0;
+  flex: none;
+  border-right: 1px solid #d5d0c8;
+  background: #ebe7e1;
+  transition: width 120ms ease;
+}
+
+.workspace-tree-scroll {
+  min-width: 0;
+  flex: 1;
+  overflow: auto;
+  user-select: none;
+}
+
+.workspace-root-header,
+.workspace-tree-row {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.workspace-root-header {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  padding: 7px 10px;
+  overflow: hidden;
+  background: #ebe7e1;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-tree-row {
+  display: flex;
+  height: 28px;
+  align-items: center;
+  gap: 5px;
+  padding-block: 0;
+  padding-right: 8px;
+  overflow: hidden;
+}
+
+.workspace-tree-row:hover,
+.workspace-tree-row:focus-visible,
+.workspace-tree-row[aria-current="page"] {
+  background: #dcd6cf;
+}
+
+.workspace-tree-row:focus-visible,
+.workspace-root-header:focus-visible,
+.workspace-splitter:focus-visible {
+  outline: 2px solid #1769aa;
+  outline-offset: -2px;
+}
+
+.workspace-tree-row[aria-disabled="true"] {
+  color: #716c66;
+  opacity: 0.65;
+}
+
+.workspace-tree-icon {
+  width: 14px;
+  flex: none;
+  text-align: center;
+}
+
+.workspace-tree-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-row-error {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.workspace-assistive {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.workspace-splitter {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.workspace-splitter:hover,
+.workspace-splitter:focus-visible {
+  background: #1769aa;
+}
+
+.workspace-sidebar[data-reduced-motion="true"] {
+  transition-duration: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-sidebar {
+    transition-duration: 0s;
+  }
+}
+
+@media (forced-colors: active) {
+  .workspace-sidebar,
+  .workspace-root-header,
+  .workspace-tree-row,
+  .workspace-splitter {
+    border-color: CanvasText;
+    color: CanvasText;
+    background: Canvas;
+    forced-color-adjust: none;
+  }
+
+  .workspace-tree-row[aria-current="page"] {
+    color: HighlightText;
+    background: Highlight;
+  }
+
+  .workspace-tree-row[aria-disabled="true"] {
+    color: GrayText;
+    opacity: 1;
+  }
+}

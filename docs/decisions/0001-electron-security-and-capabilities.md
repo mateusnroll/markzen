@@ -32,6 +32,10 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - Document request schemas reject unknown keys, wrong primitive/container types, oversized byte payloads, and stale generations. Sender validation runs before these schemas so malformed payloads cannot be used to probe owner state.
 - Open and Save As paths originate in main-owned native dialogs. Renderer-provided display paths never select a read or write destination. Results and watcher events are delivered only through the registered owning frame.
 - After the renderer registers its document state, native `BrowserWindow` close events are prevented and routed to the owning renderer's existing Close Window guard. The main process permits the subsequent close only through that sender-authorized window intent, while pre-registration startup teardown and an already-approved app-wide Quit bypass the per-window guard.
+- Workspace and settings capabilities remain individual application intents. The main process derives a registered `single-file` or `workspace` window kind from the validated sender, allocates every `RootId`, validates closed payloads only after sender validation, and resolves renderer correlation values against live window/root/tab generations before any dialog, list, read, watch, registry, settings, or focus operation.
+- Directory results expose only logical entry data plus opaque FileKeys. Preview activation revalidates current canonical containment under the registered root; forged relative paths, traversal, stale snapshots, foreign RootIds, and symlinks resolving outside the root fail without disclosing canonical target paths.
+- Settings patches use a closed size-bounded schema. Unknown runtime keys, extra properties, invalid values, dangerous object keys, and renderer-selected revisions or destinations are rejected before the main-owned settings service mutates or broadcasts state.
+- Workspace list, preview, watcher, settings, readiness, error, and registry events route only to the live frame registered for their captured owner and generation, and contain the minimum logical data required by that renderer.
 
 ### Platform and identity
 

@@ -9,3 +9,6 @@ Accepted architecture decisions for the Electron rewrite live here. Specs define
 | [0003](0003-markdown-serialization-integrity.md) | Accepted | TipTap Markdown semantic models, source coverage, opaque nodes, and preservation fallback |
 | [0004](0004-tab-state-and-persistence-scheduling.md) | Accepted | Per-tab editor ownership, revisions, baseline equality, IME boundaries, and save scheduling |
 | [0005](0005-document-watching-and-conflicts.md) | Accepted | Exact-document watching, invalidation, self-event correlation, and external-change conflicts |
+| [0006](0006-workspace-identity-and-invalidation.md) | Accepted | Root identity, batched listing, preview ownership replacement, symlink containment, and watcher invalidation |
+| [0007](0007-settings-persistence.md) | Accepted | Main-owned settings schema, revisions, atomic persistence, recovery, retry, and quit flushing |
+| [0008](0008-accessible-windowed-workspace-tree.md) | Accepted | Accessible tree windowing, responsive sidebar behavior, and non-blocking performance measurement |

@@ -19,6 +19,10 @@ Testability hook for the eventual spec: electron-updater's *generic* provider ca
 
 Raw-Markdown editing in CodeMirror 6, toggled per-tab with Cmd/Ctrl+E. Designed in old ADR 0004 (sync rules: hand off content only on mode switch, independent undo stacks, malformed Markdown must not throw) but **never built** — no CodeMirror dependency ever landed.
 
+## Additional tree file types
+
+Milestone 0003 deliberately shows unsupported file types as subdued, disabled tree rows so folder context remains visible, but opens only `.md`, `.markdown`, and `.txt`. A later spec should classify additional text and binary formats as view-only or light-editing documents, define safe decoding/size limits and save eligibility per type, and replace each row's disabled state only when its document lifecycle and loss-prevention behavior are approved.
+
 ## Fuzzy file finder & tab quick switcher
 
 Cmd/Ctrl+P subsequence matching (VS Code style) over a flat list of all Markdown files in the folder, plus a tab switcher modal. Old ADR 0011 chose `fuzzysort` and specified the flat-list scan kept fresh by the watcher; never built. Multi-root workspaces (milestone 0003) mean the flat list spans all roots.
@@ -29,7 +33,7 @@ Search across body text of all files in the open folder with ranking and excerpt
 
 ## Expanded settings
 
-Font family/size, line width, auto-save (+ delay), spell check. Old ADR 0013 designed the persistence format for all of these; the rewrite milestones implement only theme, toolbar mode, and sidebar width. The settings service in milestone 0003 accommodates future keys; each becomes a small spec. Auto-save is behavior-heavy because it must extend milestone 0002's dirty-state, save-transaction, and pending-rename rules.
+Font family/size, line width, auto-save (+ delay), spell check. Old ADR 0013 designed the persistence format for all of these; the rewrite milestones implement only theme, toolbar mode, and sidebar width. Each later approved setting directly extends milestone 0003's closed typed schema rather than using a generic registry. Auto-save is behavior-heavy because it must extend milestone 0002's dirty-state, save-transaction, and pending-rename rules.
 
 ## Internal and fragment link navigation
 

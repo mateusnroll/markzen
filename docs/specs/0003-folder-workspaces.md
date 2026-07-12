@@ -1,6 +1,6 @@
 # Spec 0003: Folder Workspaces
 
-**Status:** Draft   **Date:** 2026-07
+**Status:** Implemented   **Date:** 2026-07
 **Origin:** Consolidates draft specs 0005–0007 and selected behavior from drafts 0011 and 0014. Old-repo sources: `folderOperations.ts`, `fileSystemStore.ts`, `Sidebar.tsx`, `FileTree*.tsx`, `fileOperations.ts`, `tabsStore.ts`, `useFileWatcher.ts`, Rust `fs_watcher.rs`, `settingsStore.ts`, and `settingsPersistence.ts`; commits `0ee3d66`, `121b2ce`, `bb046bd`, `99daa2d`, `73ddd75`, `e89d987`, `c8a5326`, `68d2387`, and `8883f89`; old ADRs 0006, 0010, and 0013. Multi-root workspaces, canonical identities, main-process settings authority, and the async race policy are new in the rewrite.
 
 ## Problem
@@ -20,7 +20,7 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - Previewing file types other than the recognized `.md`, `.markdown`, and `.txt` document extensions.
 - More than one preview tab in a workspace.
 - Changes to milestone 0002's filename editing or on-disk rename behavior; this milestone adds only workspace-relative secondary path context to the existing editable title.
-- Theme, toolbar, font, auto-save, spell-check, or general Settings UI; the persistence core must accept future validated keys, but this milestone exposes only `sidebarWidth`.
+- Theme, toolbar, font, auto-save, spell-check, or general Settings UI; this milestone defines a closed version-1 settings service containing only `sidebarWidth`, and later approved specs extend that typed schema directly.
 - File-name fuzzy finding or full-text search.
 
 ## Terminology and constraints
@@ -30,20 +30,23 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - A **FileKey** and validated `Path` come from milestone 0001's Platform contract. This milestone never reorders lexical normalization and symlink resolution or constructs identity by string manipulation.
 - A root retains both its user-facing logical path and its canonical path. Logical paths drive labels and breadcrumbs; canonical paths drive containment, duplicate detection, watcher routing, and FileKeys.
 - Tab uniqueness is enforced by FileKey across the entire application. A request from another workspace focuses the existing owner window and tab rather than creating a second editor for the file.
-- Every asynchronous directory read, preview read, and watcher refresh carries its owning WindowId/RootId plus a monotonically increasing request generation. Results whose owner was disposed or whose generation is no longer current are ignored. Accepted settings revisions are application-service-owned and outlive the initiating window.
+- `Platform.fs.list` is one batched operation. Each returned temporary entry snapshot contains only its name, kind, logical path, and Platform-issued FileKey. Ordinary entries reuse the canonical parent established by the Platform; only symlinks require special resolution. Canonical target paths never cross into the renderer. Watcher invalidation makes affected snapshots stale, and file activation revalidates current identity, type, and canonical root containment before a read or registry transition.
+- Every asynchronous folder dialog, workspace bootstrap, directory read, preview read, and watcher refresh carries its owning WindowId/RootId plus a monotonically increasing request generation. Results whose owner was disposed or whose generation is no longer current are ignored. Accepted settings revisions are application-service-owned and outlive the initiating window.
 - Main-process filesystem access is exposed through `Platform`; renderer modules do not import Electron, Node filesystem APIs, or chokidar.
-- The real watcher backend is the main-process chokidar service introduced for exact-document watching by milestone 0002. This milestone extends it to workspace roots; raw events invalidate directory snapshots and never directly patch renderer tree nodes or document content.
+- Workspace roots extend the existing `Platform.watch` capability used for exact-document watching. The real adapter uses the already-installed chokidar backend; the memory adapter uses the existing `MemoryWatchPort`. Raw events invalidate directory snapshots and never directly patch renderer tree nodes or document content. Directory symlinks are terminal and root watches never follow them.
 - Tree rows are windowed so the DOM size is proportional to the viewport, not the number of loaded entries.
-- A single flat `settings.json` in the platform configuration directory (Electron `userData`) is owned and written only by the main process. Renderers submit validated patches and apply ordered snapshots; they never read or write the file directly.
+- A single flat version-1 `settings.json` in the platform configuration directory (Electron `userData`) is owned and written only by the main process. Renderers submit closed patches of at most 4 KiB and apply ordered snapshots; they never read or write the file directly. The service reads at most 1 MiB and preserves unknown persisted properties only when their recursive values are JSON data, their keys are not `__proto__`, `prototype`, or `constructor` at any depth, and the total file remains within that bound. There is no version-0 migration or generic schema registry.
+- Folder, root, tree-entry, preview, watcher, and settings IPC are narrow application intents. The main process validates the exact live application sender before parsing a closed payload, derives window authority from that sender, and resolves all renderer-provided IDs and generations against main-owned registrations. Renderer paths, FileKeys, RootIds, window kinds, settings keys, and event destinations never grant authority.
+- Latency measurements in this milestone run in the existing performance project outside `npm run verify`, report real directory listing separately from deterministic filtering/sorting and rendering, and remain non-blocking until a later approved spec establishes gating baselines. Deterministic behavioral bounds such as DOM row count and invalidation batch count remain blocking at their mapped layers.
 
 ## Behavior (acceptance criteria)
 
 ### Workspace windows and roots
 
-- AC1: Given the app, when the user chooses File → Open Folder… (Cmd/Ctrl+Shift+O) and selects a readable directory, then a new 1200×800 workspace window becomes ready with that directory as its first expanded root.
+- AC1: Given the app, when the user chooses File → Open Folder… (Cmd/Ctrl+Shift+O) and selects a readable directory, then a new 1200×800 workspace window becomes ready with that directory as its first expanded root; workspace-ready means the renderer booted, the initial settings snapshot applied, the root was canonicalized, and its initial directory snapshot rendered successfully.
 - AC2: Given the Open Folder dialog, when the user cancels it, then no window, workspace, root, tab, or setting changes.
 - AC3: Given Open Folder is invoked from a pristine single-file window containing one empty non-dirty untitled tab, when the new workspace window reports ready, then the pristine source window closes.
-- AC4: Given Open Folder is invoked from a pristine single-file window, when window creation or the initial root read fails, then the source window remains open and an accessible error identifies the failed folder.
+- AC4: Given Open Folder is invoked from any live source window, when window creation, root canonicalization, or the initial root read fails before workspace-ready, then the source window remains unchanged, the attempted workspace window and every allocated root/watcher are disposed, and an accessible error identifies the failed folder.
 - AC5: Given one workspace already contains a folder, when the same folder is opened with Open Folder again, then a second independent workspace window is created.
 - AC6: Given the application menu, then Add Folder… is enabled only while a workspace window is focused.
 - AC7: Given the Add Folder dialog in a workspace, when the user cancels it, then that workspace's roots and UI state are unchanged.
@@ -57,13 +60,13 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC15: Given a descendant root is already present, when its ancestor is added later, then the ancestor is accepted as a separate root.
 - AC16: Given several accepted roots, then root sections remain in insertion order.
 - AC17: Given roots with the same final folder name, then each header adds the shortest parent-path suffix that makes its visible label unique.
-- AC18: Given a file reachable through multiple entries or workspaces, when any entry opens it, then exactly one tab exists application-wide for its FileKey.
+- AC18: Given a file reachable through multiple entries or workspaces, when any entry opens it, then exactly one tab exists application-wide for its revalidated FileKey and every losing request focuses that owner.
 - AC19: Given the active FileKey appears through several roots or symlink aliases, then every visible entry for that FileKey shows the active-file state.
-- AC20: Given a tree entry requests a FileKey already open in another workspace window, then the owning window and tab are focused and the requesting workspace creates no duplicate tab or editor state.
+- AC20: Given two workspaces concurrently activate aliases that revalidate to the same FileKey, then exactly one request reserves and opens it while the other focuses that owner without creating duplicate editor state.
 
 ### Tree loading and filesystem paths
 
-- AC21: Given a loaded directory, then its children sort directories first and otherwise by Unicode case-folded name with original code-point order as the deterministic tie-breaker.
+- AC21: Given a loaded directory, then its children sort directories first and otherwise with `Intl.Collator('en-US', { usage: 'sort', sensitivity: 'base', numeric: false })`, with original code-point order as the deterministic tie-breaker.
 - AC22: Given directory entries whose names begin with `.`, then those entries do not appear in the tree.
 - AC23: Given a directory that has never been expanded, then rendering its collapsed row performs no child-directory read.
 - AC24: Given an unloaded collapsed directory, when it is expanded, then its row exposes a loading state until that generation's read settles.
@@ -76,11 +79,11 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC31: Given a workspace has no open tab, then the editor pane shows “Select a file from the sidebar” and no stale document content.
 - AC32: Given a root header is collapsed, then all of that RootId's descendant rows are removed from the visible tree without discarding their valid cached snapshots.
 - AC33: Given an accepted root becomes unreadable, missing, or no longer a directory, then its header remains in place and exposes an unavailable state without changing other roots.
-- AC34: Given an unavailable root becomes readable again, when its watcher retry succeeds or the user retries, then the root snapshot is invalidated and the expanded root reloads.
+- AC34: Given an unavailable root becomes readable again, when the native watcher reports recovery or the user retries successfully, then the root snapshot is invalidated and the expanded root reloads.
 - AC35: Given a deeply nested recognized document file, when each ancestor is expanded and the file is activated, then the correct FileKey opens.
 - AC36: Given root and entry paths containing spaces or non-ASCII characters, when they pass through dialog, main process, watcher, and renderer boundaries, then their logical labels and FileKeys remain correct.
-- AC37: Given a directory symlink resolves to one of its own logical ancestors, when the symlink row is expanded, then it is shown as a circular link and no recursive read is started.
-- AC38: Given a directory symlink resolves outside the canonical root, when expansion is requested, then it remains a terminal “Outside root” alias, no child read or watcher authority is created, and the target can be browsed only after the user adds it as a root.
+- AC37: Given any directory symlink in a root snapshot, then it is rendered as a terminal linked-folder row whose accessible description says that its target must be added as a root; it has no expansion state and starts no child read.
+- AC38: Given a directory symlink is circular, aliases an in-root directory, or resolves outside the canonical root, then it creates no recursive traversal or watcher authority and discloses no canonical target path.
 - AC39: Given two logical entries resolve through symlinks to the same existing recognized document file, then both entries receive the same FileKey.
 
 ### Document title context
@@ -94,9 +97,9 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 
 ### Preview and pinned tabs
 
-- AC46: Given a workspace tree, when a recognized document file is single-clicked or activated with the preview command, then it opens in the workspace's sole preview tab unless its FileKey already has an application-wide owner.
+- AC46: Given a workspace tree, when a recognized document file is single-clicked or activated with the preview command, then the sole preview tab is selected immediately in a target-specific loading state unless revalidation finds an application-wide owner, in which case that owner is focused.
 - AC47: Given a preview tab, then it is right-most and is distinguished from pinned tabs by an icon and accessible “Preview” description in addition to italic styling.
-- AC48: Given an existing clean preview, when another file is previewed, then the same tab identity is reused for the new FileKey.
+- AC48: Given an existing clean preview A, when file B is previewed and its current identity and containment revalidate successfully, then the same tab identity is reused and the registry transition from A to B follows AC126.
 - AC49: Given a preview unexpectedly has a dirty editor state, when another preview is requested, then the dirty preview is pinned before the new preview is created or reused.
 - AC50: Given a preview tab, when its document or pending filename first changes through typing, a checkbox, undo/redo, rename input, or any persistent editor command, then it is synchronously pinned before the mutation can be exposed to preview replacement; selection, focus, hover, and search decorations do not pin it.
 - AC51: Given a preview tab, when Save is invoked, then it is pinned before the save transaction starts.
@@ -104,13 +107,13 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC53: Given a preview tab header, when it is double-clicked, then that tab is pinned.
 - AC54: Given keyboard or assistive-technology focus in a preview tab, when its accessible Keep Open action is invoked, then that tab is pinned.
 - AC55: Given a preview tab exists, when a new pinned tab opens, then the pinned tab is inserted immediately before the preview.
-- AC56: Given a FileKey already open in any tab in any Markzen window, when any tree alias activates it, then the owning window and existing tab are focused rather than duplicated.
+- AC56: Given a tree alias revalidates to a FileKey already open in the same workspace, when it is activated, then the existing tab is focused and it is promoted only when the activation requested pinned semantics.
 - AC57: Given a FileKey already open as the preview, when a pin command targets it, then the existing preview is promoted rather than reopened.
 - AC58: Given the preview is the last tab, when it closes, then the editor returns to the workspace empty state.
-- AC59: Given an inactive preview is being replaced while a pinned tab is active, then the loaded result updates only the preview's stored state and never overwrites the active editor.
+- AC59: Given a preview read is pending and the user activates a pinned tab before it settles, then a successful result updates only the preview's stored state, does not overwrite the active editor, and does not steal focus.
 - AC60: Given preview A's read is pending, when preview B is requested and B resolves first, then A's later result is ignored.
 - AC61: Given the browser emits the single-clicks preceding a double-click, when a file is double-clicked, then one tab is opened and pinned without a duplicate final read.
-- AC62: Given a preview read fails, then the preview shows an accessible error with Retry and no previous file's content.
+- AC62: Given preview B's revalidation or read fails after a clean preview A was targeted for replacement, then A's registry ownership is released, neither A nor B remains invisibly owned by that preview, and the selected non-path-backed preview shows a B-specific accessible error with Retry and no previous file content.
 - AC63: Given a preview read is pending, when its workspace or target tab is disposed, then the eventual result causes no tab or editor update.
 
 ### Tree, splitter, and preview accessibility
@@ -129,11 +132,11 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC75: Given keyboard focus on the splitter, then ArrowLeft/ArrowRight change width by 10px, Shift modifies the step to 40px, Home selects 160px, and End selects 480px.
 - AC76: Given a workspace sidebar, then its tree scrolls independently of the tab/editor pane.
 - AC77: Given ordinary sidebar labels and empty space, then dragging does not select text while header buttons, tree items, and the splitter retain their expected selection and focus behavior.
-- AC78: Given a macOS workspace window, then the sidebar's top drag strip is outside the traffic-light exclusion zone and contains no interactive control.
+- AC78: Given a macOS workspace window, then no sidebar-specific drag strip is added and the existing top-chrome drag region from spec 0001 remains outside the traffic-light exclusion zone and operable above the workspace.
 
 ### Watcher invalidation and lifecycle
 
-- AC79: Given a root is accepted, then the main process starts exactly one chokidar registration owned by its WindowId and RootId.
+- AC79: Given a root is accepted, then the main process starts exactly one logical `Platform.watch` subscription owned by its WindowId and RootId; the real adapter may consolidate backend watcher objects without changing logical ownership.
 - AC80: Given a duplicate-root add is deduplicated, then no additional watcher registration or retry loop is created.
 - AC81: Given an external create, delete, rename, or move affects a loaded expanded directory, then the visible snapshot refreshes within 1,500ms.
 - AC82: Given an external event affects a loaded collapsed directory, then its cached snapshot is marked stale without an eager read and its next expansion reads fresh children.
@@ -143,65 +146,97 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC86: Given an event is tagged for a different WindowId or RootId, then it cannot mutate the receiving tree state.
 - AC87: Given a watcher event concerns only a hidden dotfile and does not change a visible ancestor's availability, then it causes no visible-tree refresh.
 - AC88: Given a refresh read is pending, when a newer watcher batch invalidates the same directory, then the older refresh result is ignored.
-- AC89: Given the watched root itself is deleted or renamed away, then its root section becomes unavailable without a retry crash loop.
-- AC90: Given a missing watched root returns, then the next successful watcher retry marks it available and refreshes it if expanded.
-- AC91: Given chokidar registration or runtime watching fails, then the root exposes a non-blocking watcher warning while manual lazy reads and Retry remain usable.
-- AC92: Given watcher failure persists, then retries occur after 1s, 2s, 4s, 8s, 16s, and at most every 30s thereafter; a successful registration resets the delay.
-- AC93: Given a workspace closes, then every watcher, debounce timer, retry timer, and pending watcher-owned refresh for its WindowId is disposed.
+- AC89: Given the watched root itself is deleted or renamed away, then its root section becomes unavailable without an application-owned retry loop or crash loop.
+- AC90: Given a missing watched root returns, when the native backend reports recovery or the user invokes Retry successfully, then it becomes available and refreshes if expanded.
+- AC91: Given `Platform.watch` registration or runtime watching fails, then the root exposes a non-blocking watcher warning while manual lazy reads and Retry remain usable.
+- AC92: Given watcher failure persists, then Markzen schedules no automatic watcher retry; an explicit Retry immediately attempts one new registration, and another failure leaves the warning and manual lazy reads available.
+- AC93: Given a workspace closes, then every watcher, debounce timer, and pending watcher-owned refresh for its WindowId is disposed.
 - AC94: Given a disposed WindowId or RootId, then later watcher callbacks and read completions are ignored.
-- AC95: Given `MemoryPlatform.fs.watch`, when a test registers watchers and emits a normalized synthetic event, then only active matching registrations receive it, the event drives the same invalidation, batching, retry, and disposal logic as chokidar, and disposing a registration decreases the harness's observable active-watcher count.
+- AC95: Given the existing `MemoryPlatform.watch`, when a test registers root watchers and emits a normalized synthetic event, then only active matching registrations receive it, the event drives the same invalidation, batching, explicit-retry, and disposal logic as the real adapter, and disposing a registration decreases the harness's observable active-watcher count.
 - AC96: Given an app-originated save or rename emits filesystem events, then the tree converges through normal invalidation without duplicating a tab, demoting a pinned tab, or marking an editor dirty.
 
 ### Settings authority and sidebar persistence
 
-- AC97: Given any settings patch, then the main-process settings service validates it, applies it to the authoritative snapshot, and assigns a strictly increasing revision before acknowledging it.
+- AC97: Given a closed version-1 settings patch containing `sidebarWidth`, then the main-process settings service validates it, applies it to the authoritative snapshot, and assigns a strictly increasing revision before acknowledging it.
 - AC98: Given this milestone's settings schema, then `schemaVersion` is integer `1`, while `sidebarWidth` defaults to 240 and accepts only finite numbers clamped and rounded to an integer from 160 through 480.
 - AC99: Given a renderer receives a settings snapshot whose revision is not newer than its applied revision, then it ignores that stale snapshot.
-- AC100: Given two windows change different settings keys near-simultaneously, then both accepted values appear in the next authoritative snapshot.
+- AC100: Given two windows submit valid settings patches near-simultaneously, then the main process serializes their acceptance into distinct strictly increasing revisions without dropping either acknowledgement.
 - AC101: Given two windows change the same key near-simultaneously, then the patch accepted later by the main process wins and every window converges to it.
 - AC102: Given two live workspace windows in the real Electron shell, when one accepts a sidebar-width patch, then the other applies that authoritative revision within 250ms.
 - AC103: Given first launch has no platform configuration directory, then the directory is created only when the first settings write is committed.
 - AC104: Given rapid accepted setting patches, then persistence waits 300ms after the latest patch and writes one snapshot for that burst.
 - AC105: Given revision N is being written when revision N+1 is accepted, then completion of N does not mark N+1 persisted and a later write commits N+1.
 - AC106: Given a settings write succeeds, then atomic replacement leaves either the previous complete valid JSON document or the new complete valid JSON document, never a partial file.
-- AC107: Given valid JSON contains an invalid known key, then that key alone falls back to its default while other valid known keys load.
-- AC108: Given valid JSON contains unknown own-properties other than prototype-pollution keys, then those properties survive the next rewrite unchanged.
+- AC107: Given a valid version-1 settings object contains an invalid `sidebarWidth`, then that preference alone falls back to its default while safe unknown persisted properties remain eligible under AC108.
+- AC108: Given an in-bounds valid settings object contains recursively safe unknown own-properties, then those properties survive the next rewrite unchanged; dangerous keys, non-finite numbers, non-JSON values, and data beyond the size bound are never retained.
 - AC109: Given `settings.json` is syntactically corrupt, then startup moves it to `settings.json.corrupt-<timestamp>` and loads defaults without crashing.
 - AC110: Given valid persisted `sidebarWidth`, then the main process supplies it in the bootstrap snapshot before the first workspace window is revealed.
 - AC111: Given the splitter accepts a new width, then the local workspace applies it in the same animation frame.
 - AC112: Given a normal application quit with an unpersisted settings revision, then the main process flushes that revision before completing quit.
 - AC113: Given the final quit-time flush fails or exceeds 2,000ms, then the previous valid settings file remains intact and quit completes without hanging indefinitely.
-- AC114: Given a settings write fails while the app remains open, then the authoritative in-memory value remains active, persistence remains pending for retry, and an accessible non-blocking warning is shown once per failure episode.
+- AC114: Given a settings write fails while the app remains open, then the authoritative in-memory value remains active, persistence remains pending for retry, and an accessible non-blocking warning with an explicit Retry action is shown once for the consecutive failure episode ending at the next success.
 
 ### Measurable performance
 
-- AC115: Given a synthetic directory snapshot containing 10,000 entries, then canonicalization, filtering, and deterministic sorting complete in a median of at most 250ms across three runs on the CI reference runner defined by the performance ADR.
+- AC115: Given a real directory and an equivalent synthetic snapshot containing 10,000 entries, when the CI performance journey runs three times, then it records real batched `Platform.fs.list` duration separately from deterministic filtering and sorting duration in the job summary and artifact without gating the build.
 - AC116: Given a loaded tree with 10,000 entries, then no more than 300 `treeitem` rows exist in the DOM at once.
-- AC117: Given an immediate MemoryPlatform directory response, then expanding a directory with 10,000 entries paints its first visible rows within 500ms on the CI reference runner.
-- AC118: Given a cached preview editor state, then activating its tab presents that state within 100ms on the CI reference runner.
+- AC117: Given an immediate MemoryPlatform directory response, when a directory with 10,000 entries expands in the CI performance journey, then time to first visible rows is recorded without gating the build.
+- AC118: Given a cached preview editor state, when its tab activates in the CI performance journey, then activation-to-paint time is recorded without gating the build.
 - AC119: Given 1,000 watcher events for one root arrive within one second, then at most two invalidation batches are produced for that root.
-- AC120: Given 20 roots and 20,000 loaded logical entries, then a tree keyboard or wheel input updates the visible viewport within 100ms on the CI reference runner.
-- AC121: Given valid settings JSON with missing `schemaVersion` or integer version `0`, when it loads, then the main process treats it as the one recognized legacy schema, migrates known keys to version `1`, preserves safe unknown own-properties, and persists the migrated snapshot through the normal atomic writer.
+- AC120: Given 20 roots and 20,000 loaded logical entries, when tree keyboard and wheel inputs run in the CI performance journey, then their input-to-viewport-update times are recorded without gating the build.
+
+### Settings recovery, preview registry, and adaptive presentation
+
+- AC121: Given a renderer submits an unknown setting key, a non-object patch, a non-finite value, a prototype-pollution key, a payload above 4 KiB, or extra properties, then the main process rejects the whole patch without changing the snapshot, revision, file, or any window.
 - AC122: Given valid settings JSON with a newer unsupported schema version, when it loads, then runtime defaults apply, the original file is not overwritten, and an accessible warning reports that the settings were created by a newer Markzen version.
 - AC123: Given a settings revision is accepted and its initiating window closes before persistence, then the application-owned settings service still broadcasts and persists that revision unless a newer accepted revision supersedes it.
 - AC124: Given failure or interruption before settings replacement completes, then the previous complete valid `settings.json` remains readable and any recognizable staging file is recovered or removed on the next startup.
 - AC125: Given a settings write failure while the app remains open, then automatic retries use 1s, 2s, 4s, 8s, 16s, and at most 30s thereafter; an explicit Retry runs immediately and success resets the delay.
-- AC126: Given a preview tab replaces FileKey A with FileKey B, when B is not already owned, then the app-wide registry reserves B and releases A atomically with the preview state change; if B is owned, its existing window/tab is focused and the preview retains A.
+- AC126: Given the app-wide registry is asked to replace preview ownership A with B, then it either commits the complete A-to-B transition or, when B is owned or the request is stale, leaves A unchanged; it never exposes a partial ownership state.
 - AC127: Given workspace tree, preview, watcher-warning, and splitter UI in forced-colors or reduced-motion mode, then every state remains distinguishable, focus remains visible, and non-essential expansion/loading animations are disabled.
 
 ### Platform directory-listing contract
 
-- AC128: Given `MemoryPlatform.fs.list`, when a test lists an in-memory directory, then entry names, file/directory/symlink kinds, paths, and typed `not-found`, `not-directory`, `permission-denied`, `unavailable`, and `io` failures match the real main-side directory-listing contract; sorting and hidden-file filtering remain application behavior rather than Platform behavior.
+- AC128: Given `MemoryPlatform.fs.list`, when a test lists an in-memory directory, then its one batched result contains each entry's name, file/directory/symlink kind, logical path, and Platform-issued FileKey but no canonical target path; typed `not-found`, `not-directory`, `permission-denied`, `unavailable`, and `io` failures match the real adapter, while sorting and hidden-file filtering remain application behavior.
+
+### Reporting and resolved lifecycle, authority, and accessibility behavior
+
+- AC129: Given CI for this milestone, when the real-listing, filtering/sorting, expansion, preview-activation, and large-tree input journeys run, then they execute outside `npm run verify`, publish a human-readable job summary and machine-readable artifact, and remain explicitly non-blocking regardless of measured values.
+- AC130: Given the expanded preload API and production TypeScript, when its static surface is inspected, then it exposes one typed method per workspace or settings intent and no raw Electron/Node object, arbitrary IPC send/invoke, raw filesystem list/read/watch method, renderer-selected event destination, or generic path-based capability.
+- AC131: Given any workspace, root, tree-entry, preview, watcher, or settings IPC request, when it reaches the main process, then the exact application-origin main-frame sender is validated before a closed payload schema is parsed and before any dialog, filesystem, registry, watcher, settings, or window operation begins.
+- AC132: Given a valid sender with a forged, stale, foreign, or mismatched WindowId, RootId, TabId, FileKey, logical path, window kind, settings revision, or operation generation, or an entry containing traversal or resolving outside its registered canonical root, when authorization runs, then the request is rejected without reading, watching, opening, focusing, mutating, or disclosing another owner or out-of-root resource.
+- AC133: Given a directory result, preview result, watcher invalidation, settings snapshot, folder error, or registry-focus event, when main routes it, then only its live owning window/root/tab receives the minimum logical data required and a disposed or superseded generation cannot mutate state or disclose a canonical target path.
+- AC134: Given a workspace window bootstrap or Add Folder command, then the main process derives the live window kind and owner from its registration; renderer-provided state cannot enable Add Folder, allocate a RootId, or convert a single-file window into a workspace.
+- AC135: Given Add Folder selects a path that cannot be canonicalized, read, or confirmed as a directory, when the operation settles, then no RootId or watcher is retained, all existing workspace state is unchanged, and an accessible error identifies the failed folder.
+- AC136: Given a folder chooser is already pending for one source window, when Open Folder or Add Folder is invoked again for that same window, then no second chooser or overlapping root transaction starts; other windows remain independent.
+- AC137: Given a folder chooser, workspace bootstrap, initial read, or Add Folder read is pending, when its source or destination window closes or its generation is superseded, then the late completion creates no window, root, watcher, error, or UI state.
+- AC138: Given no Markzen window is focused, then Open Folder… remains enabled and a successful selection creates one workspace window, while Add Folder… remains disabled; a pre-ready failure retains no window and reports the folder through a main-owned accessible error dialog.
+- AC139: Given a single-file or workspace window, when its main-owned kind changes only through creation/disposal, then menu enablement, bootstrap data, root authority, and teardown follow that registered kind without trusting renderer claims.
+- AC140: Given any Markzen window, when New File is invoked, then a new ordinary pinned untitled tab is inserted before an existing preview; its first persistent content or title change makes it dirty and milestone 0002's save and close guards apply.
+- AC141: Given any Markzen window, when Open… selects a document not already owned, then it opens as an ordinary pinned tab before an existing preview and never uses preview replacement semantics.
+- AC142: Given Open… selects an alias of a document already owned by any tab or window, then that existing owner is focused and no preview is promoted or duplicate tab created; only tree activation uses preview semantics.
+- AC143: Given preview B is selected and loading, when the user activates another tab before B settles, then B remains the preview target but success, failure, or Retry cannot reactivate it or steal focus.
+- AC144: Given preview replacement of A by B succeeds and B is unowned, then the main registry reserves B and releases A atomically with the tab's adopted B state; no observer can claim both or see the tab own neither during the successful transition.
+- AC145: Given preview replacement targets B and revalidation finds B already owned, then its existing owner is focused and the preview retains A's identity, content, registry ownership, and clean state.
+- AC146: Given a recognized file symlink is activated, when its current canonical target is revalidated inside the owning root, then that target opens under normal preview/pin and FileKey rules; if it resolves outside, is circular, missing, or changes during revalidation, then no read or registry transition occurs and the row exposes an accessible error without disclosing the target path.
+- AC147: Given a workspace at the 480×320 minimum window size or 200% renderer zoom, then the sidebar uses a responsive effective width that may shrink below the stored 160px preference only as needed to keep the tree, splitter, tab controls, editor, and errors reachable; the stored preference is unchanged and restored when space returns.
+- AC148: Given responsive sidebar clamping or virtual scrolling changes the rendered viewport, then separator values describe the effective width, the focused tree item remains mounted or focus moves deterministically to the nearest visible owner, and keyboard navigation resumes without a lost or duplicate tab stop.
+- AC149: Given pointer resize loses capture, is cancelled, the window blurs, or the workspace disposes before pointer-up, then drag listeners and transient selection/cursor state are removed and the latest accepted clamped width remains authoritative.
+- AC150: Given valid settings JSON whose top level is not a plain object, or whose `schemaVersion` is missing, non-integer, or less than `1`, then defaults apply, the original file is not overwritten automatically, and an accessible warning explains that settings could not be loaded; newer integer versions follow AC122.
+- AC151: Given settings cannot be read, moved aside after syntax corruption, or parsed within the 1 MiB limit, then startup uses defaults without crashing, preserves the original file when possible, and reports one accessible warning without treating the unreadable data as a writable current snapshot.
+- AC152: Given splitter pointer movement produces more than one valid width per animation frame, then the local workspace renders the latest clamped width in that frame while at most one closed settings patch per frame is submitted to main; AC104 still coalesces the resulting accepted revisions for disk persistence.
 
 ## Implementation ADR requirements
 
 At the start of this milestone, before the corresponding production subsystem is written, one or more accepted ADRs record the following decisions and their platform-test strategy:
 
-1. **Workspace use of foundational identity:** RootId allocation/lifetime; use of milestone 0001 WindowId, validated Path, and FileKey contracts; logical versus canonical root paths; symlink roots, directory cycles, aliases, and containment boundaries without redefining Platform canonicalization.
-2. **Async ownership:** generation tokens, cancellation/disposal, preview promotion ordering, active-versus-inactive editor updates, lazy-read cache states, and stale-result suppression.
-3. **Watcher architecture:** chosen chokidar version and options; raw-event normalization; per-root batching and invalidation; expanded versus collapsed refresh; self-event correlation; retry/backoff; root return; and deterministic disposal.
-4. **Settings persistence:** typed patch/schema registry and migrations; main-process revision ordering; renderer bootstrap; write generations; same-directory temp file, flush, atomic replace, and directory flush where supported; corrupt/newer-version handling; unknown-key safety; retry; and bounded quit flush.
-5. **Large-tree rendering and measurement:** windowing strategy, stable row identity and focus restoration, the CI reference runner, three-run median method, and instrumentation used for AC115–AC120.
+1. **Workspace use of foundational identity:** RootId allocation/lifetime; use of milestone 0001 WindowId, validated Path, and FileKey contracts; batched list snapshots; ordinary-entry identity from a canonical parent; special symlink resolution; activation-time identity and containment revalidation; logical versus canonical root paths; symlink roots, terminal directory symlinks, file aliases, and containment boundaries without redefining Platform canonicalization.
+2. **Async ownership:** generation tokens, cancellation/disposal, workspace-ready handshake and failure teardown, serialized per-window folder dialogs, preview promotion and registry-transition ordering, active-versus-inactive editor updates, lazy-read cache states, and stale-result suppression.
+3. **Watcher architecture:** reuse of `Platform.watch`; chosen chokidar version and options; refusal to follow directory symlinks; raw-event normalization; logical per-root batching and invalidation; expanded versus collapsed refresh; self-event correlation; backend-native recovery plus explicit Retry without application backoff; root return; and deterministic disposal.
+4. **Settings persistence:** closed version-1 patch/schema without legacy migration or a generic registry; main-process revision ordering; renderer bootstrap; per-frame patch coalescing; write generations; same-directory temp file, flush, atomic replace, and directory flush where supported; corrupt/newer-version handling; bounded safe unknown-key preservation; retry; and bounded quit flush.
+5. **Large-tree rendering and measurement:** windowing strategy, responsive sidebar behavior, stable row identity and focus restoration, separation of real listing from deterministic filtering/sorting, the CI reference runner, and non-blocking performance instrumentation used for AC115 and AC117–AC120.
+
+The implementation also updates accepted ADR 0001 with the workspace/settings intent schemas, sender-first validation, main-owned window-kind and RootId authority, activation-time containment revalidation, minimal event routing, payload limits, and targeted forged/stale/out-of-root shell negatives.
 
 ## Test mapping
 
@@ -224,7 +259,7 @@ At the start of this milestone, before the corresponding production subsystem is
 | AC15 | Playwright-vs-vite |
 | AC16 | Browser Mode |
 | AC17 | Node |
-| AC18 | Playwright-vs-vite |
+| AC18 | Shell smoke |
 | AC19 | Browser Mode |
 | AC20 | Shell smoke |
 | AC21 | Node |
@@ -242,7 +277,7 @@ At the start of this milestone, before the corresponding production subsystem is
 | AC33 | Playwright-vs-vite |
 | AC34 | Playwright-vs-vite |
 | AC35 | Playwright-vs-vite |
-| AC36 | Playwright-vs-vite |
+| AC36 | Shell smoke |
 | AC37 | Node |
 | AC38 | Playwright-vs-vite |
 | AC39 | Node |
@@ -316,20 +351,37 @@ At the start of this milestone, before the corresponding production subsystem is
 | AC107 | Node |
 | AC108 | Node |
 | AC109 | Node |
-| AC110 | Playwright-vs-vite |
+| AC110 | Shell smoke |
 | AC111 | Browser Mode |
 | AC112 | Shell smoke |
 | AC113 | Node |
 | AC114 | Playwright-vs-vite |
-| AC115 | Node |
+| AC115 | CI |
 | AC116 | Browser Mode |
-| AC117 | Playwright-vs-vite |
-| AC118 | Browser Mode |
+| AC117 | CI |
+| AC118 | CI |
 | AC119 | Node |
-| AC120 | Playwright-vs-vite |
+| AC120 | CI |
 | AC121-AC126 | Node |
 | AC127 | Browser Mode |
 | AC128 | Node |
+| AC129 | CI |
+| AC130 | Static |
+| AC131-AC134 | Node |
+| AC135 | Playwright-vs-vite |
+| AC136-AC137 | Node |
+| AC138 | Shell smoke |
+| AC139 | Node |
+| AC140-AC141 | Playwright-vs-vite |
+| AC142 | Shell smoke |
+| AC143 | Playwright-vs-vite |
+| AC144-AC145 | Node |
+| AC146 | Playwright-vs-vite |
+| AC147-AC149 | Browser Mode |
+| AC150-AC151 | Node |
+| AC152 | Browser Mode |
+
+Supporting coverage is explicit: AC36 exercises the complete real dialog/main/watcher/renderer path; AC128 exercises real directory listing and symlink identity in shell smoke; AC130-AC134 include forged, stale, cross-window, traversal, out-of-root, payload-limit, and canonical-target-disclosure negatives in shell smoke; AC140-AC142 include native menu routing in shell smoke; and AC147-AC149 include minimum-size and 200%-zoom Playwright journeys plus the automated accessibility scan.
 
 ## Open questions
 

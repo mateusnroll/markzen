@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { PlatformName, WindowId, WindowPort, WindowState } from '../platform/contracts'
+import type { DirectoryEntry, Path, PlatformName, RootId, SettingsSnapshotPayload, WindowId, WindowPort, WindowState, WorkspaceEventPayload } from '../platform/contracts'
 import type { DocumentGatewayPort } from '../documents/gateway'
+import { shouldApplySettings } from '../settings/settings'
 import type { DocumentSeed } from './DocumentWorkspace'
 import { DocumentWorkspace } from './DocumentWorkspace'
 
@@ -15,8 +16,23 @@ export type ShellAppProps = {
   readonly fixtureName: string
   readonly platformKind?: 'electron' | 'memory'
   readonly platformName: PlatformName
+  readonly settings?: {
+    readonly onRetry: () => void
+    readonly onWarning: (listener: (message?: string) => void) => () => void
+    readonly warning?: string
+  }
   readonly windowId: WindowId
   readonly windowPort: Pick<WindowPort, 'close' | 'getState' | 'minimize' | 'onState' | 'toggleMaximize'>
+  readonly workspace?: {
+    readonly onList: (rootId: RootId, path: Path) => Promise<readonly DirectoryEntry[]>
+    readonly onEvent?: (listener: (event: WorkspaceEventPayload) => void) => () => void
+    readonly onSettings?: (listener: (snapshot: SettingsSnapshotPayload) => void) => () => void
+    readonly onRetryRoot?: (rootId: RootId) => Promise<boolean>
+    readonly revision?: number
+    readonly onWidthChange: (width: number) => void
+    readonly roots: import('./WorkspaceSidebar').WorkspaceRootSeed[]
+    readonly width: number
+  }
 }
 
 export function ShellApp({
@@ -27,12 +43,53 @@ export function ShellApp({
   fixtureName,
   platformKind = 'memory',
   platformName,
+  settings,
   windowId,
   windowPort,
+  workspace,
 }: ShellAppProps) {
   const [state, setState] = useState<WindowState>({ focused: true, status: 'normal' })
   const [windowStateReady, setWindowStateReady] = useState(false)
   const [closeRequest, setCloseRequest] = useState(0)
+  const [workspaceRoots, setWorkspaceRoots] = useState(() => workspace?.roots ?? [])
+  const [sidebarWidth, setSidebarWidth] = useState(workspace?.width ?? 240)
+  const [settingsWarning, setSettingsWarning] = useState(settings?.warning)
+  const [workspaceIssue, setWorkspaceIssue] = useState<{ readonly message: string; readonly rootId: RootId }>()
+  const [workspaceInvalidation, setWorkspaceInvalidation] = useState<{ readonly generation: number; readonly path: Path; readonly rootId: RootId }>()
+  const appliedSettingsRevision = useRef(workspace?.revision ?? 0)
+
+  useEffect(() => workspace?.onSettings?.((snapshot) => {
+    if (!shouldApplySettings(snapshot, appliedSettingsRevision.current)) return
+    appliedSettingsRevision.current = snapshot.revision
+    setSidebarWidth(snapshot.sidebarWidth)
+  }), [workspace])
+  useEffect(() => workspace?.onEvent?.((event) => {
+    if (event.kind === 'root-added') {
+      setWorkspaceRoots((current) => current.some((root) => root.rootId === event.root.rootId)
+        ? current
+        : [...current, event.root])
+      return
+    }
+    if (event.kind === 'root-error' || event.kind === 'watch-warning') {
+      setWorkspaceIssue({
+        message: event.kind === 'root-error' ? 'A workspace root is unavailable.' : 'Live folder updates are unavailable. Manual browsing still works.',
+        rootId: event.rootId,
+      })
+      return
+    }
+    if (event.kind !== 'invalidated' && event.kind !== 'root-recovered') return
+    const root = workspaceRoots.find((candidate) => candidate.rootId === event.rootId)
+    if (!root) return
+    const invalidatedPath = event.relativePath
+      ? `${String(root.path).replace(/[\\/]$/, '')}/${event.relativePath}` as Path
+      : root.path
+    setWorkspaceInvalidation({ generation: event.generation, path: invalidatedPath, rootId: root.rootId })
+    if (event.relativePath) return
+    void workspace.onList(root.rootId, root.path).then((entries) => {
+      setWorkspaceRoots((current) => current.map((candidate) => candidate.rootId === root.rootId ? { ...candidate, entries } : candidate))
+    })
+  }), [workspace, workspaceRoots])
+  useEffect(() => settings?.onWarning(setSettingsWarning), [settings])
 
   useEffect(() => {
     let mounted = true
@@ -110,7 +167,36 @@ export function ShellApp({
           gateway={documentGateway}
           {...(initialDocuments ? { initialTabs: initialDocuments } : {})}
           onCloseWindow={() => run(() => windowPort.close(windowId))}
+          {...(workspace ? { workspace: {
+            ...environment,
+            ...(workspaceInvalidation ? { invalidation: workspaceInvalidation } : {}),
+            onList: workspace.onList,
+            onWidthChange: (width: number) => {
+              setSidebarWidth(width)
+              workspace.onWidthChange(width)
+            },
+            roots: workspaceRoots,
+            width: sidebarWidth,
+          } } : {})}
         />
+        {settingsWarning ? (
+          <aside className="settings-warning" data-testid="settings-warning" role="status">
+            <span>{settingsWarning}</span>
+            <button data-testid="settings-retry" onClick={settings?.onRetry} type="button">Retry</button>
+          </aside>
+        ) : null}
+        {workspaceIssue ? (
+          <aside className="settings-warning" data-testid="workspace-warning" role="status">
+            <span>{workspaceIssue.message}</span>
+            <button
+              data-testid="workspace-root-retry"
+              onClick={() => { void workspace?.onRetryRoot?.(workspaceIssue.rootId).then((success) => {
+                if (success) setWorkspaceIssue(undefined)
+              }) }}
+              type="button"
+            >Retry</button>
+          </aside>
+        ) : null}
         <dl className="shell-diagnostics" aria-label="Runtime diagnostics">
           <dt>Platform</dt>
           <dd data-testid="platform-kind">{platformKind}</dd>
