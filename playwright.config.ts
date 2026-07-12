@@ -19,7 +19,7 @@ export default defineConfig({
     {
       name: 'electron',
       testMatch: /shell\/.*\.spec\.ts/,
-      timeout: 60_000,
+      timeout: process.platform === 'win32' ? 120_000 : 60_000,
       workers: 1,
     },
     {
