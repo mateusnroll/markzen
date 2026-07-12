@@ -1,0 +1,20 @@
+{
+  "type": "doc",
+  "content": [
+    { "type": "heading", "attrs": { "level": 5 }, "content": [{ "type": "text", "text": "Five" }] },
+    { "type": "heading", "attrs": { "level": 6 }, "content": [{ "type": "text", "text": "Six" }] },
+    { "type": "blockquote", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Quote" }] }] },
+    { "type": "horizontalRule" },
+    { "type": "codeBlock", "attrs": { "language": "ts" }, "content": [{ "type": "text", "text": "const x = 1" }] },
+    {
+      "type": "orderedList",
+      "content": [{
+        "type": "listItem",
+        "content": [
+          { "type": "paragraph", "content": [{ "type": "text", "text": "one" }] },
+          { "type": "bulletList", "content": [{ "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "nested" }] }] }] }
+        ]
+      }]
+    }
+  ]
+}

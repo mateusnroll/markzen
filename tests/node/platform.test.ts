@@ -1,8 +1,13 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+
 import { describe, expect, test, vi } from 'vitest'
 
-import { asWindowId, fail, ok } from '../../src/platform/contracts'
+import { asPath, asWindowId, fail, ok } from '../../src/platform/contracts'
 import { resolveWindowSender, validateWindowRequest } from '../../src/platform/electron/authority'
 import { channels } from '../../src/platform/electron/channels'
+import { RealFileSystem } from '../../src/platform/electron/real-fs'
 import { createMemoryPlatform } from '../../src/platform/memory'
 import { OwnerRegistry } from '../../src/platform/ownership'
 
@@ -101,6 +106,23 @@ describe('spec 0001 Platform foundations', () => {
     const secondRead = await platform.fs.read(path)
     expect(secondRead.ok && text(secondRead.value.bytes)).toBe('two')
     expect(await platform.fs.overwrite(harness.path('/notes/missing.md'), bytes('x'))).toEqual(fail('not-found'))
+  })
+
+  test('AC37: real overwrite truncates bytes left by a longer previous value', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'markzen-overwrite-'))
+    const fs = new RealFileSystem()
+    const filePath = asPath(path.join(directory, 'note.md'))
+    try {
+      expect(await fs.create(filePath, bytes('abcdef'))).toEqual(ok(undefined))
+
+      expect(await fs.overwrite(filePath, bytes('xy'))).toEqual(ok(undefined))
+
+      const result = await fs.read(filePath)
+      expect(result.ok && text(result.value.bytes)).toBe('xy')
+      expect(await fs.overwrite(asPath(path.join(directory, 'missing.md')), bytes('x'))).toEqual(fail('not-found'))
+    } finally {
+      await rm(directory, { force: true, recursive: true })
+    }
   })
 
   test('AC38: MemoryPlatform stat and removal reject unsafe directory deletion', async () => {

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import type { PlatformName, WindowId, WindowPort, WindowState } from '../platform/contracts'
+import type { DocumentGatewayPort } from '../documents/gateway'
+import type { DocumentSeed } from './DocumentWorkspace'
+import { DocumentWorkspace } from './DocumentWorkspace'
 
 import './shell.css'
 
 export type ShellAppProps = {
+  readonly documentGateway: DocumentGatewayPort
+  readonly initialDocuments?: readonly DocumentSeed[]
   readonly environment: { readonly forcedColors: boolean; readonly reducedMotion: boolean }
   readonly fileCount?: number
   readonly fixtureName: string
@@ -15,6 +20,8 @@ export type ShellAppProps = {
 }
 
 export function ShellApp({
+  documentGateway,
+  initialDocuments,
   environment,
   fileCount = 0,
   fixtureName,
@@ -25,6 +32,7 @@ export function ShellApp({
 }: ShellAppProps) {
   const [state, setState] = useState<WindowState>({ focused: true, status: 'normal' })
   const [windowStateReady, setWindowStateReady] = useState(false)
+  const [closeRequest, setCloseRequest] = useState(0)
 
   useEffect(() => {
     let mounted = true
@@ -73,7 +81,7 @@ export function ShellApp({
         aria-label="Close window"
         className="window-control window-close"
         data-testid="window-close"
-        onClick={() => run(() => windowPort.close(windowId))}
+        onClick={() => setCloseRequest((value) => value + 1)}
         type="button"
       >
         <span aria-hidden="true">×</span>
@@ -97,7 +105,12 @@ export function ShellApp({
         {windowControls}
       </header>
       <section aria-label="Document workspace" className="shell-content" data-testid="shell-content">
-        <p className="shell-welcome">A quiet place to write.</p>
+        <DocumentWorkspace
+          closeRequest={closeRequest}
+          gateway={documentGateway}
+          {...(initialDocuments ? { initialTabs: initialDocuments } : {})}
+          onCloseWindow={() => run(() => windowPort.close(windowId))}
+        />
         <dl className="shell-diagnostics" aria-label="Runtime diagnostics">
           <dt>Platform</dt>
           <dd data-testid="platform-kind">{platformKind}</dd>

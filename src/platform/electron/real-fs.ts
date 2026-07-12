@@ -1,6 +1,11 @@
 import {
+  createHash,
+} from 'node:crypto'
+import {
+  open,
   readFile,
   realpath,
+  rename,
   rm,
   stat,
   writeFile,
@@ -9,19 +14,60 @@ import nodePath from 'node:path'
 
 import {
   asFileKey,
+  asDiskVersion,
   asPath,
   fail,
   ok,
   type CanonicalPath,
+  type DiskVersion,
   type FileRead,
   type FileStat,
   type FileSystemPort,
   type FsFailureCode,
+  type ExpectedDiskVersion,
   type Path,
   type PlatformResult,
 } from '../contracts'
 
 export class RealFileSystem implements FileSystemPort {
+  async atomicReplace(
+    path: Path,
+    bytes: Uint8Array,
+    expected: ExpectedDiskVersion,
+  ): Promise<PlatformResult<FileRead, FsFailureCode | 'conflict'>> {
+    const validated = validateRealPath(String(path))
+    if (!validated.ok) return validated
+    const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const temporary = `${validated.value}.markzen-${nonce}.tmp`
+    const backup = `${validated.value}.markzen-${nonce}.bak`
+    let targetMoved = false
+    try {
+      await writeFile(temporary, bytes, { flag: 'wx' })
+      const observed = await this.read(validated.value)
+      if (expected === 'missing') {
+        if (observed.ok || observed.error.code !== 'not-found') return fail(observed.ok ? 'conflict' : observed.error.code)
+      } else if (!observed.ok || observed.value.diskVersion !== expected) {
+        return fail(observed.ok ? 'conflict' : observed.error.code)
+      }
+      if (observed.ok) {
+        await rename(validated.value, backup)
+        targetMoved = true
+      }
+      try {
+        await rename(temporary, validated.value)
+      } catch (error) {
+        if (targetMoved) await rename(backup, validated.value)
+        throw error
+      }
+      if (targetMoved) await rm(backup, { force: true })
+      return this.read(validated.value)
+    } catch (error) {
+      return fail(mapError(error))
+    } finally {
+      await rm(temporary, { force: true }).catch(() => undefined)
+    }
+  }
+
   async canonicalize(path: Path): Promise<PlatformResult<CanonicalPath, FsFailureCode>> {
     const validated = validateRealPath(String(path))
     if (!validated.ok) return validated
@@ -54,11 +100,51 @@ export class RealFileSystem implements FileSystemPort {
     }
   }
 
+  async move(
+    source: Path,
+    target: Path,
+    expected: DiskVersion,
+  ): Promise<PlatformResult<FileRead, FsFailureCode | 'conflict'>> {
+    const sourcePath = validateRealPath(String(source))
+    if (!sourcePath.ok) return sourcePath
+    const targetPath = validateRealPath(String(target))
+    if (!targetPath.ok) return targetPath
+    const observed = await this.read(sourcePath.value)
+    if (!observed.ok) return observed
+    if (observed.value.diskVersion !== expected) return fail('conflict')
+    const targetCanonical = await this.canonicalize(targetPath.value)
+    if (!targetCanonical.ok && targetCanonical.error.code !== 'not-found') return targetCanonical
+    if (targetCanonical.ok && targetCanonical.value.fileKey !== observed.value.fileKey) return fail('already-exists')
+    try {
+      if (targetCanonical.ok && sourcePath.value.toLocaleLowerCase('en-US') === targetPath.value.toLocaleLowerCase('en-US')) {
+        const temporary = asPath(`${sourcePath.value}.markzen-case-${process.pid}-${Date.now()}`)
+        await rename(sourcePath.value, temporary)
+        try {
+          await rename(temporary, targetPath.value)
+        } catch (error) {
+          await rename(temporary, sourcePath.value)
+          throw error
+        }
+      } else {
+        await rename(sourcePath.value, targetPath.value)
+      }
+      return this.read(targetPath.value)
+    } catch (error) {
+      return fail(mapError(error))
+    }
+  }
+
   async overwrite(path: Path, bytes: Uint8Array): Promise<PlatformResult<void, FsFailureCode>> {
     const validated = validateRealPath(String(path))
     if (!validated.ok) return validated
     try {
-      await writeFile(validated.value, bytes, { flag: 'r+' })
+      const handle = await open(validated.value, 'r+')
+      try {
+        await handle.writeFile(bytes)
+        await handle.truncate(bytes.byteLength)
+      } finally {
+        await handle.close()
+      }
       return ok(undefined)
     } catch (error) {
       return fail(mapError(error))
@@ -71,7 +157,8 @@ export class RealFileSystem implements FileSystemPort {
     try {
       const metadata = await stat(canonical.value.path)
       if (!metadata.isFile()) return fail('not-file')
-      return ok({ ...canonical.value, bytes: new Uint8Array(await readFile(canonical.value.path)) })
+      const bytes = new Uint8Array(await readFile(canonical.value.path))
+      return ok({ ...canonical.value, bytes, diskVersion: asDiskVersion(createHash('sha256').update(bytes).digest('hex')) })
     } catch (error) {
       return fail(mapError(error))
     }

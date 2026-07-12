@@ -6,6 +6,7 @@ import { page, userEvent } from 'vitest/browser'
 import { ShellApp } from '../../src/app/ShellApp'
 import { asWindowId, ok, type PlatformResult, type WindowPort, type WindowState } from '../../src/platform/contracts'
 import { createMemoryPlatform } from '../../src/platform/memory'
+import { FakeDocumentGateway } from './document-gateway.fake'
 
 let root: Root | undefined
 
@@ -37,6 +38,7 @@ describe('spec 0001 accessible custom chrome', () => {
     root = createRoot(container)
     root.render(
       <ShellApp
+        documentGateway={new FakeDocumentGateway()}
         environment={{ forcedColors: false, reducedMotion: false }}
         fixtureName="browser-test"
         platformName="linux"
@@ -136,6 +138,7 @@ async function renderShell(
   root = createRoot(container)
   root.render(
     <ShellApp
+      documentGateway={new FakeDocumentGateway()}
       environment={{ forcedColors: environment.forcedColors ?? false, reducedMotion: environment.reducedMotion ?? false }}
       fixtureName="browser-test"
       platformName={platformName}

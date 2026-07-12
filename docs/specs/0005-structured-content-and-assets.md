@@ -26,6 +26,7 @@ Tables and images are common in real Markdown but are difficult to manipulate sa
 - A Markdown-authored source outside the automatic scope never creates authority. It can receive an exact-file grant only through explicit user action.
 - Remote-image permission is scoped to the requesting WindowId, document, and exact URL for the current app session. It is not persisted as a general origin permission.
 - Safe raster `data:` sources are limited to PNG, JPEG, GIF, and WebP with at most 10 MiB decoded bytes. SVG and other active data types remain preserved but blocked.
+- Implementing this milestone replaces milestone 0002's temporary inert-image AC167 and its negative tests with this spec's scoped local-capability, explicit remote-load, data-limit, blocked-source, and revocation coverage; the milestone 0002 spec must be narrowed and reapproved as part of that change.
 
 ## Behavior (acceptance criteria)
 
@@ -62,9 +63,9 @@ Tables and images are common in real Markdown but are difficult to manipulate sa
 - AC26: Given a saved document and an authorized selected image, when inserted, then the node stores a `/`-separated path relative to the document directory when representable; a cross-volume resource uses an absolute display path and warns that portability is reduced.
 - AC27: Given an untitled document in a folder window with exactly one root, when an image is inserted, then the node uses that root as its provisional reference base; other untitled documents retain an internal absolute source until first Save.
 - AC28: Given an untitled image node with a provisional or absolute source, when first Save succeeds, then milestone 0002's save transaction converts it to a destination-relative source where representable and applies the equivalent live-document update only after commit.
-- AC29: Given Save As moves a document, when its transaction captures relative local image sources, then each resolves against the old base and is rewritten relative to the new base so it still identifies the same resource; remote, data, and absolute sources remain unchanged.
+- AC29: Given Save As moves a document, when its transaction captures relative local image sources, then each resolves against the old base and is rewritten relative to the new base so it still identifies the same resource, while remote, data, and absolute sources remain unchanged.
 - AC30: Given Save As is canceled or fails, when control returns, then neither live image sources nor their reference base changes.
-- AC31: Given images are inserted or edited while Save As is in flight, when its captured snapshot commits, then those later sources are rebased from the captured old base to the adopted new base, remain dirty, and are persisted only by a later explicit Save.
+- AC31: Given images are inserted or edited while Save As is in flight, when its captured snapshot commits, then the committed captured sources and every later live source are each rebased exactly once from their captured old base to the adopted new base; the later changes remain dirty and are persisted only by a later explicit Save.
 - AC32: Given spaces, parentheses, `#`, `?`, `%`, non-ASCII characters, Windows separators, UNC paths, or a different Windows volume, when a local source is parsed, rendered, or serialized, then Platform path helpers preserve its intended file identity and emit valid Markdown without double decoding.
 - AC33: Given an image insertion, when the user supplies alternative text or explicitly marks the image decorative, then the resulting Markdown records the supplied alt value; insertion cannot silently invent meaningful alt text from a filename.
 - AC34: Given an existing image with an optional title, when its metadata is edited, then alt and title update in one undoable transaction and preserve any unchanged source exactly.
@@ -105,6 +106,7 @@ Tables and images are common in real Markdown but are difficult to manipulate sa
 - AC60: Given table controls, image nodes/placeholders, asset errors, and insertion popovers in forced-colors or reduced-motion mode, then state and focus remain distinguishable without color alone and non-essential drag/loading animation is disabled.
 - AC61: Given an approved HTTPS remote-image request redirects or returns a response, then every redirect remains credential-free HTTPS and same-origin with at most five hops, and the final response must be an allowed raster MIME within configured compressed, decoded-byte, and pixel-dimension limits; otherwise loading stops in the blocked/error state.
 - AC62: Given Delete Table is activated directly, then the complete table is replaced by one empty paragraph in a single undoable transaction and focus returns to that paragraph.
+- AC63: Given Save As commits captured image rebasing and no later image or title edit exists, when the tab adopts the new document identity, then it atomically adopts the rebased live model and new reference base as its clean baseline only after disk commit.
 
 ## Implementation ADR requirement
 
@@ -130,6 +132,7 @@ At the start of this milestone, before local-asset production code is written, a
 | AC60 | Browser Mode | Automated accessibility scan |
 | AC61 | Playwright-vs-vite | Shell smoke redirect/protocol negative |
 | AC62 | Browser Mode | — |
+| AC63 | Playwright-vs-vite | Node save-transaction unit |
 
 ## Open questions
 
