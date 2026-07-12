@@ -7,7 +7,7 @@ import { _electron, type ElectronApplication } from '@playwright/test'
 
 const profiles = new WeakMap<ElectronApplication, string>()
 const launchAttempts = 3
-const launchTimeout = 15_000
+const launchTimeout = process.platform === 'win32' ? 30_000 : 15_000
 
 export async function launchMarkzen(): Promise<ElectronApplication> {
   const executablePath = await findPackagedExecutable()
