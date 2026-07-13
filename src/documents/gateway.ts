@@ -8,6 +8,7 @@ import {
   type Path,
   type Platform,
   type MarkzenApi,
+  type RootId,
   asTabId,
 } from '../platform/contracts'
 
@@ -20,11 +21,20 @@ export type GatewayDocument = {
   readonly path?: Path
   readonly preservation?: { readonly bytes: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
   readonly revision?: number
+  readonly secondaryPath?: string
   readonly title: string
 }
 
 export type SaveInput = GatewayDocument & { readonly documentDirty: boolean; readonly titleDirty: boolean }
-export type OpenOutcome = { readonly document: GatewayDocument; readonly kind: 'opened' } | { readonly kind: 'cancelled' | 'error' }
+export type OpenOutcome = { readonly document: GatewayDocument; readonly kind: 'opened' } | { readonly kind: 'cancelled' | 'collision' | 'error' }
+export type WorkspaceOpenInput = {
+  readonly fileKey: FileKey
+  readonly generation: number
+  readonly id: string
+  readonly path: Path
+  readonly relativePath: string
+  readonly rootId: RootId
+}
 export type SaveOutcome =
   | { readonly document: GatewayDocument; readonly kind: 'saved' }
   | { readonly document: GatewayDocument; readonly kind: 'cleanup-warning'; readonly oldPath: Path }
@@ -42,6 +52,7 @@ export interface DocumentGatewayPort {
   completeQuitSaveAll(success: boolean): Promise<void>
   createTabId(): Promise<string>
   open(id?: string): Promise<OpenOutcome>
+  openWorkspace(input: WorkspaceOpenInput): Promise<OpenOutcome>
   onCommand(listener: (command: import('../platform/contracts').DocumentCommand) => void): () => void
   onExternalChange(listener: (event: ExternalGatewayEvent) => void): () => void
   overwriteExternal(input: SaveInput, diskVersion: DiskVersion): Promise<SaveOutcome>
@@ -104,6 +115,10 @@ export class DocumentGateway implements DocumentGatewayPort {
     const selected = await this.platform.dialog.open({ extensions: ['md', 'markdown', 'txt'], title: 'Open Markdown Document' })
     if (!selected.ok) return { kind: 'error' }
     return selected.value ? this.openPath(selected.value, id ?? `file-${Date.now()}`) : { kind: 'cancelled' }
+  }
+
+  async openWorkspace(input: WorkspaceOpenInput): Promise<OpenOutcome> {
+    return this.openPath(input.path, input.id)
   }
 
   onCommand(): () => void {
@@ -338,6 +353,20 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
     return parseRemoteFile(result.value.file)
   }
 
+  async openWorkspace(_input: WorkspaceOpenInput): Promise<OpenOutcome> {
+    const result = await this.api.workspace.open(
+      asTabId(_input.id),
+      _input.rootId,
+      _input.relativePath,
+      _input.fileKey,
+      _input.generation,
+    )
+    if (!result.ok) return { kind: 'error' }
+    if (result.value.kind === 'collision') return { kind: 'collision' }
+    if (result.value.kind !== 'opened') return { kind: 'error' }
+    return parseRemoteFile(result.value.file)
+  }
+
   onCommand(listener: (command: import('../platform/contracts').DocumentCommand) => void): () => void {
     return this.api.document.onCommand(listener)
   }
@@ -416,7 +445,14 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
 
 function parseRemoteFile(file: import('../platform/contracts').DocumentFilePayload): OpenOutcome {
   const parsed = parseDocumentBytes(file.bytes)
-  const identity = { diskVersion: file.diskVersion, fileKey: file.fileKey, id: file.tabId, path: file.path, title: displayDocumentStem(basename(file.path)) }
+  const identity = {
+    diskVersion: file.diskVersion,
+    fileKey: file.fileKey,
+    id: file.tabId,
+    path: file.path,
+    ...(file.secondaryPath ? { secondaryPath: file.secondaryPath } : {}),
+    title: displayDocumentStem(basename(file.path)),
+  }
   if (parsed.mode === 'rich') return { document: { ...identity, document: parsed.document, encoding: parsed.encoding }, kind: 'opened' }
   return { document: { ...identity, preservation: {
     bytes: parsed.bytes,
@@ -436,6 +472,7 @@ function remoteSaveOutcome(
       diskVersion: result.value.file.diskVersion,
       fileKey: result.value.file.fileKey,
       path: result.value.file.path,
+      ...(result.value.file.secondaryPath ? { secondaryPath: result.value.file.secondaryPath } : {}),
       title: displayDocumentStem(basename(result.value.file.path)),
     }
     return result.value.kind === 'cleanup-warning'

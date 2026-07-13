@@ -232,7 +232,7 @@ test('AC21: preload exposes one frozen versioned narrow capability', async () =>
     })
     expect(surface.version).toBe(1)
     expect(surface.frozen).toBe(true)
-    expect(surface.keys).toEqual(['bootstrap', 'document', 'version', 'window'])
+    expect(surface.keys).toEqual(['bootstrap', 'document', 'settings', 'version', 'window', 'workspace'])
   } finally {
     await quitMarkzen(app)
   }

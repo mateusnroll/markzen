@@ -3,6 +3,7 @@ import {
 } from 'node:crypto'
 import {
   open,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -20,6 +21,7 @@ import {
   ok,
   type CanonicalPath,
   type DiskVersion,
+  type DirectoryEntry,
   type FileRead,
   type FileStat,
   type FileSystemPort,
@@ -95,6 +97,50 @@ export class RealFileSystem implements FileSystemPort {
     try {
       await writeFile(validated.value, bytes, { flag: 'wx' })
       return ok(undefined)
+    } catch (error) {
+      return fail(mapError(error))
+    }
+  }
+
+  async list(path: Path): Promise<PlatformResult<readonly DirectoryEntry[], FsFailureCode>> {
+    const validated = validateRealPath(String(path))
+    if (!validated.ok) return validated
+    const canonicalParent = await this.canonicalize(validated.value)
+    if (!canonicalParent.ok) return canonicalParent
+    try {
+      const parentMetadata = await stat(canonicalParent.value.path)
+      if (!parentMetadata.isDirectory()) return fail('not-directory')
+      const children = await readdir(validated.value, { withFileTypes: true })
+      const parentCaseSensitive = await isCaseSensitive(String(canonicalParent.value.path))
+      const entries: DirectoryEntry[] = []
+      for (const child of children) {
+        const logicalPath = nodePath.join(validated.value, child.name)
+        if (child.isSymbolicLink()) {
+          try {
+            const canonicalTarget = await realpath(logicalPath)
+            const metadata = await stat(canonicalTarget)
+            if (!metadata.isDirectory() && !metadata.isFile()) continue
+            entries.push({
+              fileKey: asFileKey(await fileKey(canonicalTarget)),
+              kind: metadata.isDirectory() ? 'directory-symlink' : 'file-symlink',
+              name: child.name,
+              path: asPath(logicalPath),
+            })
+          } catch {
+            continue
+          }
+          continue
+        }
+        if (!child.isDirectory() && !child.isFile()) continue
+        const canonicalChild = nodePath.join(String(canonicalParent.value.path), child.name)
+        entries.push({
+          fileKey: asFileKey(parentCaseSensitive ? canonicalChild : canonicalChild.toLocaleLowerCase('en-US')),
+          kind: child.isDirectory() ? 'directory' : 'file',
+          name: child.name,
+          path: asPath(logicalPath),
+        })
+      }
+      return ok(entries)
     } catch (error) {
       return fail(mapError(error))
     }

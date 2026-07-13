@@ -1,14 +1,14 @@
 import { Menu, type MenuItemConstructorOptions } from 'electron'
 
-import type { DocumentCommand, PlatformName } from '../contracts'
+import type { ApplicationCommand, PlatformName } from '../contracts'
 
-export function installApplicationMenu(platform: PlatformName, dispatch: (command: DocumentCommand) => void): void {
+export function installApplicationMenu(platform: PlatformName, dispatch: (command: ApplicationCommand) => void): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(buildApplicationMenuTemplate(platform, dispatch)))
 }
 
 export function buildApplicationMenuTemplate(
   platform: PlatformName,
-  dispatch: (command: DocumentCommand) => void = () => undefined,
+  dispatch: (command: ApplicationCommand) => void = () => undefined,
 ): MenuItemConstructorOptions[] {
   const mac = platform === 'darwin'
   const file: MenuItemConstructorOptions = {
@@ -16,6 +16,8 @@ export function buildApplicationMenuTemplate(
     submenu: [
       command('New File', 'CmdOrCtrl+N', 'new', dispatch),
       command('Open…', 'CmdOrCtrl+O', 'open', dispatch),
+      command('Open Folder…', 'CmdOrCtrl+Shift+O', 'open-folder', dispatch),
+      command('Add Folder…', undefined, 'add-folder', dispatch),
       { type: 'separator' },
       command('Save', 'CmdOrCtrl+S', 'save', dispatch),
       command('Save As…', 'CmdOrCtrl+Shift+S', 'save-as', dispatch),
@@ -44,8 +46,8 @@ export function buildApplicationMenuTemplate(
 const command = (
   label: string,
   accelerator: string | undefined,
-  intent: DocumentCommand,
-  dispatch: (command: DocumentCommand) => void,
+  intent: ApplicationCommand,
+  dispatch: (command: ApplicationCommand) => void,
 ): MenuItemConstructorOptions => ({
   ...(accelerator ? { accelerator } : {}),
   click: () => dispatch(intent),

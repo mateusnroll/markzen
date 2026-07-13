@@ -18,6 +18,10 @@ export class DocumentRegistry {
   }
 
   adopt(oldKey: FileKey, newKey: FileKey, owner: DocumentOwner): PlatformResult<void, 'already-open' | 'ownership'> {
+    return this.replace(oldKey, newKey, owner)
+  }
+
+  replace(oldKey: FileKey, newKey: FileKey, owner: DocumentOwner): PlatformResult<void, 'already-open' | 'ownership'> {
     const oldOwner = this.#owners.get(oldKey)
     if (!oldOwner || !sameOwner(oldOwner, owner)) return fail('ownership')
     const targetOwner = this.#owners.get(newKey)

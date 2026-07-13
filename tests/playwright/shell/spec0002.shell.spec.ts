@@ -47,7 +47,7 @@ test('AC150 AC151 AC162: packaged Open consumes a test-stubbed native dialog thr
       document: Object.keys(window.markzen?.document ?? {}).sort(),
       root: Object.keys(window.markzen ?? {}).sort(),
     }))
-    expect(surface.root).toEqual(['bootstrap', 'document', 'version', 'window'])
+    expect(surface.root).toEqual(['bootstrap', 'document', 'settings', 'version', 'window', 'workspace'])
     expect(surface.document).toEqual([
       'acceptExternal', 'close', 'completeQuitSaveAll', 'confirmClose', 'confirmWindowClose', 'createTab', 'onCommand',
       'onExternalChange', 'open', 'overwriteExternal', 'retryCleanup', 'save', 'saveAndRename', 'saveAs', 'updateMenuState',

@@ -13,6 +13,12 @@ import {
   type TabId,
   type DiskVersion,
   type WindowState,
+  type DirectoryEntry,
+  type FileKey,
+  type RootId,
+  type SettingsSnapshotPayload,
+  type WorkspaceEventPayload,
+  type WorkspaceRootOutcome,
 } from '../contracts'
 import { channels } from './channels'
 
@@ -51,6 +57,20 @@ const api: MarkzenApi = deepFreeze({
     saveAs: (request: DocumentWriteRequest) => invoke<DocumentIntentOutcome>(channels.documentSaveAs, request),
     updateMenuState: (state: DocumentMenuState) => invoke<void>(channels.documentUpdateMenuState, state),
   },
+  settings: {
+    onSnapshot(listener: (snapshot: SettingsSnapshotPayload) => void) {
+      const wrapped = (_event: Electron.IpcRendererEvent, snapshot: SettingsSnapshotPayload) => listener(snapshot)
+      ipcRenderer.on(channels.settingsSnapshot, wrapped)
+      return () => ipcRenderer.removeListener(channels.settingsSnapshot, wrapped)
+    },
+    onWarning(listener: (message?: string) => void) {
+      const wrapped = (_event: Electron.IpcRendererEvent, message?: string) => listener(message)
+      ipcRenderer.on(channels.settingsWarning, wrapped)
+      return () => ipcRenderer.removeListener(channels.settingsWarning, wrapped)
+    },
+    patch: (patch: { readonly sidebarWidth: number }) => invoke<SettingsSnapshotPayload>(channels.settingsPatch, patch),
+    retry: () => invoke<void>(channels.settingsRetry),
+  },
   version: MARKZEN_API_VERSION,
   window: {
     close: () => invoke<void>(channels.windowClose),
@@ -62,6 +82,20 @@ const api: MarkzenApi = deepFreeze({
       return () => ipcRenderer.removeListener(channels.windowState, wrapped)
     },
     toggleMaximize: () => invoke<void>(channels.windowToggleMaximize),
+  },
+  workspace: {
+    addFolder: () => invoke<WorkspaceRootOutcome>(channels.workspaceAddFolder),
+    list: (rootId: RootId, relativePath: string, generation: number) =>
+      invoke<readonly DirectoryEntry[]>(channels.workspaceList, { generation, relativePath, rootId }),
+    onEvent(listener: (event: WorkspaceEventPayload) => void) {
+      const wrapped = (_event: Electron.IpcRendererEvent, workspaceEvent: WorkspaceEventPayload) => listener(workspaceEvent)
+      ipcRenderer.on(channels.workspaceEvent, wrapped)
+      return () => ipcRenderer.removeListener(channels.workspaceEvent, wrapped)
+    },
+    open: (tabId: TabId, rootId: RootId, relativePath: string, fileKey: FileKey, generation: number) =>
+      invoke<DocumentIntentOutcome>(channels.workspaceOpen, { fileKey, generation, relativePath, rootId, tabId }),
+    retryRoot: (rootId: RootId, generation: number) =>
+      invoke<WorkspaceRootOutcome>(channels.workspaceRetryRoot, { generation, rootId }),
   },
 })
 

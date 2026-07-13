@@ -3,12 +3,14 @@ declare const fileKeyBrand: unique symbol
 declare const windowIdBrand: unique symbol
 declare const diskVersionBrand: unique symbol
 declare const tabIdBrand: unique symbol
+declare const rootIdBrand: unique symbol
 
 export type Path = string & { readonly [pathBrand]: true }
 export type FileKey = string & { readonly [fileKeyBrand]: true }
 export type WindowId = string & { readonly [windowIdBrand]: true }
 export type DiskVersion = string & { readonly [diskVersionBrand]: true }
 export type TabId = string & { readonly [tabIdBrand]: true }
+export type RootId = string & { readonly [rootIdBrand]: true }
 
 export type FsFailureCode =
   | 'invalid-path'
@@ -40,6 +42,7 @@ export const asFileKey = (value: string): FileKey => value as FileKey
 export const asWindowId = (value: string): WindowId => value as WindowId
 export const asDiskVersion = (value: string): DiskVersion => value as DiskVersion
 export const asTabId = (value: string): TabId => value as TabId
+export const asRootId = (value: string): RootId => value as RootId
 
 export type FileStat = {
   readonly fileKey: FileKey
@@ -57,12 +60,21 @@ export type FileRead = CanonicalPath & {
   readonly diskVersion: DiskVersion
 }
 
+export type DirectoryEntryKind = 'file' | 'directory' | 'file-symlink' | 'directory-symlink'
+export type DirectoryEntry = {
+  readonly fileKey: FileKey
+  readonly kind: DirectoryEntryKind
+  readonly name: string
+  readonly path: Path
+}
+
 export type ExpectedDiskVersion = DiskVersion | 'missing'
 
 export interface FileSystemPort {
   atomicReplace(path: Path, bytes: Uint8Array, expected: ExpectedDiskVersion): Promise<PlatformResult<FileRead, FsFailureCode | 'conflict'>>
   canonicalize(path: Path): Promise<PlatformResult<CanonicalPath, FsFailureCode>>
   create(path: Path, bytes: Uint8Array): Promise<PlatformResult<void, FsFailureCode>>
+  list(path: Path): Promise<PlatformResult<readonly DirectoryEntry[], FsFailureCode>>
   move(source: Path, target: Path, expected: DiskVersion): Promise<PlatformResult<FileRead, FsFailureCode | 'conflict'>>
   overwrite(path: Path, bytes: Uint8Array): Promise<PlatformResult<void, FsFailureCode>>
   read(path: Path): Promise<PlatformResult<FileRead, FsFailureCode>>
@@ -128,16 +140,42 @@ export interface Platform {
 }
 
 export type PlatformName = 'darwin' | 'linux' | 'win32'
+export type WindowKind = 'single-file' | 'workspace'
 
 export const MARKZEN_API_VERSION = 1 as const
 
 export type BootstrapPayload = {
+  readonly kind: WindowKind
   readonly platformName: PlatformName
+  readonly roots: readonly WorkspaceRootPayload[]
+  readonly settings: SettingsSnapshotPayload
+  readonly settingsWarning?: string
   readonly state: WindowState
   readonly windowId: WindowId
 }
 
-export type DocumentFilePayload = FileRead & { readonly tabId: TabId }
+export type WorkspaceRootPayload = {
+  readonly entries: readonly DirectoryEntry[]
+  readonly path: Path
+  readonly rootId: RootId
+}
+
+export type SettingsSnapshotPayload = {
+  readonly revision: number
+  readonly schemaVersion: 1
+  readonly sidebarWidth: number
+}
+
+export type WorkspaceEventPayload =
+  | { readonly generation: number; readonly kind: 'invalidated' | 'root-recovered'; readonly relativePath: string; readonly rootId: RootId }
+  | { readonly generation: number; readonly kind: 'root-error' | 'watch-warning'; readonly rootId: RootId }
+  | { readonly generation: number; readonly kind: 'root-added'; readonly root: WorkspaceRootPayload }
+
+export type WorkspaceRootOutcome =
+  | { readonly kind: 'added' | 'duplicate'; readonly root: WorkspaceRootPayload }
+  | { readonly kind: 'cancelled' | 'error' }
+
+export type DocumentFilePayload = FileRead & { readonly secondaryPath?: string; readonly tabId: TabId }
 export type DocumentIntentOutcome =
   | { readonly file: DocumentFilePayload; readonly kind: 'opened' | 'saved' }
   | { readonly file: DocumentFilePayload; readonly kind: 'cleanup-warning'; readonly oldPath: Path }
@@ -152,6 +190,7 @@ export type DocumentWriteRequest = {
   readonly titleDirty: boolean
 }
 export type DocumentCommand = 'close-tab' | 'close-window' | 'new' | 'open' | 'save' | 'save-all' | 'save-all-for-quit' | 'save-as'
+export type ApplicationCommand = DocumentCommand | 'add-folder' | 'open-folder'
 export type DocumentMenuState = {
   readonly activeTabId?: TabId
   readonly tabs: readonly {
@@ -184,6 +223,21 @@ export interface MarkzenDocumentCapability {
   updateMenuState(state: DocumentMenuState): Promise<PlatformResult<void>>
 }
 
+export interface MarkzenWorkspaceCapability {
+  addFolder(): Promise<PlatformResult<WorkspaceRootOutcome>>
+  list(rootId: RootId, relativePath: string, generation: number): Promise<PlatformResult<readonly DirectoryEntry[]>>
+  onEvent(listener: (event: WorkspaceEventPayload) => void): () => void
+  open(tabId: TabId, rootId: RootId, relativePath: string, fileKey: FileKey, generation: number): Promise<PlatformResult<DocumentIntentOutcome>>
+  retryRoot(rootId: RootId, generation: number): Promise<PlatformResult<WorkspaceRootOutcome>>
+}
+
+export interface MarkzenSettingsCapability {
+  onWarning(listener: (message?: string) => void): () => void
+  onSnapshot(listener: (snapshot: SettingsSnapshotPayload) => void): () => void
+  patch(patch: { readonly sidebarWidth: number }): Promise<PlatformResult<SettingsSnapshotPayload>>
+  retry(): Promise<PlatformResult<void>>
+}
+
 export interface MarkzenWindowCapability {
   close(): Promise<PlatformResult<void>>
   getState(): Promise<PlatformResult<WindowState>>
@@ -195,6 +249,8 @@ export interface MarkzenWindowCapability {
 export interface MarkzenApi {
   readonly bootstrap: () => Promise<PlatformResult<BootstrapPayload>>
   readonly document: MarkzenDocumentCapability
+  readonly settings: MarkzenSettingsCapability
   readonly version: typeof MARKZEN_API_VERSION
   readonly window: MarkzenWindowCapability
+  readonly workspace: MarkzenWorkspaceCapability
 }

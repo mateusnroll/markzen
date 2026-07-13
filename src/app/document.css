@@ -1,3 +1,11 @@
+.folder-workspace-layout {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
 .document-workspace {
   display: flex;
   min-width: 0;
@@ -5,6 +13,10 @@
   flex: 1;
   flex-direction: column;
   overflow: hidden;
+}
+
+.document-tab-preview .tab-label {
+  font-style: italic;
 }
 
 .document-command-row {
@@ -168,6 +180,16 @@
   margin: 6px 0 0;
   color: #a51d12;
   font-size: 14px;
+}
+
+.document-secondary-path {
+  max-width: 100%;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: #66615b;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preservation-panel {

@@ -8,7 +8,9 @@ import { validateDocumentName } from '../documents/filename'
 import type { DocumentGatewayPort, ExternalGatewayEvent, GatewayDocument, SaveOutcome } from '../documents/gateway'
 import { createDocumentExtensions, type RichDocument } from '../documents/markdown'
 import { acceptTabBaseline, createTabBaseline, editTabDocument, editTabTitle, isTabDirty } from '../documents/tab-state'
-import { asTabId, type DiskVersion, type FileKey, type Path } from '../platform/contracts'
+import { asTabId, type DirectoryEntry, type DiskVersion, type FileKey, type Path, type RootId } from '../platform/contracts'
+import { insertPinnedBeforePreview, preparePreviewReplacement } from '../workspaces/state'
+import { WorkspaceSidebar, type WorkspaceRootSeed } from './WorkspaceSidebar'
 
 import './document.css'
 
@@ -19,7 +21,19 @@ export type DocumentSeed = {
   readonly id: string
   readonly path?: Path
   readonly preservation?: { readonly bytes?: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
+  readonly preview?: boolean
+  readonly secondaryPath?: string
   readonly title: string
+}
+
+export type DocumentWorkspaceFolder = {
+  readonly forcedColors: boolean
+  readonly invalidation?: { readonly generation: number; readonly path: Path; readonly rootId: RootId }
+  readonly onList: (rootId: RootId, path: Path) => Promise<readonly DirectoryEntry[]>
+  readonly onWidthChange: (width: number) => void
+  readonly reducedMotion: boolean
+  readonly roots: readonly WorkspaceRootSeed[]
+  readonly width: number
 }
 
 type WorkspaceTab = {
@@ -31,7 +45,9 @@ type WorkspaceTab = {
   readonly id: string
   readonly path?: Path
   readonly preservation?: { readonly bytes?: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
+  readonly preview: boolean
   readonly revision: number
+  readonly secondaryPath?: string
   readonly title: string
 }
 
@@ -42,11 +58,13 @@ export function DocumentWorkspace({
   gateway,
   initialTabs,
   onCloseWindow,
+  workspace,
 }: {
   readonly closeRequest?: number
   readonly gateway: DocumentGatewayPort
   readonly initialTabs?: readonly DocumentSeed[]
   readonly onCloseWindow?: () => void
+  readonly workspace?: DocumentWorkspaceFolder
 }) {
   const editors = useRef(new Set<Editor>())
   const baselineDocuments = useRef(new Map<string, ProseMirrorNode>())
@@ -54,6 +72,7 @@ export function DocumentWorkspace({
   const [issue, setIssue] = useState<{ readonly kind: SaveOutcome['kind']; readonly message: string }>()
   const [pendingExternal, setPendingExternal] = useState<GatewayDocument>()
   const [announcement, setAnnouncement] = useState('')
+  const [workspaceRetry, setWorkspaceRetry] = useState<{ readonly entry: DirectoryEntry; readonly pinned: boolean; readonly rootId: RootId }>()
   const generations = useRef(new Map<string, number>())
   const lifecycleGeneration = useRef(0)
   const handledCloseRequest = useRef(0)
@@ -61,7 +80,7 @@ export function DocumentWorkspace({
   const updateDocument = useCallback((id: string, editor: Editor) => {
     const baseline = baselineDocuments.current.get(id)
     setTabs((current) => current.map((tab) => (
-      tab.id === id ? editTabDocument(tab, baseline ? editor.state.doc.eq(baseline) : false) : tab
+      tab.id === id ? { ...editTabDocument(tab, baseline ? editor.state.doc.eq(baseline) : false), preview: false } : tab
     )))
   }, [])
 
@@ -92,6 +111,8 @@ export function DocumentWorkspace({
         id: seed.id,
         ...(seed.path ? { path: seed.path } : {}),
         ...(seed.preservation ? { preservation: seed.preservation } : {}),
+        preview: seed.preview ?? false,
+        ...(seed.secondaryPath ? { secondaryPath: seed.secondaryPath } : {}),
         title: seed.title,
       }
     },
@@ -99,8 +120,8 @@ export function DocumentWorkspace({
   )
 
   const seeds = useMemo(
-    () => (initialTabs?.length ? initialTabs : [{ id: 'untitled-1', title: '' }]),
-    [initialTabs],
+    () => initialTabs ?? (workspace ? [] : [{ id: 'untitled-1', title: '' }]),
+    [initialTabs, workspace],
   )
   const [tabs, setTabs] = useState<WorkspaceTab[]>(() => seeds.map(makeTab))
   const tabsRef = useRef(tabs)
@@ -121,11 +142,18 @@ export function DocumentWorkspace({
 
   const active = tabs.find((tab) => tab.id === activeId)
   const activeIndex = tabs.findIndex((tab) => tab.id === activeId)
+  const secondaryPath = useMemo(() => active?.secondaryPath ?? (active?.path && workspace
+    ? workspaceSecondaryPath(active.path, workspace.roots)
+    : undefined), [active?.path, active?.secondaryPath, workspace])
 
   const dirty = useCallback(
     (tab: WorkspaceTab) => isTabDirty(tab),
     [],
   )
+
+  const pinTab = useCallback((id: string) => {
+    setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, preview: false } : tab))
+  }, [])
 
   const closeTab = useCallback(
     (id: string) => {
@@ -189,7 +217,7 @@ export function DocumentWorkspace({
   const addTab = useCallback(() => {
     const append = (id: string) => {
       const tab = makeTab({ id, title: '' })
-      setTabs((current) => [...current, tab])
+      setTabs((current) => [...insertPinnedBeforePreview(current, tab)])
       setActiveId(tab.id)
       setRovingId(tab.id)
     }
@@ -233,7 +261,7 @@ export function DocumentWorkspace({
   const titleError = titleValidation.valid ? undefined : titleValidation.reason
 
   const updateTitle = useCallback((id: string, title: string) => {
-    setTabs((current) => current.map((tab) => (tab.id === id ? editTabTitle(tab, title) : tab)))
+    setTabs((current) => current.map((tab) => (tab.id === id ? { ...editTabTitle(tab, title), preview: false } : tab)))
   }, [])
 
   const commitGatewaySave = useCallback((tab: WorkspaceTab, result: SaveOutcome, generation: number, snapshot: ProseMirrorNode) => {
@@ -262,6 +290,7 @@ export function DocumentWorkspace({
 
   const save = useCallback(() => {
     if (!active || !titleValidation.valid) return
+    pinTab(active.id)
     const generation = (generations.current.get(active.id) ?? 0) + 1
     const snapshot = active.editor.state.doc
     generations.current.set(active.id, generation)
@@ -270,15 +299,16 @@ export function DocumentWorkspace({
       documentDirty: active.contentDirty,
       titleDirty: active.title !== active.baselineTitle,
     }).then((result) => commitGatewaySave(active, result, generation, snapshot))
-  }, [active, commitGatewaySave, gateway, titleValidation.valid])
+  }, [active, commitGatewaySave, gateway, pinTab, titleValidation.valid])
 
   const saveAs = useCallback(() => {
     if (!active || !titleValidation.valid) return
+    pinTab(active.id)
     const generation = (generations.current.get(active.id) ?? 0) + 1
     const snapshot = active.editor.state.doc
     generations.current.set(active.id, generation)
     void gateway.saveAs(gatewayDocument(active)).then((result) => commitGatewaySave(active, result, generation, snapshot))
-  }, [active, commitGatewaySave, gateway, titleValidation.valid])
+  }, [active, commitGatewaySave, gateway, pinTab, titleValidation.valid])
 
   const openDocument = useCallback(() => {
     const reusable = Boolean(active && tabs.length === 1 && active.baselineTitle === '' && !dirty(active))
@@ -303,11 +333,112 @@ export function DocumentWorkspace({
         editors.current.delete(tabs[0].editor)
         baselineDocuments.current.delete(tabs[0].id)
         setTabs([opened])
-      } else setTabs((current) => [...current, opened])
+      } else setTabs((current) => [...insertPinnedBeforePreview(current, opened)])
       setActiveId(opened.id)
       setRovingId(opened.id)
     })()
   }, [active, dirty, gateway, makeTab, tabs])
+
+  const openWorkspaceEntry = useCallback((entry: DirectoryEntry, pinned: boolean, rootId: RootId) => {
+    void (async () => {
+      setWorkspaceRetry(undefined)
+      const previousActiveId = activeId
+      const existing = tabsRef.current.find((tab) => tab.fileKey === entry.fileKey)
+      if (existing) {
+        if (pinned) pinTab(existing.id)
+        setActiveId(existing.id)
+        setRovingId(existing.id)
+        return
+      }
+
+      const preview = tabsRef.current.find((tab) => tab.preview)
+      const previewDecision = preparePreviewReplacement(preview ? { dirty: dirty(preview), id: preview.id } : undefined)
+      const reusable = previewDecision.reusableId ? preview : undefined
+      if (preview && previewDecision.pinExisting) pinTab(preview.id)
+      const id = reusable?.id ?? await gateway.createTabId()
+      const generation = (generations.current.get(id) ?? 0) + 1
+      generations.current.set(id, generation)
+      const placeholder = makeTab({
+        fileKey: entry.fileKey,
+        id,
+        path: entry.path,
+        preview: !pinned,
+        title: displaySeedTitle(entry.name),
+      })
+      if (reusable) {
+        setTabs((current) => current.map((tab) => tab.id === reusable.id ? placeholder : tab))
+      } else {
+        setTabs((current) => pinned
+          ? [...insertPinnedBeforePreview(current, placeholder)]
+          : [...current.filter((tab) => !tab.preview), placeholder])
+      }
+      setActiveId(id)
+      setRovingId(id)
+
+      const rootPath = workspace?.roots.find((root) => root.rootId === rootId)?.path
+      if (!rootPath) return
+      const result = await gateway.openWorkspace({
+        fileKey: entry.fileKey,
+        generation,
+        id,
+        path: entry.path,
+        relativePath: logicalRelativePath(rootPath, entry.path),
+        rootId,
+      })
+      if (generations.current.get(id) !== generation) return
+      if (result.kind === 'collision' && reusable) {
+        placeholder.editor.destroy()
+        editors.current.delete(placeholder.editor)
+        baselineDocuments.current.delete(placeholder.id)
+        setTabs((current) => current.map((tab) => tab.id === id ? reusable : tab))
+        setActiveId(reusable.id)
+        setRovingId(reusable.id)
+        return
+      }
+      if (result.kind === 'collision') {
+        closeTab(id)
+        setActiveId(previousActiveId)
+        setRovingId(previousActiveId)
+        return
+      }
+      if (result.kind !== 'opened') {
+        if (reusable) {
+          reusable.editor.destroy()
+          editors.current.delete(reusable.editor)
+        }
+        baselineDocuments.current.delete(id)
+        const failed = makeTab({ id, preview: !pinned, title: displaySeedTitle(entry.name) })
+        placeholder.editor.destroy()
+        editors.current.delete(placeholder.editor)
+        setTabs((current) => current.map((tab) => tab.id === id ? failed : tab))
+        setWorkspaceRetry({ entry, pinned, rootId })
+        setIssue({ kind: 'error', message: 'This file could not be opened. Its identity or workspace access may have changed.' })
+        return
+      }
+      if (reusable) {
+        reusable.editor.destroy()
+        editors.current.delete(reusable.editor)
+      }
+      setWorkspaceRetry(undefined)
+      setIssue(undefined)
+      const duplicate = tabsRef.current.find((tab) => tab.id !== id && tab.fileKey === result.document.fileKey)
+      if (duplicate) {
+        closeTab(id)
+        if (pinned) pinTab(duplicate.id)
+        setActiveId(duplicate.id)
+        setRovingId(duplicate.id)
+        return
+      }
+      const replacement = makeTab({ ...gatewaySeed(result.document), preview: !pinned })
+      setTabs((current) => current.map((tab) => {
+        if (tab.id !== id) return tab
+        tab.editor.destroy()
+        editors.current.delete(tab.editor)
+        baselineDocuments.current.delete(tab.id)
+        return replacement
+      }))
+    })()
+  }, [activeId, closeTab, dirty, gateway, makeTab, pinTab, workspace])
 
   const saveTabsSequentially = useCallback(async (dirtyTabs: readonly WorkspaceTab[]): Promise<boolean> => {
     for (const tab of dirtyTabs) {
@@ -473,13 +604,28 @@ export function DocumentWorkspace({
   )
 
   return (
-    <div className="document-workspace" data-testid="document-workspace" onKeyDownCapture={handleWorkspaceKeyDown}>
+    <div className="folder-workspace-layout">
+      {workspace ? (
+        <WorkspaceSidebar
+          {...(active?.fileKey ? { activeFileKey: active.fileKey } : {})}
+          forcedColors={workspace.forcedColors}
+          {...(workspace.invalidation ? { invalidation: workspace.invalidation } : {})}
+          onList={workspace.onList}
+          onOpen={openWorkspaceEntry}
+          onWidthChange={workspace.onWidthChange}
+          reducedMotion={workspace.reducedMotion}
+          roots={workspace.roots}
+          width={workspace.width}
+        />
+      ) : null}
+      <div className="document-workspace" data-testid="document-workspace" onKeyDownCapture={handleWorkspaceKeyDown}>
       <div className="document-command-row">
         <button data-testid="open-document" onClick={openDocument} type="button">Open</button>
         <button data-testid="save-document" disabled={!active || !titleValidation.valid || Boolean(active.preservation)} onClick={save} type="button">
           Save
         </button>
         <button data-testid="save-as-document" disabled={!active || !titleValidation.valid} onClick={saveAs} type="button">Save As</button>
+        {active?.preview ? <button data-testid="preview-keep-open" onClick={() => pinTab(active.id)} type="button">Keep Open</button> : null}
       </div>
       <div
         className="tab-strip"
@@ -498,9 +644,9 @@ export function DocumentWorkspace({
               return (
                 <button
                   aria-controls="active-document-panel"
-                  aria-label={`${label}${isDirty ? ', dirty' : ''}`}
+                  aria-label={`${label}${tab.preview ? ', Preview' : ''}${isDirty ? ', dirty' : ''}`}
                   aria-selected={selected}
-                  className="document-tab"
+                  className={`document-tab${tab.preview ? ' document-tab-preview' : ''}`}
                   data-document-tab={tab.id}
                   data-testid="document-tab"
                   key={tab.id}
@@ -508,6 +654,7 @@ export function DocumentWorkspace({
                     setActiveId(tab.id)
                     setRovingId(tab.id)
                   }}
+                  onDoubleClick={() => pinTab(tab.id)}
                   onKeyDown={(event) => {
                     if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
                       event.preventDefault()
@@ -526,6 +673,7 @@ export function DocumentWorkspace({
                   title={label}
                   type="button"
                 >
+                  {tab.preview ? <span aria-hidden="true" className="preview-icon">◇</span> : null}
                   <span className="tab-label">{label}</span>
                   {isDirty ? <span aria-hidden="true" className="dirty-dot">●</span> : null}
                 </button>
@@ -612,6 +760,11 @@ export function DocumentWorkspace({
                   {titleError}
                 </p>
               ) : null}
+              {secondaryPath ? (
+                <p aria-label={`Folder: ${secondaryPath}`} className="document-secondary-path" data-testid="document-secondary-path" title={secondaryPath}>
+                  {secondaryPath}
+                </p>
+              ) : null}
             </div>
             {active.preservation ? (
               <div className="preservation-panel">
@@ -634,13 +787,20 @@ export function DocumentWorkspace({
                 {issue.kind === 'cleanup-warning' ? (
                   <button data-testid="retry-cleanup" onClick={retryCleanup} type="button">Retry Cleanup</button>
                 ) : null}
+                {workspaceRetry ? (
+                  <button
+                    data-testid="workspace-open-retry"
+                    onClick={() => openWorkspaceEntry(workspaceRetry.entry, workspaceRetry.pinned, workspaceRetry.rootId)}
+                    type="button"
+                  >Retry</button>
+                ) : null}
               </aside>
             ) : null}
           </div>
         </section>
       ) : (
         <section aria-label="No open documents" className="empty-document-state">
-          <p>No open documents</p>
+          <p data-testid="empty-document-message">{workspace ? 'Select a file from the sidebar' : 'No open documents'}</p>
           <button data-testid="empty-new-file" onClick={addTab} type="button">New file</button>
         </section>
       )}
@@ -668,6 +828,7 @@ export function DocumentWorkspace({
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   )
 }
@@ -708,6 +869,7 @@ function gatewayDocument(tab: WorkspaceTab): GatewayDocument {
     id: tab.id,
     ...(tab.path ? { path: tab.path } : {}),
     ...(tab.preservation?.bytes ? { preservation: { ...tab.preservation, bytes: tab.preservation.bytes } } : {}),
+    ...(tab.secondaryPath ? { secondaryPath: tab.secondaryPath } : {}),
     revision: tab.revision,
     title: tab.title,
   }
@@ -721,8 +883,27 @@ function gatewaySeed(document: GatewayDocument): DocumentSeed {
     id: document.id,
     ...(document.path ? { path: document.path } : {}),
     ...(document.preservation ? { preservation: document.preservation } : {}),
+    ...(document.secondaryPath ? { secondaryPath: document.secondaryPath } : {}),
     title: document.title,
   }
+}
+
+const displaySeedTitle = (name: string): string => name.replace(/\.(md|markdown|txt)$/i, '')
+const logicalRelativePath = (root: Path, child: Path): string => {
+  const prefix = `${String(root).replace(/[\\/]$/, '')}/`
+  return String(child).replaceAll('\\', '/').slice(prefix.replaceAll('\\', '/').length)
+}
+
+function workspaceSecondaryPath(path: Path, roots: readonly WorkspaceRootSeed[]): string | undefined {
+  const normalizedPath = String(path).replaceAll('\\', '/')
+  const containing = roots
+    .map((root, index) => ({ index, root, value: String(root.path).replaceAll('\\', '/').replace(/\/$/, '') }))
+    .filter(({ value }) => normalizedPath === value || normalizedPath.startsWith(`${value}/`))
+    .toSorted((first, second) => second.value.length - first.value.length || first.index - second.index)[0]
+  if (!containing) return undefined
+  const relative = normalizedPath.slice(containing.value.length + 1)
+  const separator = relative.lastIndexOf('/')
+  return separator > 0 ? relative.slice(0, separator) : undefined
 }
 
 function adoptGatewayResult(tab: WorkspaceTab, document: GatewayDocument, snapshot: ProseMirrorNode): WorkspaceTab {
@@ -732,6 +913,7 @@ function adoptGatewayResult(tab: WorkspaceTab, document: GatewayDocument, snapsh
     ...(document.diskVersion ? { diskVersion: document.diskVersion } : {}),
     ...(document.fileKey ? { fileKey: document.fileKey } : {}),
     ...(document.path ? { path: document.path } : {}),
+    ...(document.secondaryPath ? { secondaryPath: document.secondaryPath } : {}),
     title: document.title,
   }
 }
