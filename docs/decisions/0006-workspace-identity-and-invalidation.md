@@ -34,7 +34,7 @@ Folder workspaces add main-owned roots, lazy directory trees, preview-tab identi
 ### Watch invalidation
 
 - Extend the existing `Platform.watch` contract with normalized root-relative invalidations and error/recovery callbacks. MemoryPlatform exposes equivalent synthetic events and active-subscription observation only through its harness.
-- One logical subscription belongs to each accepted root. The real adapter may use multiple native watcher objects without changing ownership or disposal behavior; in particular, a non-recursive parent observation detects root deletion or rename on platforms where the recursive root watcher does not report it.
+- One logical subscription belongs to each accepted root. The real adapter may use multiple native watcher objects without changing ownership or disposal behavior; on Windows, a non-recursive parent observation detects root deletion or rename because the recursive root watcher does not report it.
 - Raw events are batched per root using a 300 ms trailing delay and 750 ms maximum wait. Expanded loaded directories refresh; collapsed loaded directories become stale; unloaded directories remain unread.
 - Markzen adds no watcher retry timer. Native backend recovery and an explicit user Retry are the only re-registration paths.
 

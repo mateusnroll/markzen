@@ -622,13 +622,17 @@ async function startWorkspaceWatch(record: WindowRecord, rootId: RootId, logical
     void routeWorkspaceInvalidation(record, rootId, relativePath)
   })
   const watcher = watch(rootPath, { followSymlinks: false, ignoreInitial: true, persistent: true })
-  const parentWatcher = watch(nodePath.dirname(rootPath), {
-    depth: 0,
-    followSymlinks: false,
-    ignoreInitial: true,
-    persistent: true,
-  })
-  const initialized = Promise.all([watchReady(watcher), watchReady(parentWatcher)])
+  const parentWatcher = process.platform === 'win32'
+    ? watch(nodePath.dirname(rootPath), {
+        depth: 0,
+        followSymlinks: false,
+        ignoreInitial: true,
+        persistent: true,
+      })
+    : undefined
+  const initialized = parentWatcher
+    ? Promise.all([watchReady(watcher), watchReady(parentWatcher)])
+    : Promise.resolve()
   watcher.on('all', (_event, changedPath) => {
     const relative = nodePath.relative(rootPath, String(changedPath)).replaceAll(nodePath.sep, '/')
     if (WorkspaceWatchBatcher.isVisibleInvalidation(relative)) {
@@ -638,7 +642,7 @@ async function startWorkspaceWatch(record: WindowRecord, rootId: RootId, logical
       batcher.invalidate()
     }
   })
-  parentWatcher.on('unlinkDir', (changedPath) => {
+  parentWatcher?.on('unlinkDir', (changedPath) => {
     if (!sameWatchPath(rootPath, String(changedPath))) return
     pendingRelativePath = ''
     batcher.invalidate()
@@ -651,11 +655,11 @@ async function startWorkspaceWatch(record: WindowRecord, rootId: RootId, logical
     })
   }
   watcher.on('error', warn)
-  parentWatcher.on('error', warn)
+  parentWatcher?.on('error', warn)
   workspaceRoots.attachWatch(record.id, rootId, () => {
     batcher.dispose()
     void watcher.close()
-    void parentWatcher.close()
+    void parentWatcher?.close()
   })
   await initialized
 }
