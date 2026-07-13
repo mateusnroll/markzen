@@ -53,7 +53,7 @@ export interface DocumentGatewayPort {
   createTabId(): Promise<string>
   open(id?: string): Promise<OpenOutcome>
   openWorkspace(input: WorkspaceOpenInput): Promise<OpenOutcome>
-  onCommand(listener: (command: import('../platform/contracts').DocumentCommand) => void): () => void
+  onCommand(listener: (command: import('../platform/contracts').RendererCommand) => void): () => void
   onExternalChange(listener: (event: ExternalGatewayEvent) => void): () => void
   overwriteExternal(input: SaveInput, diskVersion: DiskVersion): Promise<SaveOutcome>
   retryCleanup(input: GatewayDocument): Promise<SaveOutcome>
@@ -367,7 +367,7 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
     return parseRemoteFile(result.value.file)
   }
 
-  onCommand(listener: (command: import('../platform/contracts').DocumentCommand) => void): () => void {
+  onCommand(listener: (command: import('../platform/contracts').RendererCommand) => void): () => void {
     return this.api.document.onCommand(listener)
   }
 

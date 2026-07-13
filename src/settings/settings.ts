@@ -1,4 +1,11 @@
-import { fail, ok, type PlatformResult } from '../platform/contracts'
+import {
+  fail,
+  ok,
+  type PlatformResult,
+  type SettingsPatch,
+  type ThemePreference,
+  type ToolbarMode,
+} from '../platform/contracts'
 
 const MAX_PATCH_BYTES = 4 * 1024
 const MAX_SETTINGS_BYTES = 1024 * 1024
@@ -8,14 +15,24 @@ export type SettingsSnapshot = {
   readonly revision: number
   readonly schemaVersion: 1
   readonly sidebarWidth: number
+  readonly theme: ThemePreference
+  readonly toolbarMode: ToolbarMode
 }
 
 export type PersistedSettings = Record<string, unknown> & {
   readonly schemaVersion: 1
   readonly sidebarWidth: number
+  readonly theme: ThemePreference
+  readonly toolbarMode: ToolbarMode
 }
 
-export const DEFAULT_SETTINGS: SettingsSnapshot = { revision: 0, schemaVersion: 1, sidebarWidth: 240 }
+export const DEFAULT_SETTINGS: SettingsSnapshot = {
+  revision: 0,
+  schemaVersion: 1,
+  sidebarWidth: 240,
+  theme: 'system',
+  toolbarMode: 'minimal',
+}
 
 export type SettingsLoadResult =
   | { readonly persisted: PersistedSettings; readonly snapshot: SettingsSnapshot }
@@ -24,7 +41,7 @@ export type SettingsLoadResult =
   | { readonly newer: true; readonly snapshot: SettingsSnapshot }
   | { readonly oversized: true; readonly snapshot: SettingsSnapshot }
 
-export function validateSettingsPatch(value: unknown): PlatformResult<{ readonly sidebarWidth: number }, 'validation'> {
+export function validateSettingsPatch(value: unknown): PlatformResult<SettingsPatch, 'validation'> {
   if (!isPlainObject(value)) return fail('validation')
   let encoded: string
   try {
@@ -34,9 +51,14 @@ export function validateSettingsPatch(value: unknown): PlatformResult<{ readonly
   }
   if (new TextEncoder().encode(encoded).byteLength > MAX_PATCH_BYTES) return fail('validation')
   const keys = Object.keys(value)
-  if (keys.length !== 1 || keys[0] !== 'sidebarWidth' || DANGEROUS_KEYS.has(keys[0])) return fail('validation')
-  if (typeof value.sidebarWidth !== 'number' || !Number.isFinite(value.sidebarWidth)) return fail('validation')
-  return ok({ sidebarWidth: clampWidth(value.sidebarWidth) })
+  const key = keys[0]
+  if (keys.length !== 1 || !key || DANGEROUS_KEYS.has(key)) return fail('validation')
+  if (key === 'sidebarWidth' && typeof value.sidebarWidth === 'number' && Number.isFinite(value.sidebarWidth)) {
+    return ok({ sidebarWidth: clampWidth(value.sidebarWidth) })
+  }
+  if (key === 'theme' && isTheme(value.theme)) return ok({ theme: value.theme })
+  if (key === 'toolbarMode' && isToolbarMode(value.toolbarMode)) return ok({ toolbarMode: value.toolbarMode })
+  return fail('validation')
 }
 
 export function parseSettings(raw: string): SettingsLoadResult {
@@ -55,9 +77,11 @@ export function parseSettings(raw: string): SettingsLoadResult {
   const sidebarWidth = typeof value.sidebarWidth === 'number' && Number.isFinite(value.sidebarWidth)
     ? clampWidth(value.sidebarWidth)
     : DEFAULT_SETTINGS.sidebarWidth
+  const theme = isTheme(value.theme) ? value.theme : DEFAULT_SETTINGS.theme
+  const toolbarMode = isToolbarMode(value.toolbarMode) ? value.toolbarMode : DEFAULT_SETTINGS.toolbarMode
   const safe = sanitizeObject(value)
-  const persisted = { ...safe, schemaVersion: 1 as const, sidebarWidth }
-  return { persisted, snapshot: { revision: 0, schemaVersion: 1, sidebarWidth } }
+  const persisted = { ...safe, schemaVersion: 1 as const, sidebarWidth, theme, toolbarMode }
+  return { persisted, snapshot: { revision: 0, schemaVersion: 1, sidebarWidth, theme, toolbarMode } }
 }
 
 export function encodeSettings(value: PersistedSettings): Uint8Array {
@@ -91,7 +115,12 @@ export class SettingsService {
     this.#snapshot = loaded?.snapshot ?? DEFAULT_SETTINGS
     this.#persisted = loaded && 'persisted' in loaded
       ? loaded.persisted
-      : { schemaVersion: 1, sidebarWidth: this.#snapshot.sidebarWidth }
+      : {
+          schemaVersion: 1,
+          sidebarWidth: this.#snapshot.sidebarWidth,
+          theme: this.#snapshot.theme,
+          toolbarMode: this.#snapshot.toolbarMode,
+        }
   }
 
   dispose(): void {
@@ -117,12 +146,8 @@ export class SettingsService {
   patch(value: unknown): PlatformResult<SettingsSnapshot, 'validation'> {
     const validated = validateSettingsPatch(value)
     if (!validated.ok) return validated
-    this.#snapshot = {
-      revision: this.#snapshot.revision + 1,
-      schemaVersion: 1,
-      sidebarWidth: validated.value.sidebarWidth,
-    }
-    this.#persisted = { ...this.#persisted, schemaVersion: 1, sidebarWidth: validated.value.sidebarWidth }
+    this.#snapshot = { ...this.#snapshot, ...validated.value, revision: this.#snapshot.revision + 1, schemaVersion: 1 }
+    this.#persisted = { ...this.#persisted, ...validated.value, schemaVersion: 1 }
     for (const listener of this.#listeners) listener(this.#snapshot)
     this.#schedule(300)
     return ok(this.#snapshot)
@@ -201,6 +226,9 @@ export const shouldApplySettings = (snapshot: SettingsSnapshot, appliedRevision:
   snapshot.revision > appliedRevision
 
 const clampWidth = (value: number): number => Math.round(Math.min(480, Math.max(160, value)))
+
+const isTheme = (value: unknown): value is ThemePreference => value === 'system' || value === 'light' || value === 'dark'
+const isToolbarMode = (value: unknown): value is ToolbarMode => value === 'minimal' || value === 'regular'
 
 function sanitizeObject(value: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>

@@ -7,9 +7,14 @@ import {
   type MarkzenApi,
   type WindowPort,
   asRootId,
+  ok,
+  type EffectiveTheme,
+  type SettingsPatch,
+  type SettingsSnapshotPayload,
 } from '../platform/contracts'
 import { createMemoryPlatform } from '../platform/memory'
 import type { DialogResult } from '../platform/contracts'
+import { DEFAULT_SETTINGS } from '../settings/settings'
 
 type BootResult =
   | { readonly ok: true; readonly element: React.ReactElement }
@@ -27,12 +32,35 @@ type Fixture = {
     readonly path: string
     readonly writable?: boolean
   }[]
+  readonly initialDocuments?: readonly import('./DocumentWorkspace').DocumentSeed[]
   readonly workspaceRoots?: readonly string[]
 }
 
 const fixtures: Readonly<Record<string, Fixture>> = {
   basic: {
     files: [{ bytes: '# Welcome\n', path: '/notes/welcome.md' }],
+  },
+  'writing-link': {
+    files: [],
+    initialDocuments: [{
+      id: 'writing-link',
+      title: 'Links',
+      document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Link', marks: [{ type: 'link', attrs: { href: 'https://example.com' } }] }] }] },
+    }],
+  },
+  'writing-search-10k': {
+    files: [],
+    initialDocuments: [{
+      id: 'writing-search',
+      title: 'Search performance',
+      document: {
+        type: 'doc',
+        content: Array.from({ length: 10_000 }, (_, index) => ({
+          type: 'paragraph',
+          content: [{ type: 'text', text: index % 2 === 0 ? `match line ${index}` : `ordinary line ${index}` }],
+        })),
+      },
+    }],
   },
   'lifecycle-open': {
     dialogs: [{ kind: 'open', path: '/notes/Olá world.md' }],
@@ -158,6 +186,10 @@ export async function bootstrapApplication(): Promise<BootResult> {
     }))
   }
   const windowId = await memory.platform.window.create()
+  let settingsSnapshot: SettingsSnapshotPayload = DEFAULT_SETTINGS
+  const settingsListeners = new Set<(snapshot: SettingsSnapshotPayload) => void>()
+  const appearanceListeners = new Set<(appearance: EffectiveTheme) => void>()
+  const appearance: EffectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   const gateway = fixture.externalAfterOpen
     ? new class extends DocumentGateway {
       override async open(id?: string) {
@@ -183,6 +215,21 @@ export async function bootstrapApplication(): Promise<BootResult> {
       fixtureName,
       platformKind: 'memory',
       platformName: 'linux',
+      ...(fixture.initialDocuments ? { initialDocuments: fixture.initialDocuments } : {}),
+      onOpenExternal: async () => ({ kind: 'unsupported' as const }),
+      settings: {
+        appearance,
+        onAppearance: (listener: (value: EffectiveTheme) => void) => { appearanceListeners.add(listener); return () => appearanceListeners.delete(listener) },
+        onPatch: async (patch: SettingsPatch) => {
+          settingsSnapshot = { ...settingsSnapshot, ...patch, revision: settingsSnapshot.revision + 1 }
+          for (const listener of settingsListeners) listener(settingsSnapshot)
+          return ok(settingsSnapshot)
+        },
+        onRetry: () => undefined,
+        onSnapshot: (listener: (snapshot: SettingsSnapshotPayload) => void) => { settingsListeners.add(listener); return () => settingsListeners.delete(listener) },
+        onWarning: () => () => undefined,
+        snapshot: settingsSnapshot,
+      },
       windowId,
       windowPort: memory.platform.window,
       ...(workspaceRoots.length ? {
@@ -220,9 +267,18 @@ async function bootstrapElectron(api: MarkzenApi): Promise<BootResult> {
       ...(tab?.ok ? { initialDocuments: [{ id: tab.value, title: '' }] } : {}),
       platformKind: 'electron',
       platformName: boot.value.platformName,
+      onOpenExternal: async (destination: string) => {
+        const result = await api.openExternal(destination)
+        return result.ok ? result.value : { kind: 'error' as const }
+      },
       settings: {
+        appearance: boot.value.appearance,
+        onAppearance: (listener: (appearance: EffectiveTheme) => void) => api.settings.onAppearance(listener),
+        onPatch: (patch: SettingsPatch) => api.settings.patch(patch),
         onRetry: () => { void api.settings.retry() },
+        onSnapshot: (listener: (snapshot: SettingsSnapshotPayload) => void) => api.settings.onSnapshot(listener),
         onWarning: (listener: (message?: string) => void) => api.settings.onWarning(listener),
+        snapshot: boot.value.settings,
         ...(boot.value.settingsWarning ? { warning: boot.value.settingsWarning } : {}),
       },
       windowId: boot.value.windowId,
@@ -241,7 +297,6 @@ async function bootstrapElectron(api: MarkzenApi): Promise<BootResult> {
             if (event.kind === 'root-added') rootPaths.set(event.root.rootId, event.root.path)
             listener(event)
           }),
-          onSettings: (listener: (snapshot: import('../platform/contracts').SettingsSnapshotPayload) => void) => api.settings.onSnapshot(listener),
           onRetryRoot: async (rootId: import('../platform/contracts').RootId) => {
             workspaceGeneration += 1
             const retried = await api.workspace.retryRoot(rootId, workspaceGeneration)
@@ -249,7 +304,6 @@ async function bootstrapElectron(api: MarkzenApi): Promise<BootResult> {
           },
           onWidthChange: (sidebarWidth: number) => { void api.settings.patch({ sidebarWidth }) },
           roots: roots.map((root) => ({ entries: root.entries, path: root.path, rootId: root.rootId })),
-          revision: boot.value.settings.revision,
           width: boot.value.settings.sidebarWidth,
         },
       } : {}),
@@ -306,8 +360,10 @@ function isMarkzenApi(value: unknown): value is MarkzenApi {
     typeof candidate.document.saveAndRename === 'function' &&
     typeof candidate.document.saveAs === 'function' &&
     typeof candidate.document.updateMenuState === 'function' &&
+    typeof candidate.openExternal === 'function' &&
     typeof candidate.settings === 'object' &&
     candidate.settings !== null &&
+    typeof candidate.settings.onAppearance === 'function' &&
     typeof candidate.settings.onSnapshot === 'function' &&
     typeof candidate.settings.onWarning === 'function' &&
     typeof candidate.settings.patch === 'function' &&

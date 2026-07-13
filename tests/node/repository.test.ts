@@ -116,4 +116,14 @@ describe('spec 0001 repository verification contract', () => {
     expect(workflow).toContain('npm ci')
     expect(workflow).not.toContain('-latest')
   })
+
+  test('AC87: the external-opening static surface is one typed intent without shell or generic IPC', async () => {
+    const contracts = await readFile('src/platform/contracts.ts', 'utf8')
+    const preload = await readFile('src/platform/electron/preload.ts', 'utf8')
+    expect(contracts).toContain("readonly openExternal: (destination: string)")
+    expect(preload).toContain("openExternal: (destination: string) => invoke<ExternalOpenResult>")
+    expect(preload).not.toContain('shell.openExternal')
+    expect(preload).not.toContain('ipcRenderer:')
+    expect(preload).not.toContain('confirmed:')
+  })
 })

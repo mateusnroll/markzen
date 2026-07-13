@@ -5,6 +5,7 @@ import TaskItem from '@tiptap/extension-task-item'
 import TaskList from '@tiptap/extension-task-list'
 import { Markdown, MarkdownManager } from '@tiptap/markdown'
 import StarterKit from '@tiptap/starter-kit'
+import { SearchExtension } from '../search/search'
 
 export type RichDocument = {
   readonly attrs?: Readonly<Record<string, unknown>>
@@ -90,8 +91,17 @@ const Opaque = Node.create({
 
 const InertLink = Link.extend({
   renderHTML({ HTMLAttributes }) {
+    const href = typeof HTMLAttributes.href === 'string' ? HTMLAttributes.href : ''
     const title = typeof HTMLAttributes.title === 'string' ? HTMLAttributes.title : undefined
-    return ['span', { ...(title ? { title } : {}), 'data-markzen-link': '' }, 0]
+    return ['span', {
+      'aria-label': `Link to ${href}`,
+      'data-href': href,
+      'data-markzen-link': '',
+      'data-testid': 'rich-link',
+      ...(title ? { title } : {}),
+      role: 'link',
+      tabindex: '0',
+    }, 0]
   },
 }).configure({ autolink: false, linkOnPaste: false, openOnClick: false })
 
@@ -128,6 +138,7 @@ const manager = new MarkdownManager({
 export function createDocumentExtensions(): Extensions {
   return [
     ...baseExtensions(),
+    SearchExtension,
     Markdown.configure({ indentation: { size: 4, style: 'space' }, markedOptions: { gfm: true } }),
   ]
 }

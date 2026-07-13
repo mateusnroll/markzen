@@ -4,7 +4,6 @@ import {
   MARKZEN_API_VERSION,
   type BootstrapPayload,
   type DocumentIntentOutcome,
-  type DocumentCommand,
   type DocumentExternalEvent,
   type DocumentWriteRequest,
   type DocumentMenuState,
@@ -17,6 +16,10 @@ import {
   type FileKey,
   type RootId,
   type SettingsSnapshotPayload,
+  type EffectiveTheme,
+  type ExternalOpenResult,
+  type RendererCommand,
+  type SettingsPatch,
   type WorkspaceEventPayload,
   type WorkspaceRootOutcome,
 } from '../contracts'
@@ -38,8 +41,8 @@ const api: MarkzenApi = deepFreeze({
     completeQuitSaveAll: (success: boolean) => invoke<void>(channels.documentQuitSaveAllComplete, { success }),
     createTab: () => invoke<TabId>(channels.documentCreateTab),
     open: (tabId: TabId, generation: number) => invoke<DocumentIntentOutcome>(channels.documentOpen, { generation, tabId }),
-    onCommand(listener: (command: DocumentCommand) => void) {
-      const wrapped = (_event: Electron.IpcRendererEvent, command: DocumentCommand) => listener(command)
+    onCommand(listener: (command: RendererCommand) => void) {
+      const wrapped = (_event: Electron.IpcRendererEvent, command: RendererCommand) => listener(command)
       ipcRenderer.on(channels.documentCommand, wrapped)
       return () => ipcRenderer.removeListener(channels.documentCommand, wrapped)
     },
@@ -57,7 +60,13 @@ const api: MarkzenApi = deepFreeze({
     saveAs: (request: DocumentWriteRequest) => invoke<DocumentIntentOutcome>(channels.documentSaveAs, request),
     updateMenuState: (state: DocumentMenuState) => invoke<void>(channels.documentUpdateMenuState, state),
   },
+  openExternal: (destination: string) => invoke<ExternalOpenResult>(channels.externalOpen, { destination }),
   settings: {
+    onAppearance(listener: (appearance: EffectiveTheme) => void) {
+      const wrapped = (_event: Electron.IpcRendererEvent, appearance: EffectiveTheme) => listener(appearance)
+      ipcRenderer.on(channels.settingsAppearance, wrapped)
+      return () => ipcRenderer.removeListener(channels.settingsAppearance, wrapped)
+    },
     onSnapshot(listener: (snapshot: SettingsSnapshotPayload) => void) {
       const wrapped = (_event: Electron.IpcRendererEvent, snapshot: SettingsSnapshotPayload) => listener(snapshot)
       ipcRenderer.on(channels.settingsSnapshot, wrapped)
@@ -68,7 +77,7 @@ const api: MarkzenApi = deepFreeze({
       ipcRenderer.on(channels.settingsWarning, wrapped)
       return () => ipcRenderer.removeListener(channels.settingsWarning, wrapped)
     },
-    patch: (patch: { readonly sidebarWidth: number }) => invoke<SettingsSnapshotPayload>(channels.settingsPatch, patch),
+    patch: (patch: SettingsPatch) => invoke<SettingsSnapshotPayload>(channels.settingsPatch, patch),
     retry: () => invoke<void>(channels.settingsRetry),
   },
   version: MARKZEN_API_VERSION,

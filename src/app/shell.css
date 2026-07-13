@@ -1,6 +1,20 @@
 :root {
-  color: #202124;
-  background: #f7f5f2;
+  --mz-bg: #f7f5f2;
+  --mz-surface: #fff;
+  --mz-surface-muted: #ebe7e1;
+  --mz-text: #202124;
+  --mz-text-muted: #66615b;
+  --mz-border: #d5d0c8;
+  --mz-focus: #1769aa;
+  --mz-accent: #6c63ff;
+  --mz-search: #ffe68a;
+  --mz-search-current: #ffb347;
+  --mz-error: #a51d12;
+  --mz-warning-bg: #fff8df;
+  --mz-warning-border: #9a6b00;
+  --mz-overlay: rgb(20 18 16 / 45%);
+  color: var(--mz-text);
+  background: var(--mz-bg);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
 }
@@ -31,7 +45,25 @@ button {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  background: #f7f5f2;
+  color: var(--mz-text);
+  background: var(--mz-bg);
+}
+
+.app-shell[data-theme="dark"] {
+  --mz-bg: #191715;
+  --mz-surface: #24211f;
+  --mz-surface-muted: #302c29;
+  --mz-text: #f4f1ec;
+  --mz-text-muted: #c4bdb5;
+  --mz-border: #514a44;
+  --mz-focus: #8ec8ff;
+  --mz-accent: #a9a2ff;
+  --mz-search: #665500;
+  --mz-search-current: #9a6300;
+  --mz-error: #ffaaa1;
+  --mz-warning-bg: #3b3218;
+  --mz-warning-border: #e4be50;
+  --mz-overlay: rgb(0 0 0 / 62%);
 }
 
 .titlebar {
@@ -39,8 +71,8 @@ button {
   min-width: 0;
   min-height: 40px;
   align-items: stretch;
-  border-bottom: 1px solid #d5d0c8;
-  background: #ebe7e1;
+  border-bottom: 1px solid var(--mz-border);
+  background: var(--mz-surface-muted);
   transition: background-color 120ms ease;
   user-select: none;
 }
@@ -61,7 +93,7 @@ button {
 
 .app-name {
   overflow: hidden;
-  color: #55514c;
+  color: var(--mz-text-muted);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -80,19 +112,19 @@ button {
   width: 42px;
   min-width: 36px;
   border: 0;
-  color: #24211e;
+  color: var(--mz-text);
   background: transparent;
   cursor: default;
 }
 
 .window-control:hover {
-  background: #dcd6cf;
+  background: color-mix(in srgb, var(--mz-surface-muted) 75%, var(--mz-text) 25%);
 }
 
 .window-control:focus-visible {
   position: relative;
   z-index: 1;
-  outline: 2px solid #1769aa;
+  outline: 2px solid var(--mz-focus);
   outline-offset: -3px;
 }
 
@@ -118,9 +150,49 @@ button {
   display: flex;
   max-width: min(440px, calc(100% - 32px));
   padding: 12px;
-  border: 2px solid #9a6b00;
-  background: #fff8df;
+  border: 2px solid var(--mz-warning-border);
+  background: var(--mz-warning-bg);
   gap: 12px;
+}
+
+.settings-dialog {
+  width: min(480px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  padding: 0;
+  border: 1px solid var(--mz-border);
+  border-radius: 10px;
+  color: var(--mz-text);
+  background: var(--mz-surface);
+}
+
+.settings-dialog::backdrop,
+.decision-backdrop::backdrop {
+  background: var(--mz-overlay);
+}
+
+.settings-card {
+  display: grid;
+  padding: 24px;
+  gap: 10px;
+}
+
+.settings-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-card h2 {
+  margin: 0;
+}
+
+.settings-card select,
+.settings-card button {
+  min-height: 36px;
+}
+
+.settings-error {
+  color: var(--mz-error);
 }
 
 .shell-diagnostics {
@@ -166,5 +238,14 @@ button {
 
   .window-control:focus-visible {
     outline-color: Highlight;
+  }
+
+  .settings-dialog,
+  .settings-card,
+  .settings-warning {
+    border-color: CanvasText;
+    color: CanvasText;
+    background: Canvas;
+    forced-color-adjust: none;
   }
 }

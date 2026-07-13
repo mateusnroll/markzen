@@ -141,11 +141,19 @@ export interface Platform {
 
 export type PlatformName = 'darwin' | 'linux' | 'win32'
 export type WindowKind = 'single-file' | 'workspace'
+export type ThemePreference = 'system' | 'light' | 'dark'
+export type ToolbarMode = 'minimal' | 'regular'
+export type EffectiveTheme = 'light' | 'dark'
+export type SettingsPatch =
+  | { readonly sidebarWidth: number }
+  | { readonly theme: ThemePreference }
+  | { readonly toolbarMode: ToolbarMode }
 
 export const MARKZEN_API_VERSION = 1 as const
 
 export type BootstrapPayload = {
   readonly kind: WindowKind
+  readonly appearance: EffectiveTheme
   readonly platformName: PlatformName
   readonly roots: readonly WorkspaceRootPayload[]
   readonly settings: SettingsSnapshotPayload
@@ -164,6 +172,8 @@ export type SettingsSnapshotPayload = {
   readonly revision: number
   readonly schemaVersion: 1
   readonly sidebarWidth: number
+  readonly theme: ThemePreference
+  readonly toolbarMode: ToolbarMode
 }
 
 export type WorkspaceEventPayload =
@@ -190,7 +200,9 @@ export type DocumentWriteRequest = {
   readonly titleDirty: boolean
 }
 export type DocumentCommand = 'close-tab' | 'close-window' | 'new' | 'open' | 'save' | 'save-all' | 'save-all-for-quit' | 'save-as'
-export type ApplicationCommand = DocumentCommand | 'add-folder' | 'open-folder'
+export type RendererCommand = DocumentCommand | 'find' | 'settings'
+export type ApplicationCommand = RendererCommand | 'add-folder' | 'open-folder'
+export type ExternalOpenResult = { readonly kind: 'cancelled' | 'error' | 'opened' | 'unsupported' }
 export type DocumentMenuState = {
   readonly activeTabId?: TabId
   readonly tabs: readonly {
@@ -213,7 +225,7 @@ export interface MarkzenDocumentCapability {
   completeQuitSaveAll(success: boolean): Promise<PlatformResult<void>>
   createTab(): Promise<PlatformResult<TabId>>
   open(tabId: TabId, generation: number): Promise<PlatformResult<DocumentIntentOutcome>>
-  onCommand(listener: (command: DocumentCommand) => void): () => void
+  onCommand(listener: (command: RendererCommand) => void): () => void
   onExternalChange(listener: (event: DocumentExternalEvent) => void): () => void
   overwriteExternal(request: DocumentWriteRequest & { readonly diskVersion: DiskVersion }): Promise<PlatformResult<DocumentIntentOutcome>>
   retryCleanup(tabId: TabId, generation: number): Promise<PlatformResult<DocumentIntentOutcome>>
@@ -232,9 +244,10 @@ export interface MarkzenWorkspaceCapability {
 }
 
 export interface MarkzenSettingsCapability {
+  onAppearance(listener: (appearance: EffectiveTheme) => void): () => void
   onWarning(listener: (message?: string) => void): () => void
   onSnapshot(listener: (snapshot: SettingsSnapshotPayload) => void): () => void
-  patch(patch: { readonly sidebarWidth: number }): Promise<PlatformResult<SettingsSnapshotPayload>>
+  patch(patch: SettingsPatch): Promise<PlatformResult<SettingsSnapshotPayload>>
   retry(): Promise<PlatformResult<void>>
 }
 
@@ -249,6 +262,7 @@ export interface MarkzenWindowCapability {
 export interface MarkzenApi {
   readonly bootstrap: () => Promise<PlatformResult<BootstrapPayload>>
   readonly document: MarkzenDocumentCapability
+  readonly openExternal: (destination: string) => Promise<PlatformResult<ExternalOpenResult>>
   readonly settings: MarkzenSettingsCapability
   readonly version: typeof MARKZEN_API_VERSION
   readonly window: MarkzenWindowCapability

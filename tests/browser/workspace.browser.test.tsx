@@ -212,8 +212,8 @@ describe('spec 0003 preview tabs', () => {
         }}
       />,
     )
-    await frame()
-    await userEvent.dblClick(byLabel('one.md'))
+    const treeFile = await vi.waitFor(() => byLabel('one.md'))
+    await userEvent.dblClick(treeFile)
     await frame()
     expect(gateway.workspaceOpens).toBe(1)
     expect(document.querySelectorAll('[data-testid="document-tab"]')).toHaveLength(1)

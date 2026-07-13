@@ -33,10 +33,20 @@ export function buildApplicationMenuTemplate(
     submenu: [
       { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
       { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+      { type: 'separator' },
+      command('Find…', 'CmdOrCtrl+F', 'find', dispatch),
+      ...(!mac ? [{ type: 'separator' as const }, command('Settings…', 'CmdOrCtrl+,', 'settings', dispatch)] : []),
     ],
   }
   return [
-    ...(mac ? [{ label: 'Markzen', submenu: [{ role: 'about' as const }, { type: 'separator' as const }, { role: 'hide' as const }, { accelerator: 'Cmd+Q', role: 'quit' as const }] }] : []),
+    ...(mac ? [{ label: 'Markzen', submenu: [
+      { role: 'about' as const },
+      { type: 'separator' as const },
+      command('Settings…', 'Cmd+,', 'settings', dispatch),
+      { type: 'separator' as const },
+      { role: 'hide' as const },
+      { accelerator: 'Cmd+Q', role: 'quit' as const },
+    ] }] : []),
     file,
     edit,
     ...(!mac ? [{ label: 'Help', submenu: [{ role: 'about' as const }] }] : []),

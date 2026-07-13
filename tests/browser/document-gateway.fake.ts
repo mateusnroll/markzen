@@ -7,9 +7,11 @@ import type {
   SaveOutcome,
   WorkspaceOpenInput,
 } from '../../src/documents/gateway'
+import type { RendererCommand } from '../../src/platform/contracts'
 
 export class FakeDocumentGateway implements DocumentGatewayPort {
   readonly #externalListeners = new Set<(event: ExternalGatewayEvent) => void>()
+  readonly #commandListeners = new Set<(command: RendererCommand) => void>()
   #nextTab = 1
 
   async acceptExternal(): Promise<boolean> { return true }
@@ -23,7 +25,13 @@ export class FakeDocumentGateway implements DocumentGatewayPort {
     void input
     return { kind: 'error' }
   }
-  onCommand(): () => void { return () => undefined }
+  onCommand(listener: (command: RendererCommand) => void): () => void {
+    this.#commandListeners.add(listener)
+    return () => this.#commandListeners.delete(listener)
+  }
+  emitCommand(command: RendererCommand): void {
+    for (const listener of this.#commandListeners) listener(command)
+  }
   emitExternal(event: ExternalGatewayEvent): void {
     for (const listener of this.#externalListeners) listener(event)
   }

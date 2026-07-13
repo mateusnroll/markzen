@@ -39,6 +39,16 @@ Font family/size, line width, auto-save (+ delay), spell check. Old ADR 0013 des
 
 Milestone 0004 preserves relative paths and `#fragment` destinations but does not follow them. A future spec should define whether Markdown-file links focus/open a Markzen tab, how fragments resolve to headings, how paths interact with multi-root workspaces, and how missing or ambiguous targets surface.
 
+## Native link elements and unsafe-link preference
+
+Milestone 0004 deliberately renders each editable link as a focusable `span` with link semantics while keeping the model, focus contract, and opening policy independent of that tag. A later accessibility-focused spec should migrate rich-editor links to semantic `<a>` elements without reintroducing ambient navigation, changing Markdown serialization, or making ordinary clicks leave editing context.
+
+The same future work should add a closed `allowUnsafeLinks` setting, default `false`, to milestone 0003's main-owned settings schema. When enabled it may bypass the native warning only for milestone 0004's confirmable absolute destinations (credential-bearing HTTP(S), `file:`, and non-executable custom schemes); relative/fragment-only, malformed/control-character, `javascript:`, `data:`, and `blob:` destinations remain non-openable. The preference must be supplied at bootstrap, broadcast by authoritative revision, and enforced in main rather than accepted as a renderer-provided bypass flag.
+
+## Full Unicode search case folding
+
+Milestone 0004 search intentionally implements NFC normalization plus ECMAScript locale-independent lowercase conversion with source-offset mapping. If real documents demonstrate a need for equivalences outside that contract—such as full Unicode case-fold expansions—a future spec should select a maintained Unicode data source or dependency, enumerate approved equivalences and locale behavior, preserve correct ProseMirror offsets, and measure the added search cost before changing matching semantics.
+
 ## Active SVG images
 
 Milestone 0005 preserves SVG sources but deliberately blocks active SVG rendering. A future security-focused spec may permit SVG after choosing and testing a sanitization or rasterization boundary that cannot execute script, navigate, fetch subresources, or escape the asset capability model.
