@@ -13,8 +13,8 @@ import {
 describe('spec 0003 settings', () => {
   test('AC97 AC98: a closed sidebar patch clamps, rounds, and advances the authoritative revision', () => {
     const service = new SettingsService({ write: vi.fn(async () => undefined) })
-    expect(service.patch({ sidebarWidth: 999.6 })).toEqual(ok({ revision: 1, schemaVersion: 1, sidebarWidth: 480 }))
-    expect(service.patch({ sidebarWidth: 160.4 })).toEqual(ok({ revision: 2, schemaVersion: 1, sidebarWidth: 160 }))
+    expect(service.patch({ sidebarWidth: 999.6 })).toEqual(ok({ revision: 1, schemaVersion: 1, sidebarWidth: 480, theme: 'system', toolbarMode: 'minimal' }))
+    expect(service.patch({ sidebarWidth: 160.4 })).toEqual(ok({ revision: 2, schemaVersion: 1, sidebarWidth: 160, theme: 'system', toolbarMode: 'minimal' }))
   })
 
   test('AC99: renderer snapshot ordering accepts only newer revisions', () => {
@@ -31,8 +31,8 @@ describe('spec 0003 settings', () => {
     const first = service.patch({ sidebarWidth: 200 })
     const second = service.patch({ sidebarWidth: 300 })
     expect(first.ok && first.value.revision).toBe(1)
-    expect(second).toEqual(ok({ revision: 2, schemaVersion: 1, sidebarWidth: 300 }))
-    expect(service.snapshot()).toEqual({ revision: 2, schemaVersion: 1, sidebarWidth: 300 })
+    expect(second).toEqual(ok({ revision: 2, schemaVersion: 1, sidebarWidth: 300, theme: 'system', toolbarMode: 'minimal' }))
+    expect(service.snapshot()).toEqual({ revision: 2, schemaVersion: 1, sidebarWidth: 300, theme: 'system', toolbarMode: 'minimal' })
   })
 
   test('AC103 AC104: no write occurs before a patch and a burst persists once after 300ms', async () => {
@@ -71,14 +71,14 @@ describe('spec 0003 settings', () => {
   })
 
   test('AC106: encoded settings are one complete deterministic JSON document', () => {
-    const encoded = encodeSettings({ safeFuture: ['x'], schemaVersion: 1, sidebarWidth: 240 })
-    expect(JSON.parse(new TextDecoder().decode(encoded))).toEqual({ safeFuture: ['x'], schemaVersion: 1, sidebarWidth: 240 })
+    const encoded = encodeSettings({ safeFuture: ['x'], schemaVersion: 1, sidebarWidth: 240, theme: 'system', toolbarMode: 'minimal' })
+    expect(JSON.parse(new TextDecoder().decode(encoded))).toEqual({ safeFuture: ['x'], schemaVersion: 1, sidebarWidth: 240, theme: 'system', toolbarMode: 'minimal' })
     expect(encoded.at(-1)).toBe(10)
   })
 
   test('AC107: invalid persisted sidebar width defaults without dropping safe unknown data', () => {
     expect(parseSettings('{"schemaVersion":1,"sidebarWidth":"wide","future":true}')).toEqual({
-      persisted: { future: true, schemaVersion: 1, sidebarWidth: 240 },
+      persisted: { future: true, schemaVersion: 1, sidebarWidth: 240, theme: 'system', toolbarMode: 'minimal' },
       snapshot: DEFAULT_SETTINGS,
     })
   })
@@ -86,8 +86,8 @@ describe('spec 0003 settings', () => {
   test('AC108: recursive safe unknown data survives while dangerous keys and non-finite data do not', () => {
     const parsed = parseSettings('{"schemaVersion":1,"sidebarWidth":260,"future":{"ok":[1,true,null],"__proto__":{"polluted":true}},"constructor":1}')
     expect(parsed).toEqual({
-      persisted: { future: { ok: [1, true, null] }, schemaVersion: 1, sidebarWidth: 260 },
-      snapshot: { revision: 0, schemaVersion: 1, sidebarWidth: 260 },
+      persisted: { future: { ok: [1, true, null] }, schemaVersion: 1, sidebarWidth: 260, theme: 'system', toolbarMode: 'minimal' },
+      snapshot: { revision: 0, schemaVersion: 1, sidebarWidth: 260, theme: 'system', toolbarMode: 'minimal' },
     })
     expect({}).not.toHaveProperty('polluted')
   })
@@ -163,5 +163,20 @@ describe('spec 0003 settings', () => {
       oversized: true,
       snapshot: DEFAULT_SETTINGS,
     })
+  })
+
+  test('AC79 AC80: theme and toolbar mode extend version 1 with per-key defaults and closed patches', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ theme: 'system', toolbarMode: 'minimal' })
+    expect(parseSettings('{"schemaVersion":1,"sidebarWidth":260,"theme":"dark","toolbarMode":"regular"}')).toMatchObject({
+      snapshot: { revision: 0, schemaVersion: 1, sidebarWidth: 260, theme: 'dark', toolbarMode: 'regular' },
+    })
+    expect(parseSettings('{"schemaVersion":1,"sidebarWidth":260,"theme":"sepia","toolbarMode":"wide"}')).toMatchObject({
+      snapshot: { revision: 0, schemaVersion: 1, sidebarWidth: 260, theme: 'system', toolbarMode: 'minimal' },
+    })
+    expect(validateSettingsPatch({ theme: 'light' })).toEqual(ok({ theme: 'light' }))
+    expect(validateSettingsPatch({ toolbarMode: 'regular' })).toEqual(ok({ toolbarMode: 'regular' }))
+    expect(validateSettingsPatch({ theme: 'sepia' })).toEqual(fail('validation'))
+    expect(validateSettingsPatch({ toolbarMode: 'wide' })).toEqual(fail('validation'))
+    expect(validateSettingsPatch({ theme: 'dark', toolbarMode: 'regular' })).toEqual(fail('validation'))
   })
 })

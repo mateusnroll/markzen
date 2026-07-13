@@ -9,7 +9,9 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   session,
+  shell,
   type BrowserWindowConstructorOptions,
   type IpcMainInvokeEvent,
   type WebContents,
@@ -42,6 +44,9 @@ import {
   type WindowState,
   type WindowKind,
   type WorkspaceRootOutcome,
+  type EffectiveTheme,
+  type ExternalOpenResult,
+  type ThemePreference,
 } from '../contracts'
 import { OwnerRegistry } from '../ownership'
 import { DocumentRegistry, type DocumentOwner } from '../../documents/registry'
@@ -65,6 +70,8 @@ import { SettingsFileStore } from './settings-store'
 import { DEFAULT_SETTINGS, parseSettings, SettingsService, type SettingsLoadResult } from '../../settings/settings'
 import { RootRegistry, WorkspaceWatchBatcher, selectContainingRoot } from '../../workspaces/state'
 import { validateWorkspaceEntryRequest } from '../../workspaces/authority'
+import { classifyExternalDestination, validateExternalOpenPayload } from '../../links/external'
+import { ExternalRequestRegistry } from '../../links/external-requests'
 
 type WindowRecord = {
   closeApproved: boolean
@@ -112,18 +119,24 @@ const workspaceRoots = new RootRegistry()
 const workspaceSnapshots = new Map<string, readonly DirectoryEntry[]>()
 const workspaceGenerations = new Map<string, number>()
 const pendingFolderWindows = new Set<string>()
+const externalRequests = new ExternalRequestRegistry<WindowId>()
 let settingsService: SettingsService | undefined
 let settingsWarning: string | undefined
 let handlersRegistered = false
 let allowQuit = false
 let quitGuardRunning = false
 
-export function getWindowOptionsForPlatform(platformValue: string = process.platform): BrowserWindowConstructorOptions {
+export function getWindowOptionsForPlatform(
+  platformValue: string = process.platform,
+  theme: ThemePreference = 'system',
+  systemDark = nativeTheme.shouldUseDarkColors,
+): BrowserWindowConstructorOptions {
   const platformName = normalizePlatform(platformValue)
   const isMac = platformName === 'darwin'
+  const dark = theme === 'dark' || (theme === 'system' && systemDark)
   return {
     autoHideMenuBar: true,
-    backgroundColor: '#f7f5f2',
+    backgroundColor: dark ? '#191715' : '#f7f5f2',
     frame: isMac,
     height: 800,
     minHeight: 320,
@@ -148,7 +161,7 @@ export function getWindowOptionsForPlatform(platformValue: string = process.plat
 
 export async function createMarkzenWindow(kind: WindowKind = 'single-file', initialFolder?: Path): Promise<WindowId> {
   if (!app.isReady()) await app.whenReady()
-  const window = new BrowserWindow(getWindowOptionsForPlatform())
+  const window = new BrowserWindow(getWindowOptionsForPlatform(process.platform, settingsService?.snapshot().theme ?? 'system'))
   const id = asWindowId(randomUUID())
   const record: WindowRecord = { closeApproved: false, id, kind, window }
   windowsByContents.set(window.webContents.id, record)
@@ -204,6 +217,7 @@ async function start(): Promise<void> {
   await app.whenReady()
   await registerApplicationProtocol()
   await initializeSettings()
+  nativeTheme.on('updated', broadcastAppearance)
   registerSecurityPolicy()
   registerIpcHandlers()
   installApplicationMenu(normalizePlatform(process.platform), dispatchApplicationCommand)
@@ -244,9 +258,11 @@ function updateMenuEnablement(): void {
     'add-folder': record?.kind === 'workspace',
     'close-tab': Boolean(state?.tabs.length),
     'close-window': Boolean(record),
+    find: Boolean(active && !active.preservation),
     save: Boolean(active?.dirty),
     'save-all': Boolean(state?.tabs.some((tab) => tab.dirty)),
     'save-as': Boolean(active?.titleValid),
+    settings: Boolean(record),
   }
   for (const [id, value] of Object.entries(enabled)) {
     const item = menu.getMenuItemById(`markzen-${id}`)
@@ -278,6 +294,7 @@ function registerIpcHandlers(): void {
   if (handlersRegistered) return
   handlersRegistered = true
   ipcMain.handle(channels.bootstrap, (event, payload) => withWindow(event, payload, (record) => ok<BootstrapPayload>({
+    appearance: effectiveAppearance(),
     kind: record.kind,
     platformName: normalizePlatform(process.platform),
     roots: workspaceRoots.values(record.id).map((root) => ({
@@ -290,6 +307,41 @@ function registerIpcHandlers(): void {
     state: windowState(record.window),
     windowId: record.id,
   })))
+  ipcMain.handle(channels.externalOpen, (event, payload) => withAuthorizedWindow(event, async (record) => {
+    const parsed = validateExternalOpenPayload(payload)
+    if (!parsed.ok) return parsed
+    const classified = classifyExternalDestination(parsed.value.destination)
+    if (classified.kind === 'blocked') return ok<ExternalOpenResult>({ kind: 'unsupported' })
+    const begun = externalRequests.begin(record.id)
+    if (!begun.ok) return begun
+    const token = begun.value
+    try {
+      if (classified.kind === 'confirm') {
+        const decision = await dialog.showMessageBox(record.window, {
+          buttons: ['Open Anyway', 'Cancel'],
+          cancelId: 1,
+          defaultId: 1,
+          detail: classified.destination,
+          message: 'This destination may open a local file or another application. Open it anyway?',
+          noLink: true,
+          title: 'Open Unsafe Link?',
+          type: 'warning',
+        })
+        if (!isExternalRequestCurrent(record, token)) return fail('ownership')
+        record.window.focus()
+        if (decision.response !== 0) return ok<ExternalOpenResult>({ kind: 'cancelled' })
+      }
+      if (!isExternalRequestCurrent(record, token)) return fail('ownership')
+      try {
+        await shell.openExternal(classified.destination)
+        return ok<ExternalOpenResult>({ kind: 'opened' })
+      } catch {
+        return ok<ExternalOpenResult>({ kind: 'error' })
+      }
+    } finally {
+      externalRequests.finish(record.id, token)
+    }
+  }))
   ipcMain.handle(channels.documentCreateTab, (event, payload) => withWindow(event, payload, (record) => {
     const tabId = asTabId(randomUUID())
     documents.set(tabId, { generation: 0, tabId, windowId: record.id })
@@ -526,7 +578,7 @@ async function initializeSettings(): Promise<void> {
   settingsService = new SettingsService({
     ...(initial ? { initial } : {}),
     onPersistenceWarning: (active) => {
-      settingsWarning = active ? 'Settings could not be saved. Your current preference remains active.' : undefined
+      settingsWarning = active ? 'Settings could not be saved. Active preferences may not survive restart.' : undefined
       for (const record of windowsByContents.values()) {
         if (!record.window.isDestroyed()) record.window.webContents.send(channels.settingsWarning, settingsWarning)
       }
@@ -538,6 +590,21 @@ async function initializeSettings(): Promise<void> {
       if (!record.window.isDestroyed()) record.window.webContents.send(channels.settingsSnapshot, snapshot)
     }
   })
+}
+
+function effectiveAppearance(): EffectiveTheme {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+}
+
+function broadcastAppearance(): void {
+  const appearance = effectiveAppearance()
+  for (const record of windowsByContents.values()) {
+    if (!record.window.isDestroyed()) record.window.webContents.send(channels.settingsAppearance, appearance)
+  }
+}
+
+function isExternalRequestCurrent(record: WindowRecord, token: symbol): boolean {
+  return externalRequests.current(record.id, token) && !record.window.isDestroyed() && windowsByContents.get(record.window.webContents.id) === record
 }
 
 async function openFolderWorkspace(source: WindowRecord | undefined): Promise<void> {
@@ -1266,6 +1333,7 @@ function bindWindowEvents(record: WindowRecord): void {
       }
     }
     windowsByContents.delete(contentsId)
+    externalRequests.dispose(record.id)
     for (const root of workspaceRoots.values(record.id)) {
       const key = rootKey(record.id, root.rootId)
       workspaceSnapshots.delete(key)
@@ -1303,6 +1371,8 @@ app.on('before-quit', (event) => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) void createMarkzenWindow()
 })
+
+app.on('will-quit', () => nativeTheme.removeListener('updated', broadcastAppearance))
 
 Object.defineProperty(app, 'markzenShellHarness', {
   configurable: false,

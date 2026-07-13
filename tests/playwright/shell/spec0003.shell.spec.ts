@@ -49,8 +49,8 @@ test('AC6 AC78 AC130 AC139: native folder commands and the preload expose only n
       settings: Object.keys(window.markzen?.settings ?? {}).sort(),
       workspace: Object.keys(window.markzen?.workspace ?? {}).sort(),
     }))
-    expect(surface.root).toEqual(['bootstrap', 'document', 'settings', 'version', 'window', 'workspace'])
-    expect(surface.settings).toEqual(['onSnapshot', 'onWarning', 'patch', 'retry'])
+    expect(surface.root).toEqual(['bootstrap', 'document', 'openExternal', 'settings', 'version', 'window', 'workspace'])
+    expect(surface.settings).toEqual(['onAppearance', 'onSnapshot', 'onWarning', 'patch', 'retry'])
     expect(surface.workspace).toEqual(['addFolder', 'list', 'onEvent', 'open', 'retryRoot'])
     const menu = await callMain<readonly MenuItem[]>(app, 'getApplicationMenuSnapshot', [process.platform])
     const items = flatten(menu)

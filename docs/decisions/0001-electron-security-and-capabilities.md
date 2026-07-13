@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md)
+**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md)
 
 ## Context
 
@@ -36,6 +36,8 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - Directory results expose only logical entry data plus opaque FileKeys. Preview activation revalidates current canonical containment under the registered root; forged relative paths, traversal, stale snapshots, foreign RootIds, and symlinks resolving outside the root fail without disclosing canonical target paths.
 - Settings patches use a closed size-bounded schema. Unknown runtime keys, extra properties, invalid values, dangerous object keys, and renderer-selected revisions or destinations are rejected before the main-owned settings service mutates or broadcasts state.
 - Workspace list, preview, watcher, settings, readiness, error, and registry events route only to the live frame registered for their captured owner and generation, and contain the minimum logical data required by that renderer.
+- External opening is one closed `openExternal(destination)` intent. Main validates the application-origin main-frame sender before a bounded one-field payload, independently classifies the destination with the shared WHATWG policy, and never accepts a renderer confirmation flag. Credential-free HTTP(S), mailto, and normalized bare hostnames delegate directly; credential-bearing HTTP(S), file, and non-executable custom schemes require a main-owned window-modal warning; relative/fragment-only, malformed/control-character, javascript, data, and blob values never reach Electron shell.
+- The renderer continues to prevent ordinary, middle, drag, and unapproved modified navigation plus all popup creation. A document link may request the external-opening intent only from the explicit actions in Spec 0004; parsing, rendering, focus, plain clicks, and programmatic changes remain ambient-effect free.
 
 ### Platform and identity
 
@@ -61,7 +63,7 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - Main-process services and IPC schemas require more explicit code than calling Electron or Node APIs from the renderer, but authority and serialization remain reviewable.
 - The fixed application protocol makes CSP headers and origin checks deterministic and avoids `file:` privileges.
 - Enabling Node inspector arguments preserves test equivalence at the cost of a documented local-launch attack surface. Other unnecessary fuses remain disabled.
-- Future asset, settings, and external-opening capabilities must extend the narrow contract in their owning Approved spec and update this ADR when they change its trust model.
+- Future asset and settings capabilities must extend the narrow contract in their owning Approved spec and update this ADR when they change its trust model. Any unsafe-link preference remains main-enforced and cannot widen Spec 0004's permanently non-openable class.
 
 ## Verification
 
@@ -69,5 +71,5 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - Node tests cover document schemas, sender-first authorization, forged/stale ownership values, typed results, path identity, and stale-operation disposal.
 - Browser Mode tests cover custom chrome semantics, keyboard behavior, focus, forced-color/reduced-motion styling, and accessibility audits.
 - Playwright-vs-Vite tests cover explicit MemoryPlatform boot and fixture failure behavior.
-- Shell smoke inspects effective BrowserWindow preferences, application responses, CSP, the expanded narrow preload surface, navigation/popup/permission denial, forged document capabilities, multi-window event routing, native dialogs and menus, native OS close-control guarding, custom native chrome operations, real filesystem transactions, packaged boot failure, and diagnostic capture.
+- Shell smoke inspects effective BrowserWindow preferences, application responses, CSP, the expanded narrow preload surface, navigation/popup/permission denial, forged document and external-opening capabilities, safe and confirmed system-handler delegation, multi-window event routing, native dialogs and menus, native OS close-control guarding, custom native chrome operations, real filesystem transactions, packaged boot failure, and diagnostic capture.
 - CI reads the fuses and launches the same electron-builder artifact on pinned Linux, Windows, and macOS runners.

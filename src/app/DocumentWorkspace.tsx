@@ -3,14 +3,28 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { EditorContent } from '@tiptap/react'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type WheelEvent } from 'react'
+import type { SelectionBookmark } from '@tiptap/pm/state'
 
 import { validateDocumentName } from '../documents/filename'
 import type { DocumentGatewayPort, ExternalGatewayEvent, GatewayDocument, SaveOutcome } from '../documents/gateway'
 import { createDocumentExtensions, type RichDocument } from '../documents/markdown'
 import { acceptTabBaseline, createTabBaseline, editTabDocument, editTabTitle, isTabDirty } from '../documents/tab-state'
-import { asTabId, type DirectoryEntry, type DiskVersion, type FileKey, type Path, type RootId } from '../platform/contracts'
+import {
+  asTabId,
+  type DirectoryEntry,
+  type DiskVersion,
+  type ExternalOpenResult,
+  type FileKey,
+  type Path,
+  type RootId,
+  type ToolbarMode,
+} from '../platform/contracts'
 import { insertPinnedBeforePreview, preparePreviewReplacement } from '../workspaces/state'
 import { WorkspaceSidebar, type WorkspaceRootSeed } from './WorkspaceSidebar'
+import { LinkActions, type LinkActionsHandle } from './LinkActions'
+import { SearchPanel } from './SearchPanel'
+import { WritingToolbar } from './WritingToolbar'
+import { useOverlaySurface } from './overlays'
 
 import './document.css'
 
@@ -58,12 +72,18 @@ export function DocumentWorkspace({
   gateway,
   initialTabs,
   onCloseWindow,
+  onOpenExternal = unsupportedExternalOpen,
+  onSettingsRequest,
+  toolbarMode = 'minimal',
   workspace,
 }: {
   readonly closeRequest?: number
   readonly gateway: DocumentGatewayPort
   readonly initialTabs?: readonly DocumentSeed[]
   readonly onCloseWindow?: () => void
+  readonly onOpenExternal?: (destination: string) => Promise<ExternalOpenResult>
+  readonly onSettingsRequest?: () => void
+  readonly toolbarMode?: ToolbarMode
   readonly workspace?: DocumentWorkspaceFolder
 }) {
   const editors = useRef(new Set<Editor>())
@@ -76,6 +96,10 @@ export function DocumentWorkspace({
   const generations = useRef(new Map<string, number>())
   const lifecycleGeneration = useRef(0)
   const handledCloseRequest = useRef(0)
+  const linkActions = useRef<LinkActionsHandle>(null)
+  const searchBookmark = useRef<SelectionBookmark | undefined>(undefined)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchRequest, setSearchRequest] = useState(0)
 
   const updateDocument = useCallback((id: string, editor: Editor) => {
     const baseline = baselineDocuments.current.get(id)
@@ -154,6 +178,25 @@ export function DocumentWorkspace({
   const pinTab = useCallback((id: string) => {
     setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, preview: false } : tab))
   }, [])
+
+  const openSearch = useCallback(() => {
+    if (!active || active.preservation) return
+    if (!searchOpen) searchBookmark.current = active.editor.state.selection.getBookmark()
+    setSearchOpen(true)
+    setSearchRequest((value) => value + 1)
+  }, [active, searchOpen])
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    if (!active || !searchBookmark.current) return
+    try {
+      const selection = searchBookmark.current.resolve(active.editor.state.doc)
+      active.editor.chain().setTextSelection({ from: selection.from, to: selection.to }).focus().run()
+    } catch {
+      active.editor.commands.focus()
+    }
+    searchBookmark.current = undefined
+  }, [active])
 
   const closeTab = useCallback(
     (id: string) => {
@@ -238,6 +281,17 @@ export function DocumentWorkspace({
 
   const handleWorkspaceKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
+      const modifier = event.metaKey || event.ctrlKey
+      if (modifier && event.key === ',') {
+        event.preventDefault()
+        onSettingsRequest?.()
+        return
+      }
+      if (modifier && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        openSearch()
+        return
+      }
       if (!(event.target instanceof Element) || !event.target.closest('.ProseMirror')) return
       if (event.ctrlKey && event.key === 'Tab') {
         event.preventDefault()
@@ -251,7 +305,7 @@ export function DocumentWorkspace({
         title?.setSelectionRange(title.value.length, title.value.length)
       }
     },
-    [activateFromEditor, active],
+    [activateFromEditor, active, onSettingsRequest, openSearch],
   )
 
   const titleValidation = useMemo(
@@ -485,6 +539,11 @@ export function DocumentWorkspace({
     }
   }, [closeRequest, requestWindowClose])
 
+  useEffect(() => {
+    setSearchOpen(false)
+    searchBookmark.current = undefined
+  }, [activeId])
+
   useEffect(() => gateway.onCommand((command) => {
     if (command === 'new') addTab()
     if (command === 'open') openDocument()
@@ -496,7 +555,9 @@ export function DocumentWorkspace({
     if (command === 'save-as') saveAs()
     if (command === 'close-tab' && active) requestClose(active.id)
     if (command === 'close-window') requestWindowClose()
-  }), [active, addTab, dirty, gateway, openDocument, requestClose, requestWindowClose, save, saveAs, saveTabsSequentially, tabs])
+    if (command === 'find') openSearch()
+    if (command === 'settings') onSettingsRequest?.()
+  }), [active, addTab, dirty, gateway, onSettingsRequest, openDocument, openSearch, requestClose, requestWindowClose, save, saveAs, saveTabsSequentially, tabs])
 
   useEffect(() => {
     void gateway.updateMenuState({
@@ -704,6 +765,19 @@ export function DocumentWorkspace({
         <div aria-hidden="true" className="tab-drag-space" />
       </div>
 
+      {active && !active.preservation ? (
+        <WritingToolbar
+          editor={active.editor}
+          key={`toolbar-${active.id}`}
+          mode={toolbarMode}
+          onOpenLink={(selection) => linkActions.current?.openEditor(selection)}
+        />
+      ) : null}
+
+      {active && searchOpen && !active.preservation ? (
+        <SearchPanel editor={active.editor} onClose={closeSearch} request={searchRequest} />
+      ) : null}
+
       {active ? (
         <section aria-label={active.title || 'Untitled document'} className="document-surface" id="active-document-panel" role="tabpanel">
           <div
@@ -774,6 +848,16 @@ export function DocumentWorkspace({
             ) : (
               <EditorContent data-testid="rich-editor" editor={active.editor} />
             )}
+            {!active.preservation ? (
+              <LinkActions
+                editor={active.editor}
+                key={`links-${active.id}`}
+                onAnnouncement={setAnnouncement}
+                onIssue={(message) => setIssue({ kind: 'error', message })}
+                onOpenExternal={onOpenExternal}
+                ref={linkActions}
+              />
+            ) : null}
             {issue ? (
               <aside className="document-issue" data-testid="document-issue" role="alert">
                 <p>{issue.message}</p>
@@ -808,29 +892,41 @@ export function DocumentWorkspace({
       <p aria-live="polite" className="workspace-announcement" data-testid="workspace-announcement">{announcement}</p>
 
       {renameCandidate && active?.id === renameCandidate ? (
-        <div aria-labelledby="rename-title" aria-modal="true" className="decision-backdrop" role="dialog">
-          <div className="decision-card">
-            <h2 id="rename-title">Save this document before renaming it?</h2>
-            <p>The content must be saved before the file can move.</p>
-            <button
-              data-testid="rename-save"
-              onClick={saveAndRename}
-              type="button"
-            >Save and rename</button>
-            <button
-              data-testid="rename-cancel"
-              onClick={() => {
-                updateTitle(active.id, active.baselineTitle)
-                setRenameCandidate(undefined)
-              }}
-              type="button"
-            >Cancel rename</button>
-          </div>
-        </div>
+        <RenameDecision
+          onCancel={() => {
+            updateTitle(active.id, active.baselineTitle)
+            setRenameCandidate(undefined)
+          }}
+          onSave={saveAndRename}
+        />
       ) : null}
       </div>
     </div>
   )
+}
+
+function RenameDecision({ onCancel, onSave }: { readonly onCancel: () => void; readonly onSave: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  useOverlaySurface('rename-decision', true, true, onCancel)
+  useEffect(() => {
+    const element = dialog.current
+    element?.showModal()
+    return () => { if (element?.open) element.close() }
+  }, [])
+  return (
+    <dialog aria-labelledby="rename-title" className="decision-backdrop" data-testid="rename-dialog" onCancel={(event) => { event.preventDefault(); onCancel() }} ref={dialog}>
+      <div className="decision-card">
+        <h2 id="rename-title">Save this document before renaming it?</h2>
+        <p>The content must be saved before the file can move.</p>
+        <button data-testid="rename-save" onClick={onSave} type="button">Save and rename</button>
+        <button data-testid="rename-cancel" onClick={onCancel} type="button">Cancel rename</button>
+      </div>
+    </dialog>
+  )
+}
+
+async function unsupportedExternalOpen(): Promise<ExternalOpenResult> {
+  return { kind: 'unsupported' }
 }
 
 function convertTaskMarkerInput(view: EditorView, cursor: number, text: string): boolean {

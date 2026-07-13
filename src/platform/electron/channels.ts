@@ -1,5 +1,6 @@
 export const channels = {
   bootstrap: 'markzen:bootstrap',
+  externalOpen: 'markzen:external:open',
   documentClose: 'markzen:document:close',
   documentConfirmClose: 'markzen:document:confirm-close',
   documentConfirmWindowClose: 'markzen:document:confirm-window-close',
@@ -16,6 +17,7 @@ export const channels = {
   documentSaveAs: 'markzen:document:save-as',
   documentUpdateMenuState: 'markzen:document:update-menu-state',
   settingsPatch: 'markzen:settings:patch',
+  settingsAppearance: 'markzen:settings:appearance',
   settingsRetry: 'markzen:settings:retry',
   settingsSnapshot: 'markzen:settings:snapshot',
   settingsWarning: 'markzen:settings:warning',

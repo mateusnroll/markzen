@@ -1,0 +1,41 @@
+import { expect, test } from '@playwright/test'
+
+test('AC1–AC21 AC49–AC64 AC70–AC85: writing controls, Find, Settings, and toolbar preference compose in one journey', async ({ page }) => {
+  await page.goto('/?fixture=basic')
+  await expect(page.getByTestId('toolbar-summary')).toBeVisible()
+  await page.getByTestId('toolbar-summary').click()
+  await page.getByTestId('format-bold').click()
+  await page.getByTestId('rich-editor-content').pressSequentially('writing')
+  expect(await page.getByTestId('rich-editor-content').evaluate((element) => element.querySelector('strong')?.textContent)).toContain('writing')
+
+  await page.getByTestId('rich-editor-content').press(process.platform === 'darwin' ? 'Meta+f' : 'Control+f')
+  await page.getByTestId('search-input').fill('writing')
+  await expect(page.getByTestId('search-status')).toContainText('1 of 1')
+
+  await page.getByTestId('rich-editor-content').press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,')
+  await expect(page.getByTestId('settings-dialog')).toBeVisible()
+  await expect(page.getByTestId('search-panel')).toHaveCount(0)
+  await page.getByTestId('theme-setting').selectOption('dark')
+  await expect(page.getByTestId('app-shell')).toHaveAttribute('data-theme', 'dark')
+  await page.getByTestId('toolbar-setting').selectOption('regular')
+  await page.getByTestId('settings-close').click()
+  await expect(page.getByTestId('formatting-toolbar')).toBeVisible()
+  await expect(page.getByTestId('toolbar-summary')).toHaveCount(0)
+})
+
+test('AC22–AC48: focusable span link actions edit and remove without ambient navigation', async ({ page }) => {
+  await page.goto('/?fixture=writing-link')
+  const link = page.getByTestId('rich-link')
+  await expect(link).toHaveAttribute('role', 'link')
+  await expect(link).toHaveAttribute('tabindex', '0')
+  await link.focus()
+  await expect(page.getByTestId('link-popover')).toBeVisible()
+  await page.getByTestId('link-edit').click()
+  await page.getByTestId('link-destination').fill('#section')
+  await page.getByTestId('link-apply').click()
+  await expect(link).toHaveAttribute('data-href', '#section')
+  await link.focus()
+  await page.getByTestId('link-remove').click()
+  await expect(link).toHaveCount(0)
+  expect(page.url()).toContain('127.0.0.1')
+})

@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-07-12
-**Spec:** [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md)
+**Specs:** [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md)
 
 ## Context
 
@@ -12,7 +12,7 @@ Sidebar width is global across windows and survives restart. Later milestones ad
 
 ### Schema and authority
 
-- The main process owns one application-lifetime `SettingsService`. Version 1 initially contains `sidebarWidth`; later approved specs extend the closed TypeScript schema and validator directly.
+- The main process owns one application-lifetime `SettingsService`. Version 1 contains `sidebarWidth`, `theme`, and `toolbarMode`; later approved specs extend the closed TypeScript schema and validator directly.
 - There is no generic schema registry and no version-0 migration. Runtime patches are closed objects of at most 4 KiB. Unknown keys, extra properties, dangerous keys, non-finite values, and invalid shapes reject the entire patch.
 - The service reads at most 1 MiB. Safe unknown persisted JSON properties survive rewrites for downgrade compatibility, but `__proto__`, `prototype`, and `constructor` are discarded at every depth.
 - Each accepted patch receives the next process-local revision. Main serializes acceptance, broadcasts the complete authoritative snapshot, and renderer consumers ignore non-newer revisions.
@@ -29,6 +29,7 @@ Sidebar width is global across windows and survives restart. Later milestones ad
 - Bootstrap includes the validated snapshot before a workspace is revealed.
 - Splitter movement updates the local clamped width in the current animation frame and submits at most one patch per frame. Main remains authoritative for cross-window ordering and persistence.
 - Accepted settings revisions outlive the initiating window; window disposal removes only its subscription.
+- Theme bootstrap also selects the BrowserWindow background before renderer reveal. One application-lifetime Electron native-theme listener broadcasts effective light/dark appearance; renderer consumers apply it only while the persisted theme is `system`, so no per-window OS listener or renderer-owned theme authority is required.
 
 ## Consequences
 
@@ -39,5 +40,5 @@ Sidebar width is global across windows and survives restart. Later milestones ad
 ## Verification
 
 - Node tests cover parsing, safe unknown data, patch rejection, revisions, debounce/write generations, recovery, retry, and bounded quit flush.
-- Browser tests cover optimistic same-frame sizing, revision ordering, warnings, and resize coalescing.
-- Shell smoke covers real `userData` bootstrap, cross-window broadcast, atomic files, and quit flushing.
+- Browser tests cover optimistic same-frame sizing, revision ordering, warnings, resize coalescing, theme tokens, toolbar consumers, and settings-dialog accessibility.
+- Shell smoke covers real `userData` bootstrap, pre-reveal BrowserWindow background, system appearance broadcast, cross-window settings convergence, atomic files, and quit flushing.
