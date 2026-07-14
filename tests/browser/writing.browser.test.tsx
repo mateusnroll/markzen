@@ -5,7 +5,7 @@ import { page, userEvent } from 'vitest/browser'
 
 import { DocumentWorkspace, type DocumentSeed } from '../../src/app/DocumentWorkspace'
 import { ShellApp } from '../../src/app/ShellApp'
-import { ok, type ExternalOpenResult, type SettingsSnapshotPayload, type SettingsPatch } from '../../src/platform/contracts'
+import { ok, type ExternalOpenResult, type ImageIntentOutcome, type SettingsSnapshotPayload, type SettingsPatch } from '../../src/platform/contracts'
 import { createMemoryPlatform } from '../../src/platform/memory'
 import { FakeDocumentGateway } from './document-gateway.fake'
 
@@ -71,6 +71,126 @@ describe('spec 0004 formatting toolbar', () => {
     await userEvent.keyboard('{Escape}')
     await frame()
     expect(document.querySelector('[data-testid="heading-menu"]')).toBeNull()
+  })
+})
+
+describe('spec 0005 tables', () => {
+  test('AC1-AC3 AC6-AC9 AC13 AC47: inserts a 3x3 header table and exposes contextual named actions', async () => {
+    await renderWorkspace(undefined, {})
+    await userEvent.click(page.getByTestId('toolbar-summary'))
+    await userEvent.click(page.getByTestId('toolbar-more'))
+    await expect.element(page.getByTestId('insert-table')).toBeEnabled()
+    await userEvent.click(page.getByTestId('insert-table'))
+    const table = editor().querySelector('table')!
+    expect(table.querySelectorAll('tr')).toHaveLength(3)
+    expect(table.querySelectorAll('tr:first-child th')).toHaveLength(3)
+    await userEvent.click(table.querySelector('th')!)
+    await expect.element(page.getByTestId('table-actions')).toBeVisible()
+    await userEvent.click(page.getByTestId('table-actions'))
+    for (const id of ['table-add-row', 'table-add-column', 'table-delete-row', 'table-delete-column', 'table-delete-table']) {
+      await expect.element(page.getByTestId(id)).toBeVisible()
+    }
+    await expect.element(page.getByTestId('table-delete-row')).toBeDisabled()
+    expect(byTestId('table-actions-context').textContent).toContain('header row')
+  })
+
+  test('AC8 AC10-AC12: append and destructive actions preserve a valid table or replacement paragraph', async () => {
+    await renderWorkspace([tableSeed()], {})
+    await userEvent.click(editor().querySelector('td')!)
+    await userEvent.click(page.getByTestId('table-actions'))
+    await userEvent.click(page.getByTestId('table-add-row'))
+    expect(editor().querySelectorAll('tr')).toHaveLength(4)
+    await userEvent.click(page.getByTestId('table-actions'))
+    await userEvent.click(page.getByTestId('table-add-column'))
+    expect(editor().querySelectorAll('tr:first-child > *')).toHaveLength(4)
+    await userEvent.click(page.getByTestId('table-actions'))
+    await userEvent.click(page.getByTestId('table-delete-table'))
+    expect(editor().querySelector('table')).toBeNull()
+    expect(editor().querySelector('p')).not.toBeNull()
+  })
+
+  test('AC4 AC5: Tab traverses cells, appends from the final cell, and Shift+Tab preserves the first header selection', async () => {
+    await renderWorkspace([tableSeed()], {})
+    const cells = editor().querySelectorAll('th, td')
+    selectCell(cells.item(0))
+    await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
+    expect(editor().querySelectorAll('tr')).toHaveLength(3)
+    selectCell(cells.item(cells.length - 1))
+    await userEvent.keyboard('{Tab}')
+    expect(editor().querySelectorAll('tr')).toHaveLength(4)
+  })
+
+  test('AC11: deleting the sole column replaces the table with one focused paragraph', async () => {
+    await renderWorkspace([oneColumnTableSeed()], {})
+    await userEvent.click(editor().querySelector('td')!)
+    await userEvent.click(page.getByTestId('table-actions'))
+    await userEvent.click(page.getByTestId('table-delete-column'))
+    expect(editor().querySelector('table')).toBeNull()
+    expect(editor().querySelector(':scope > p')?.textContent).toBe('')
+  })
+})
+
+describe('spec 0005 local images', () => {
+  test('AC17-AC23 AC29 AC43 AC44 AC46-AC48: From Disk requires metadata and inserts, edits, and deletes one accessible loaded image', async () => {
+    const gateway = new class extends FakeDocumentGateway {
+      override async selectImage(): Promise<ImageIntentOutcome> {
+        return { candidate: { candidateId: 'candidate', internal: true, name: 'diagram.png', portable: false, source: '/tmp/diagram.png' }, kind: 'candidate' }
+      }
+      override async commitImage(): Promise<ImageIntentOutcome> {
+        return { asset: { source: '/tmp/diagram.png', url: memoryImageUrl() }, kind: 'authorized' }
+      }
+    }()
+    await renderWorkspaceWithGateway(gateway)
+    await userEvent.click(page.getByTestId('toolbar-summary'))
+    await userEvent.click(page.getByTestId('toolbar-more'))
+    await userEvent.click(page.getByTestId('insert-image'))
+    await expect.element(page.getByTestId('image-insert-popover')).toBeVisible()
+    await userEvent.click(page.getByTestId('image-from-disk'))
+    await expect.element(page.getByTestId('image-apply')).toBeDisabled()
+    await userEvent.fill(page.getByTestId('image-alt'), 'Architecture diagram')
+    await userEvent.click(page.getByTestId('image-apply'))
+    const image = editor().querySelector<HTMLElement>('[data-markzen-image]')!
+    expect(image.getAttribute('aria-label')).toContain('Architecture diagram, loaded')
+    expect(image.querySelector('img')?.getAttribute('src')).toContain('blob:')
+    await userEvent.click(image)
+    await expect.element(page.getByTestId('image-actions')).toBeVisible()
+    await userEvent.click(page.getByTestId('image-actions'))
+    await userEvent.fill(page.getByTestId('image-title'), 'Updated')
+    await userEvent.click(page.getByTestId('image-apply'))
+    const audit = await axe.run(document.body, { resultTypes: ['violations'] })
+    expect(audit.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact ?? ''))).toEqual([])
+    await userEvent.keyboard('{Delete}')
+    expect(editor().querySelector('[data-markzen-image]')).toBeNull()
+  })
+
+  test('AC19 AC21 AC30 AC34 AC42 AC45: cancel and blocked sources preserve the document without ambient loading', async () => {
+    const gateway = new class extends FakeDocumentGateway {
+      override async selectImage(): Promise<ImageIntentOutcome> { return { kind: 'cancelled' } }
+    }()
+    await renderWorkspaceWithGateway(gateway, [{ id: 'blocked', title: 'Blocked', document: { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'image', attrs: { alt: 'Remote', src: 'https://example.com/a.png' } }] },
+    ] } }])
+    expect(editor().querySelector('[data-testid="blocked-image"]')).not.toBeNull()
+    expect(editor().querySelector('[data-markzen-image] img')).toBeNull()
+    await userEvent.click(page.getByTestId('toolbar-summary'))
+    await userEvent.click(page.getByTestId('toolbar-more'))
+    await userEvent.click(page.getByTestId('insert-image'))
+    await userEvent.click(page.getByTestId('image-from-disk'))
+    expect(document.querySelector('[data-testid="image-insert-popover"]')).toBeNull()
+    expect(editor().querySelectorAll('[data-markzen-image]')).toHaveLength(1)
+  })
+
+  test('AC31 AC32 AC39: transient image authorization does not dirty a clean opened document', async () => {
+    const gateway = new class extends FakeDocumentGateway {
+      override async resolveImage(_id: string, source: string): Promise<ImageIntentOutcome> {
+        return { asset: { source, url: memoryImageUrl() }, kind: 'authorized' }
+      }
+    }()
+    await renderWorkspaceWithGateway(gateway, [{ id: 'clean-image', title: 'Clean', document: { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'image', attrs: { alt: 'Local', src: 'image.png' } }] },
+    ] } }])
+    await expect.element(page.getByTestId('local-image')).toBeVisible()
+    expect(byTestId('document-tab').getAttribute('aria-label')).not.toContain('dirty')
   })
 })
 
@@ -233,6 +353,39 @@ async function renderWorkspace(
   await frame()
 }
 
+async function renderWorkspaceWithGateway(gateway: FakeDocumentGateway, seeds?: readonly DocumentSeed[]): Promise<void> {
+  const container = document.getElementById('test-root') ?? document.body.appendChild(document.createElement('div'))
+  root = createRoot(container)
+  root.render(<DocumentWorkspace gateway={gateway} {...(seeds ? { initialTabs: seeds } : {})} />)
+  await frame()
+  await frame()
+}
+
+function tableSeed(): DocumentSeed {
+  const cell = (type: 'tableHeader' | 'tableCell', text: string) => ({ type, content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })
+  return {
+    id: 'table',
+    title: 'Table',
+    document: { type: 'doc', content: [{ type: 'table', content: [
+      { type: 'tableRow', content: [cell('tableHeader', 'A'), cell('tableHeader', 'B'), cell('tableHeader', 'C')] },
+      { type: 'tableRow', content: [cell('tableCell', '1'), cell('tableCell', '2'), cell('tableCell', '3')] },
+      { type: 'tableRow', content: [cell('tableCell', '4'), cell('tableCell', '5'), cell('tableCell', '6')] },
+    ] }] },
+  }
+}
+
+function oneColumnTableSeed(): DocumentSeed {
+  const cell = (type: 'tableHeader' | 'tableCell', text: string) => ({ type, content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })
+  return {
+    id: 'one-column',
+    title: 'One column',
+    document: { type: 'doc', content: [{ type: 'table', content: [
+      { type: 'tableRow', content: [cell('tableHeader', 'A')] },
+      { type: 'tableRow', content: [cell('tableCell', '1')] },
+    ] }] },
+  }
+}
+
 async function renderShell(settings: Pick<SettingsSnapshotPayload, 'theme' | 'toolbarMode'>, appearance: 'light' | 'dark') {
   const memory = createMemoryPlatform({ caseSensitive: true, platform: 'posix' })
   const windowId = await memory.platform.window.create()
@@ -282,6 +435,19 @@ function byTestId<T extends Element = HTMLElement>(testId: string): T {
   return document.querySelector(`[data-testid="${testId}"]`) as T
 }
 
+function selectCell(element: Element): void {
+  const text = element.querySelector('p')?.firstChild
+  if (!text) throw new Error('Expected table cell text')
+  const range = document.createRange()
+  range.selectNodeContents(text)
+  range.collapse(false)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+  editor().focus()
+  document.dispatchEvent(new Event('selectionchange'))
+}
+
 function rerender(): void {
   root?.unmount()
   root = undefined
@@ -298,4 +464,10 @@ async function wait(milliseconds: number): Promise<void> {
 
 function primaryShortcut(key: string): string {
   return navigator.platform.toLowerCase().includes('mac') ? `{Meta>}${key}{/Meta}` : `{Control>}${key}{/Control}`
+}
+
+function memoryImageUrl(): string {
+  const binary = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  return URL.createObjectURL(new Blob([bytes], { type: 'image/png' }))
 }

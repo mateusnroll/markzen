@@ -107,8 +107,18 @@ export type DialogResult =
 
 export interface DialogPort {
   confirm(options: ConfirmationDialogOptions): Promise<PlatformResult<number, 'blocked'>>
+  image(): Promise<PlatformResult<Path | undefined, 'blocked'>>
   open(options: OpenDialogOptions): Promise<PlatformResult<Path | undefined, 'blocked'>>
   save(options: SaveDialogOptions): Promise<PlatformResult<Path | undefined, 'blocked'>>
+}
+
+export type LocalSource = { readonly portable: boolean; readonly source: string }
+export interface PathPort {
+  contains(parent: Path, child: Path): boolean
+  directory(path: Path): Path
+  rebase(source: string, internal: boolean, oldDocument: Path | undefined, newDocument: Path): LocalSource | undefined
+  relative(document: Path | undefined, target: Path): LocalSource
+  resolve(document: Path, source: string): PlatformResult<Path, 'invalid-path'>
 }
 
 export interface WatchPort {
@@ -135,6 +145,7 @@ export interface Platform {
   readonly dialog: DialogPort
   readonly fs: FileSystemPort
   readonly kind: 'electron' | 'memory'
+  readonly paths: PathPort
   readonly watch: WatchPort
   readonly window: WindowPort
 }
@@ -185,7 +196,14 @@ export type WorkspaceRootOutcome =
   | { readonly kind: 'added' | 'duplicate'; readonly root: WorkspaceRootPayload }
   | { readonly kind: 'cancelled' | 'error' }
 
-export type DocumentFilePayload = FileRead & { readonly secondaryPath?: string; readonly tabId: TabId }
+export type SourceRebase = { readonly assetId?: string; readonly from: string; readonly to: string }
+export type DocumentFilePayload = FileRead & {
+  readonly assetsRevoked?: boolean
+  readonly rebasedDocument?: unknown
+  readonly secondaryPath?: string
+  readonly sourceRebases?: readonly SourceRebase[]
+  readonly tabId: TabId
+}
 export type DocumentIntentOutcome =
   | { readonly file: DocumentFilePayload; readonly kind: 'opened' | 'saved' }
   | { readonly file: DocumentFilePayload; readonly kind: 'cleanup-warning'; readonly oldPath: Path }
@@ -198,6 +216,8 @@ export type DocumentWriteRequest = {
   readonly tabId: TabId
   readonly title: string
   readonly titleDirty: boolean
+  readonly encoding?: { readonly bom: boolean; readonly newline: 'lf' | 'crlf' }
+  readonly model?: unknown
 }
 export type DocumentCommand = 'close-tab' | 'close-window' | 'new' | 'open' | 'save' | 'save-all' | 'save-all-for-quit' | 'save-as'
 export type RendererCommand = DocumentCommand | 'find' | 'settings'
@@ -216,6 +236,29 @@ export type DocumentMenuState = {
 export type DocumentExternalEvent =
   | { readonly file: DocumentFilePayload; readonly kind: 'changed' }
   | { readonly kind: 'missing' | 'watch-warning'; readonly tabId: TabId }
+
+export type ImageCandidate = {
+  readonly candidateId: string
+  readonly internal: boolean
+  readonly name: string
+  readonly portable: boolean
+  readonly source: string
+}
+export type ImageAsset = {
+  readonly source: string
+  readonly url: string
+}
+export type ImageIntentOutcome =
+  | { readonly candidate: ImageCandidate; readonly kind: 'candidate' }
+  | { readonly asset: ImageAsset; readonly kind: 'authorized' }
+  | { readonly kind: 'blocked' | 'cancelled' | 'error' | 'mismatch' }
+
+export interface MarkzenAssetCapability {
+  authorize(tabId: TabId, generation: number, source: string): Promise<PlatformResult<ImageIntentOutcome>>
+  commit(tabId: TabId, generation: number, candidateId: string): Promise<PlatformResult<ImageIntentOutcome>>
+  resolve(tabId: TabId, generation: number, source: string): Promise<PlatformResult<ImageIntentOutcome>>
+  select(tabId: TabId, generation: number): Promise<PlatformResult<ImageIntentOutcome>>
+}
 
 export interface MarkzenDocumentCapability {
   acceptExternal(tabId: TabId, generation: number, diskVersion: DiskVersion): Promise<PlatformResult<void>>
@@ -260,6 +303,7 @@ export interface MarkzenWindowCapability {
 }
 
 export interface MarkzenApi {
+  readonly asset: MarkzenAssetCapability
   readonly bootstrap: () => Promise<PlatformResult<BootstrapPayload>>
   readonly document: MarkzenDocumentCapability
   readonly openExternal: (destination: string) => Promise<PlatformResult<ExternalOpenResult>>

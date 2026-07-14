@@ -53,6 +53,10 @@ Milestone 0004 search intentionally implements NFC normalization plus ECMAScript
 
 Milestone 0005 preserves SVG sources but deliberately blocks active SVG rendering. A future security-focused spec may permit SVG after choosing and testing a sanitization or rasterization boundary that cannot execute script, navigate, fetch subresources, or escape the asset capability model.
 
+## Table and image reordering
+
+Spec 0005 deliberately ships table insertion/navigation/add/delete actions and image insertion/metadata/delete without structural reordering. A later interaction spec may add row/column reordering plus image movement only after it defines one shared pointer-drag and keyboard-grab model, legal targets, cancellation/blur/tab-switch cleanup, focus restoration, announcements, undo ownership, and touch behavior. It must preserve table headers/alignment metadata and image source serialization.
+
 ## Remove / reorder sidebar roots & file tree CRUD
 
 Milestone 0003 non-goals, deferred together: removing or reordering roots and create/delete/rename/move from the tree. These operations share context-menu infrastructure and must preserve canonical identity, preview tabs, watchers, and the shared save transaction.

@@ -172,3 +172,43 @@ describe('spec 0002 document lifecycle gateway', () => {
     await expect(gateway.acceptExternal(event.document)).resolves.toBe(true)
   })
 })
+
+describe('spec 0005 MemoryPlatform image parity', () => {
+  test('AC18-AC24 AC30-AC32: selection, validation, commit, and automatic same-directory resolution use the memory ports', async () => {
+    const { harness, platform } = createMemoryPlatform({ caseSensitive: true, platform: 'posix' })
+    harness.mkdir('/notes')
+    const png = validPng()
+    await platform.fs.create(harness.path('/notes/image.png'), png)
+    await platform.fs.create(harness.path('/notes/note.md'), new TextEncoder().encode('![Alt](image.png)\n'))
+    const gateway = new DocumentGateway(platform)
+    const opened = await gateway.openPath(harness.path('/notes/note.md'), 'image-tab')
+    expect(opened.kind).toBe('opened')
+    const resolved = await gateway.resolveImage('image-tab', 'image.png')
+    expect(resolved).toMatchObject({ kind: 'authorized', asset: { source: 'image.png' } })
+
+    harness.queueDialog({ kind: 'open', path: harness.path('/notes/image.png') })
+    const selected = await gateway.selectImage('untitled')
+    expect(selected).toMatchObject({ kind: 'candidate', candidate: { internal: true, source: '/notes/image.png' } })
+    if (selected.kind !== 'candidate') throw new Error('expected image candidate')
+    expect(await gateway.commitImage('untitled', selected.candidate.candidateId)).toMatchObject({ kind: 'authorized' })
+  })
+
+  test('AC24-AC28: MemoryPlatform Save As rebases captured image sources through its trusted path port', async () => {
+    const { harness, platform } = createMemoryPlatform({ caseSensitive: true, platform: 'posix' })
+    harness.mkdir('/notes')
+    harness.mkdir('/archive')
+    await platform.fs.create(harness.path('/notes/note.md'), new TextEncoder().encode('![Alt](image.png)\n'))
+    const gateway = new DocumentGateway(platform)
+    const opened = await gateway.openPath(harness.path('/notes/note.md'), 'rebase-tab')
+    if (opened.kind !== 'opened') throw new Error('expected open')
+    harness.queueDialog({ kind: 'save', path: harness.path('/archive/note.md') })
+    const saved = await gateway.saveAs(opened.document)
+    expect(saved).toMatchObject({ kind: 'saved', document: { assetsRevoked: true, sourceRebases: [{ from: 'image.png', to: '../notes/image.png' }] } })
+    const read = await platform.fs.read(harness.path('/archive/note.md'))
+    expect(read.ok && decoder.decode(read.value.bytes)).toBe('![Alt](../notes/image.png)\n')
+  })
+})
+
+function validPng(): Uint8Array {
+  return Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'))
+}

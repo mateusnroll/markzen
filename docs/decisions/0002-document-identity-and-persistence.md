@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Spec:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md)
+**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md)
 
 ## Context
 
@@ -30,6 +30,7 @@ Open documents must remain unique across windows, detect external changes before
 - Target reservation precedes staging. A target owned by another tab focuses that owner and aborts; an exact current path becomes Save; another alias of the current key is rejected.
 - Successful Save As or rename adopts the new key, path, version, and tab baseline in the same registry critical section that releases the old key. A stale completion cannot release a newer reservation.
 - Closing releases ownership only after close decisions commit. Cancelled closes retain it.
+- Save As accepts the captured rich model only on its closed, size-bounded request shape. After main owns the chosen/reserved destination, trusted `node:path` operations resolve captured relative local image sources against the old base, rebase them to the new base, serialize that rebased snapshot, and commit those bytes through the same failure-atomic writer. Cancellation or failure returns no mapping and changes no live source.
 
 ## Consequences
 

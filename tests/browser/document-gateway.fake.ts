@@ -8,11 +8,15 @@ import type {
   WorkspaceOpenInput,
 } from '../../src/documents/gateway'
 import type { RendererCommand } from '../../src/platform/contracts'
+import type { ImageIntentOutcome } from '../../src/platform/contracts'
 
 export class FakeDocumentGateway implements DocumentGatewayPort {
   readonly #externalListeners = new Set<(event: ExternalGatewayEvent) => void>()
   readonly #commandListeners = new Set<(command: RendererCommand) => void>()
   #nextTab = 1
+
+  async authorizeImage(id: string, source: string): Promise<ImageIntentOutcome> { void id; void source; return { kind: 'blocked' } }
+  async commitImage(id: string, candidateId: string): Promise<ImageIntentOutcome> { void id; void candidateId; return { kind: 'error' } }
 
   async acceptExternal(): Promise<boolean> { return true }
   async closeTab(): Promise<void> {}
@@ -43,8 +47,10 @@ export class FakeDocumentGateway implements DocumentGatewayPort {
     return { document: input, kind: 'saved' }
   }
   async retryCleanup(): Promise<SaveOutcome> { return { kind: 'unchanged' } }
+  async resolveImage(id: string, source: string): Promise<ImageIntentOutcome> { void id; void source; return { kind: 'blocked' } }
   async save(input: SaveInput): Promise<SaveOutcome> { return { document: input, kind: 'saved' } }
   async saveAndRename(input: SaveInput): Promise<SaveOutcome> { return { document: input, kind: 'saved' } }
   async saveAs(input: GatewayDocument): Promise<SaveOutcome> { return { document: input, kind: 'saved' } }
+  async selectImage(id: string): Promise<ImageIntentOutcome> { void id; return { kind: 'cancelled' } }
   async updateMenuState(): Promise<void> {}
 }

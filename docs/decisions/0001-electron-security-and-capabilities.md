@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md)
+**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md)
 
 ## Context
 
@@ -37,6 +37,7 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - Settings patches use a closed size-bounded schema. Unknown runtime keys, extra properties, invalid values, dangerous object keys, and renderer-selected revisions or destinations are rejected before the main-owned settings service mutates or broadcasts state.
 - Workspace list, preview, watcher, settings, readiness, error, and registry events route only to the live frame registered for their captured owner and generation, and contain the minimum logical data required by that renderer.
 - External opening is one closed `openExternal(destination)` intent. Main validates the application-origin main-frame sender before a bounded one-field payload, independently classifies the destination with the shared WHATWG policy, and never accepts a renderer confirmation flag. Credential-free HTTP(S), mailto, and normalized bare hostnames delegate directly; credential-bearing HTTP(S), file, and non-executable custom schemes require a main-owned window-modal warning; relative/fragment-only, malformed/control-character, javascript, data, and blob values never reach Electron shell.
+- Local raster selection, resolution, and authorization are closed asset intents. Main derives the tab/window owner, canonicalizes after symlink resolution, validates automatic root/document-directory containment or an exact chooser-selected `FileKey`, and issues only the exact-resource bearer described by ADR 0009. Possession of that bearer is the sole documented cross-window authority exception; paths and renderer IDs remain non-authoritative.
 - The renderer continues to prevent ordinary, middle, drag, and unapproved modified navigation plus all popup creation. A document link may request the external-opening intent only from the explicit actions in Spec 0004; parsing, rendering, focus, plain clicks, and programmatic changes remain ambient-effect free.
 
 ### Platform and identity

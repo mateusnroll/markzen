@@ -62,6 +62,26 @@ const fixtures: Readonly<Record<string, Fixture>> = {
       },
     }],
   },
+  'structured-table-100x20': {
+    files: [],
+    initialDocuments: [{
+      id: 'structured-table',
+      title: 'Table performance',
+      document: {
+        type: 'doc',
+        content: [{
+          type: 'table',
+          content: Array.from({ length: 100 }, (_, row) => ({
+            type: 'tableRow',
+            content: Array.from({ length: 20 }, (_, column) => ({
+              type: row === 0 ? 'tableHeader' : 'tableCell',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: `${row}:${column}` }] }],
+            })),
+          })),
+        }],
+      },
+    }],
+  },
   'lifecycle-open': {
     dialogs: [{ kind: 'open', path: '/notes/Olá world.md' }],
     files: [{ bytes: '# Welcome\n', path: '/notes/Olá world.md' }],

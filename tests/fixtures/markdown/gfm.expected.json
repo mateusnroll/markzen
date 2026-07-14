@@ -22,15 +22,28 @@
         {
           "type": "tableRow",
           "content": [
-            { "type": "tableHeader", "attrs": { "alignment": "left" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Name" }] }] },
-            { "type": "tableHeader", "attrs": { "alignment": "right" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Value" }] }] }
+            { "type": "tableHeader", "attrs": { "alignment": "left" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Left" }] }] },
+            { "type": "tableHeader", "attrs": { "alignment": "center" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Center" }] }] },
+            { "type": "tableHeader", "attrs": { "alignment": "right" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Right" }] }] },
+            { "type": "tableHeader", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "None" }] }] }
           ]
         },
         {
           "type": "tableRow",
           "content": [
-            { "type": "tableCell", "attrs": { "alignment": "left" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "A" }] }] },
-            { "type": "tableCell", "attrs": { "alignment": "right" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "1" }] }] }
+            { "type": "tableCell", "attrs": { "alignment": "left" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "a|b" }] }] },
+            { "type": "tableCell", "attrs": { "alignment": "center" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "c|d", "marks": [{ "type": "code" }] }] }] },
+            { "type": "tableCell", "attrs": { "alignment": "right" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "link", "marks": [{ "type": "link", "attrs": { "href": "https://example.com" } }] }] }] },
+            { "type": "tableCell", "content": [{ "type": "paragraph" }] }
+          ]
+        },
+        {
+          "type": "tableRow",
+          "content": [
+            { "type": "tableCell", "attrs": { "alignment": "left" }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "東京", "marks": [{ "type": "bold" }] }] }] },
+            { "type": "tableCell", "attrs": { "alignment": "center" }, "content": [{ "type": "paragraph" }] },
+            { "type": "tableCell", "attrs": { "alignment": "right" }, "content": [{ "type": "paragraph" }] },
+            { "type": "tableCell", "content": [{ "type": "paragraph" }] }
           ]
         }
       ]

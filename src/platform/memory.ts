@@ -16,6 +16,7 @@ import {
   type FsFailureCode,
   type ExpectedDiskVersion,
   type Path,
+  type PathPort,
   type Platform,
   type PlatformResult,
   type WindowId,
@@ -72,6 +73,7 @@ export function createMemoryPlatform(options: MemoryPlatformOptions): {
   const dialogs = new MemoryDialogPort()
   const watches = new MemoryWatchPort()
   const windowPort = new MemoryWindowPort()
+  const paths = new MemoryPathPort(options.platform, fileSystem)
   return {
     harness: {
       externalWrite: async (path, bytes) => {
@@ -100,7 +102,7 @@ export function createMemoryPlatform(options: MemoryPlatformOptions): {
       validatePath: (value) => fileSystem.validate(value),
       windowIds: () => windowPort.ids(),
     },
-    platform: { dialog: dialogs, fs: fileSystem, kind: 'memory', watch: watches, window: windowPort },
+    platform: { dialog: dialogs, fs: fileSystem, kind: 'memory', paths, watch: watches, window: windowPort },
   }
 }
 
@@ -155,6 +157,10 @@ class MemoryDialogPort implements DialogPort {
     return result.ok ? ok(result.value.path) : result
   }
 
+  async image(): Promise<PlatformResult<Path | undefined, 'blocked'>> {
+    return this.open()
+  }
+
   queue(...results: readonly DialogResult[]): void {
     this.#queue.push(...results)
   }
@@ -169,6 +175,69 @@ class MemoryDialogPort implements DialogPort {
     if (!next || next.kind !== kind) return fail('blocked')
     this.#queue.shift()
     return ok(next as Extract<DialogResult, { kind: Kind }>)
+  }
+}
+
+class MemoryPathPort implements PathPort {
+  constructor(readonly platform: 'posix' | 'win32', readonly fileSystem: MemoryFileSystem) {}
+
+  contains(parent: Path, child: Path): boolean {
+    const base = this.internal(parent).replace(/\/$/, '')
+    const target = this.internal(child)
+    return target === base || target.startsWith(`${base}/`)
+  }
+
+  directory(path: Path): Path {
+    const parent = parentPath(this.internal(path)) ?? this.internal(path)
+    return this.external(parent)
+  }
+
+  rebase(source: string, internal: boolean, oldDocument: Path | undefined, newDocument: Path): import('./contracts').LocalSource | undefined {
+    if (!source || source.includes('\0') || (/^[a-z][a-z0-9+.-]*:/i.test(source) && !/^[A-Za-z]:[\\/]/.test(source)) || (!internal && source.startsWith('//'))) return undefined
+    const absolute = internal
+      ? this.absolute(source)
+      : oldDocument && !this.isAbsolute(source) ? this.resolve(oldDocument, source) : undefined
+    if (!absolute || !absolute.ok) return undefined
+    return this.relative(newDocument, absolute.value)
+  }
+
+  relative(document: Path | undefined, target: Path): import('./contracts').LocalSource {
+    if (!document) return { portable: false, source: this.internal(target) }
+    const from = splitAbsolute(this.internal(this.directory(document)))
+    const to = splitAbsolute(this.internal(target))
+    if (from.root.toLocaleLowerCase('en-US') !== to.root.toLocaleLowerCase('en-US')) return { portable: false, source: this.internal(target) }
+    let common = 0
+    while (from.segments[common] !== undefined && from.segments[common] === to.segments[common]) common += 1
+    const source = [...from.segments.slice(common).map(() => '..'), ...to.segments.slice(common)].join('/') || to.segments.at(-1) || ''
+    return { portable: true, source }
+  }
+
+  resolve(document: Path, source: string): PlatformResult<Path, 'invalid-path'> {
+    if (!source || source.includes('\0') || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(source) && !/^[A-Za-z]:[\\/]/.test(source)) return fail('invalid-path')
+    const absolute = this.isAbsolute(source) ? source : `${this.internal(this.directory(document))}/${source}`
+    return this.absolute(absolute)
+  }
+
+  private absolute(value: string): PlatformResult<Path, 'invalid-path'> {
+    const normalized = this.normalize(value)
+    return this.fileSystem.validate(this.platform === 'win32' ? normalized.replaceAll('/', '\\') : normalized)
+  }
+
+  private external(value: string): Path {
+    return asPath(this.platform === 'win32' ? value.replaceAll('/', '\\') : value)
+  }
+
+  private internal(value: Path | string): string { return String(value).replaceAll('\\', '/') }
+  private isAbsolute(value: string): boolean { return this.platform === 'win32' ? /^[A-Za-z]:[\\/]/.test(value) : value.startsWith('/') }
+  private normalize(value: string): string {
+    const { root, segments } = splitAbsolute(this.internal(value))
+    const result: string[] = []
+    for (const segment of segments) {
+      if (!segment || segment === '.') continue
+      if (segment === '..') result.pop()
+      else result.push(segment)
+    }
+    return `${root}${result.join('/')}`
   }
 }
 

@@ -40,6 +40,11 @@ const InertImage = Node.create({
   addAttributes() {
     return {
       alt: { default: '' },
+      assetId: { default: null, rendered: false },
+      assetUrl: { default: null, rendered: false },
+      decorative: { default: false, rendered: false },
+      internal: { default: false, rendered: false },
+      loadState: { default: 'blocked', rendered: false },
       src: { default: '' },
       title: { default: null },
     }
@@ -49,7 +54,17 @@ const InertImage = Node.create({
   },
   renderHTML({ node }) {
     const alt = typeof node.attrs.alt === 'string' ? node.attrs.alt : ''
-    return ['span', { 'aria-label': alt || 'Image', 'data-markzen-image': '', role: 'img' }, alt || 'Image']
+    const loaded = typeof node.attrs.assetUrl === 'string' && /^(?:markzen-asset:|blob:)/.test(node.attrs.assetUrl) && node.attrs.loadState !== 'broken'
+    const state = node.attrs.loadState === 'broken' ? 'broken' : loaded ? 'loaded' : 'blocked'
+    const label = node.attrs.decorative === true ? 'Decorative image' : alt || 'Image without alternative text'
+    return ['span', {
+      'aria-label': `${label}, ${state}`,
+      'data-image-state': state,
+      'data-markzen-image': '',
+      'data-testid': loaded ? 'local-image' : state === 'broken' ? 'broken-image' : 'blocked-image',
+      role: 'img',
+      tabindex: '0',
+    }, ...(loaded ? [['img', { alt: node.attrs.decorative === true ? '' : alt, draggable: 'false', src: node.attrs.assetUrl }]] : [label])]
   },
   markdownTokenName: 'image',
   parseMarkdown(token: MarkdownToken) {
@@ -227,7 +242,7 @@ function normalizeNode(value: JSONContent): RichNode {
     type: value.type ?? 'text',
   }
   if (value.text !== undefined) node.text = value.text
-  if (value.content) node.content = value.content.map(normalizeNode)
+  if (value.content?.length) node.content = value.content.map(normalizeNode)
   if (value.marks) node.marks = value.marks.map(normalizeNode).sort((a, b) => markRank(a.type) - markRank(b.type))
   const attrs = normalizeAttributes(node.type, value.attrs)
   if (attrs && Object.keys(attrs).length > 0) node.attrs = attrs
@@ -293,7 +308,7 @@ function escapeDestination(value: string): string {
 }
 
 function cellText(cell: JSONContent, helpers: MarkdownRendererHelpers): string {
-  return helpers.renderChildren(cell.content ?? []).replace(/\s+/g, ' ').trim()
+  return helpers.renderChildren(cell.content ?? []).replace(/\s+/g, ' ').trim().replace(/(?<!\\)\|/g, '\\|')
 }
 
 function alignmentDelimiter(cell: JSONContent): string {

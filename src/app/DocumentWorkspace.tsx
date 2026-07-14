@@ -22,8 +22,10 @@ import {
 import { insertPinnedBeforePreview, preparePreviewReplacement } from '../workspaces/state'
 import { WorkspaceSidebar, type WorkspaceRootSeed } from './WorkspaceSidebar'
 import { LinkActions, type LinkActionsHandle } from './LinkActions'
+import { ImageActions, imageKeyboardHandler, type ImageActionsHandle } from './ImageActions'
 import { SearchPanel } from './SearchPanel'
 import { WritingToolbar } from './WritingToolbar'
+import { TableActions } from './TableActions'
 import { useOverlaySurface } from './overlays'
 
 import './document.css'
@@ -97,6 +99,7 @@ export function DocumentWorkspace({
   const lifecycleGeneration = useRef(0)
   const handledCloseRequest = useRef(0)
   const linkActions = useRef<LinkActionsHandle>(null)
+  const imageActions = useRef<ImageActionsHandle>(null)
   const searchBookmark = useRef<SelectionBookmark | undefined>(undefined)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchRequest, setSearchRequest] = useState(0)
@@ -104,14 +107,14 @@ export function DocumentWorkspace({
   const updateDocument = useCallback((id: string, editor: Editor) => {
     const baseline = baselineDocuments.current.get(id)
     setTabs((current) => current.map((tab) => (
-      tab.id === id ? { ...editTabDocument(tab, baseline ? editor.state.doc.eq(baseline) : false), preview: false } : tab
+      tab.id === id ? { ...editTabDocument(tab, baseline ? persistentDocumentsEqual(editor.state.doc, baseline) : false), preview: false } : tab
     )))
   }, [])
 
   const makeTab = useCallback(
     (seed: DocumentSeed): WorkspaceTab => {
-      const document = seed.document ?? emptyDocument
-      const editor = new Editor({
+      const document = withImageIds(seed.document ?? emptyDocument)
+      const editor: Editor = new Editor({
         content: document,
         editorProps: {
           attributes: {
@@ -121,6 +124,7 @@ export function DocumentWorkspace({
             spellcheck: 'true',
           },
           handleTextInput: (view, from, _to, text) => convertTaskMarkerInput(view, from, text),
+          handleKeyDown: (_view, event): boolean => imageKeyboardHandler(editor, () => imageActions.current?.openSelected(), event),
         },
         extensions: createDocumentExtensions(),
         onUpdate: ({ editor: updated }) => updateDocument(seed.id, updated),
@@ -324,9 +328,14 @@ export function DocumentWorkspace({
       setIssue(result.kind === 'cleanup-warning'
         ? { kind: 'cleanup-warning', message: `The new file is safe, but the old copy at ${result.oldPath} could not be removed.` }
         : undefined)
-      baselineDocuments.current.set(tab.id, snapshot)
+      let baseline = snapshot
+      if (result.document.assetsRevoked) {
+        applySourceRebases(tab.editor, result.document.sourceRebases ?? [], true)
+        if (result.document.document) baseline = tab.editor.schema.nodeFromJSON(result.document.document)
+      }
+      baselineDocuments.current.set(tab.id, baseline)
       setTabs((current) => current.map((candidate) => (
-        candidate.id === tab.id ? adoptGatewayResult(candidate, result.document, snapshot) : candidate
+        candidate.id === tab.id ? adoptGatewayResult(candidate, result.document, baseline) : candidate
       )))
       return
     }
@@ -771,6 +780,7 @@ export function DocumentWorkspace({
           key={`toolbar-${active.id}`}
           mode={toolbarMode}
           onOpenLink={(selection) => linkActions.current?.openEditor(selection)}
+          onOpenImage={(selection) => imageActions.current?.openInsertion(selection)}
         />
       ) : null}
 
@@ -848,6 +858,17 @@ export function DocumentWorkspace({
             ) : (
               <EditorContent data-testid="rich-editor" editor={active.editor} />
             )}
+            {!active.preservation ? <TableActions editor={active.editor} key={`tables-${active.id}`} /> : null}
+            {!active.preservation ? (
+              <ImageActions
+                editor={active.editor}
+                gateway={gateway}
+                key={`images-${active.id}`}
+                onIssue={(message) => setIssue({ kind: 'error', message })}
+                ref={imageActions}
+                tabId={active.id}
+              />
+            ) : null}
             {!active.preservation ? (
               <LinkActions
                 editor={active.editor}
@@ -903,6 +924,19 @@ export function DocumentWorkspace({
       </div>
     </div>
   )
+}
+
+function applySourceRebases(editor: Editor, rebases: readonly import('../platform/contracts').SourceRebase[], clearAssets = false): void {
+  const byId = new Map(rebases.flatMap((entry) => entry.assetId ? [[entry.assetId, entry] as const] : []))
+  const bySource = new Map(rebases.filter((entry) => !entry.assetId).map((entry) => [entry.from, entry]))
+  const transaction = editor.state.tr
+  editor.state.doc.descendants((node, position) => {
+    if (node.type.name !== 'image' || typeof node.attrs.src !== 'string') return
+    const rebase = (typeof node.attrs.assetId === 'string' ? byId.get(node.attrs.assetId) : undefined) ?? bySource.get(node.attrs.src)
+    if ((!rebase || rebase.from !== node.attrs.src) && !clearAssets) return
+    transaction.setNodeMarkup(position, undefined, { ...node.attrs, ...(clearAssets ? { assetUrl: null } : {}), ...(rebase && rebase.from === node.attrs.src ? { internal: false, src: rebase.to } : {}) })
+  })
+  if (transaction.docChanged) editor.view.dispatch(transaction.setMeta('addToHistory', false))
 }
 
 function RenameDecision({ onCancel, onSave }: { readonly onCancel: () => void; readonly onSave: () => void }) {
@@ -1005,11 +1039,36 @@ function workspaceSecondaryPath(path: Path, roots: readonly WorkspaceRootSeed[])
 function adoptGatewayResult(tab: WorkspaceTab, document: GatewayDocument, snapshot: ProseMirrorNode): WorkspaceTab {
   return {
     ...acceptTabBaseline(tab, document.title),
-    contentDirty: !tab.editor.state.doc.eq(snapshot),
+    contentDirty: !persistentDocumentsEqual(tab.editor.state.doc, snapshot),
     ...(document.diskVersion ? { diskVersion: document.diskVersion } : {}),
     ...(document.fileKey ? { fileKey: document.fileKey } : {}),
     ...(document.path ? { path: document.path } : {}),
     ...(document.secondaryPath ? { secondaryPath: document.secondaryPath } : {}),
     title: document.title,
   }
+}
+
+function persistentDocumentsEqual(left: ProseMirrorNode, right: ProseMirrorNode): boolean {
+  if (left.type !== right.type || left.text !== right.text || left.childCount !== right.childCount || left.marks.length !== right.marks.length) return false
+  const leftAttrs = { ...left.attrs }
+  const rightAttrs = { ...right.attrs }
+  delete leftAttrs.assetUrl
+  delete leftAttrs.assetId
+  delete leftAttrs.loadState
+  delete rightAttrs.assetUrl
+  delete rightAttrs.assetId
+  delete rightAttrs.loadState
+  if (JSON.stringify(leftAttrs) !== JSON.stringify(rightAttrs)) return false
+  for (let index = 0; index < left.marks.length; index += 1) if (!left.marks[index]?.eq(right.marks[index]!)) return false
+  for (let index = 0; index < left.childCount; index += 1) if (!persistentDocumentsEqual(left.child(index), right.child(index))) return false
+  return true
+}
+
+function withImageIds(document: JSONContent): JSONContent {
+  const visit = (node: JSONContent): JSONContent => ({
+    ...node,
+    ...(node.type === 'image' ? { attrs: { ...node.attrs, assetId: typeof node.attrs?.assetId === 'string' ? node.attrs.assetId : crypto.randomUUID() } } : {}),
+    ...(node.content ? { content: node.content.map(visit) } : {}),
+  })
+  return visit(document)
 }

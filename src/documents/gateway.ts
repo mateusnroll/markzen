@@ -1,5 +1,6 @@
 import { displayDocumentStem, deriveDocumentFilename, getRecognizedExtension } from './filename'
 import { parseDocumentBytes, serializeRichDocument, type DocumentEncoding, type RichDocument } from './markdown'
+import { validateRaster } from '../assets/raster'
 import { SaveCoordinator } from './save-coordinator'
 import { DocumentWatchState, type WatchToken } from './watch-state'
 import {
@@ -10,9 +11,12 @@ import {
   type MarkzenApi,
   type RootId,
   asTabId,
+  type ImageIntentOutcome,
+  type ImageCandidate,
 } from '../platform/contracts'
 
 export type GatewayDocument = {
+  readonly assetsRevoked?: boolean
   readonly diskVersion?: DiskVersion
   readonly document?: RichDocument
   readonly encoding?: DocumentEncoding
@@ -22,6 +26,7 @@ export type GatewayDocument = {
   readonly preservation?: { readonly bytes: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
   readonly revision?: number
   readonly secondaryPath?: string
+  readonly sourceRebases?: readonly import('../platform/contracts').SourceRebase[]
   readonly title: string
 }
 
@@ -45,10 +50,12 @@ export type ExternalGatewayEvent =
   | { readonly id: string; readonly kind: 'watch-warning' }
 
 export interface DocumentGatewayPort {
+  authorizeImage(id: string, source: string): Promise<ImageIntentOutcome>
   acceptExternal(document: GatewayDocument): Promise<boolean>
   closeTab(id: string): Promise<void>
   confirmClose(id: string, name: string): Promise<'cancel' | 'discard' | 'save'>
   confirmWindowClose(dirtyNames: readonly string[]): Promise<'cancel' | 'discard' | 'save-all'>
+  commitImage(id: string, candidateId: string): Promise<ImageIntentOutcome>
   completeQuitSaveAll(success: boolean): Promise<void>
   createTabId(): Promise<string>
   open(id?: string): Promise<OpenOutcome>
@@ -57,9 +64,11 @@ export interface DocumentGatewayPort {
   onExternalChange(listener: (event: ExternalGatewayEvent) => void): () => void
   overwriteExternal(input: SaveInput, diskVersion: DiskVersion): Promise<SaveOutcome>
   retryCleanup(input: GatewayDocument): Promise<SaveOutcome>
+  resolveImage(id: string, source: string): Promise<ImageIntentOutcome>
   save(input: SaveInput): Promise<SaveOutcome>
   saveAndRename(input: SaveInput): Promise<SaveOutcome>
   saveAs(input: GatewayDocument): Promise<SaveOutcome>
+  selectImage(id: string): Promise<ImageIntentOutcome>
   updateMenuState(state: import('../platform/contracts').DocumentMenuState): Promise<void>
 }
 
@@ -70,10 +79,63 @@ export class DocumentGateway implements DocumentGatewayPort {
   readonly #watchTokens = new Map<string, WatchToken>()
   readonly #watchDisposers = new Map<string, () => void>()
   readonly #cleanupPaths = new Map<string, Path>()
+  readonly #documents = new Map<string, GatewayDocument>()
+  readonly #imageCandidates = new Map<string, { readonly candidate: ImageCandidate; readonly fileKey: FileKey; readonly path: Path }>()
+  readonly #imageGrants = new Map<string, FileKey>()
+  readonly #assetUrls = new Map<string, Set<string>>()
 
   constructor(readonly platform: Platform) {}
 
+  async authorizeImage(id: string, source: string): Promise<ImageIntentOutcome> {
+    const target = await this.#readImageSource(id, source)
+    if (!target) return { kind: 'blocked' }
+    const selected = await this.platform.dialog.image()
+    if (!selected.ok || !selected.value) return { kind: 'cancelled' }
+    const read = await this.platform.fs.read(selected.value)
+    if (!read.ok || read.value.fileKey !== target.fileKey) return { kind: 'mismatch' }
+    if (!validateRaster(read.value.bytes, String(read.value.path)).ok) return { kind: 'error' }
+    this.#imageGrants.set(`${id}:${source}`, read.value.fileKey)
+    return { asset: { source, url: this.#assetUrl(id, read.value.bytes, String(read.value.path)) }, kind: 'authorized' }
+  }
+
+  async commitImage(id: string, candidateId: string): Promise<ImageIntentOutcome> {
+    const value = this.#imageCandidates.get(candidateId)
+    this.#imageCandidates.delete(candidateId)
+    if (!value) return { kind: 'error' }
+    const read = await this.platform.fs.read(value.path)
+    if (!read.ok || read.value.fileKey !== value.fileKey || !validateRaster(read.value.bytes, String(read.value.path)).ok) return { kind: 'error' }
+    this.#imageGrants.set(`${id}:${value.candidate.source}`, value.fileKey)
+    return { asset: { source: value.candidate.source, url: this.#assetUrl(id, read.value.bytes, String(read.value.path)) }, kind: 'authorized' }
+  }
+
+  async resolveImage(id: string, source: string): Promise<ImageIntentOutcome> {
+    const read = await this.#readImageSource(id, source)
+    if (!read) return { kind: 'blocked' }
+    const document = this.#documents.get(id)
+    const scope = document?.path ? await this.platform.fs.canonicalize(this.platform.paths.directory(document.path)) : undefined
+    const explicitlyGranted = this.#imageGrants.get(`${id}:${source}`) === read.fileKey
+    if (!explicitlyGranted && (!scope?.ok || !this.platform.paths.contains(scope.value.path, read.path))) return { kind: 'blocked' }
+    return { asset: { source, url: this.#assetUrl(id, read.bytes, String(read.path)) }, kind: 'authorized' }
+  }
+
+  async selectImage(id: string): Promise<ImageIntentOutcome> {
+    const selected = await this.platform.dialog.image()
+    if (!selected.ok || !selected.value) return { kind: 'cancelled' }
+    const read = await this.platform.fs.read(selected.value)
+    if (!read.ok || !validateRaster(read.value.bytes, String(read.value.path)).ok) return { kind: 'error' }
+    const document = this.#documents.get(id)
+    const relative = this.platform.paths.relative(document?.path, read.value.path)
+    const candidateId = `memory-image-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const candidate = { candidateId, internal: !document?.path, name: basename(read.value.path), portable: relative.portable, source: relative.source }
+    this.#imageCandidates.set(candidateId, { candidate, fileKey: read.value.fileKey, path: read.value.path })
+    return { candidate, kind: 'candidate' }
+  }
+
   async closeTab(id: string): Promise<void> {
+    for (const url of this.#assetUrls.get(id) ?? []) URL.revokeObjectURL(url)
+    this.#assetUrls.delete(id)
+    this.#documents.delete(id)
+    for (const key of this.#imageGrants.keys()) if (key.startsWith(`${id}:`)) this.#imageGrants.delete(key)
     this.#watchDisposers.get(id)?.()
     this.#watchDisposers.delete(id)
     this.#watchState.dispose(asTabId(id))
@@ -156,7 +218,10 @@ export class DocumentGateway implements DocumentGatewayPort {
 
   async openPath(path: Path, id: string): Promise<OpenOutcome> {
     const outcome = await this.#readPath(path, id)
-    if (outcome.kind === 'opened') this.#watchDocument(outcome.document)
+    if (outcome.kind === 'opened') {
+      this.#documents.set(id, outcome.document)
+      this.#watchDocument(outcome.document)
+    }
     return outcome
   }
 
@@ -240,15 +305,19 @@ export class DocumentGateway implements DocumentGatewayPort {
     })
     if (!selected.ok) return { kind: 'error' }
     if (!selected.value) return { kind: 'cancelled' }
+    const rebased = input.document ? rebaseMemoryDocument(input.document, input.path, selected.value, this.platform.paths) : undefined
+    const savedInput: GatewayDocument = rebased
+      ? { ...input, assetsRevoked: true, document: rebased.document, sourceRebases: rebased.sourceRebases }
+      : input
     const existing = await this.platform.fs.read(selected.value)
     let expected: DiskVersion | 'missing' = 'missing'
     if (existing.ok) {
       if (input.fileKey === existing.value.fileKey && input.path === existing.value.path) {
         if (!input.diskVersion) return { kind: 'missing' }
-        const samePath = await this.platform.fs.atomicReplace(input.path, input.preservation?.bytes ?? (
-          input.document ? serializeRichDocument(input.document, input.encoding ?? { bom: false, newline: 'lf' }) : new Uint8Array()
+        const samePath = await this.platform.fs.atomicReplace(input.path, savedInput.preservation?.bytes ?? (
+          savedInput.document ? serializeRichDocument(savedInput.document, savedInput.encoding ?? { bom: false, newline: 'lf' }) : new Uint8Array()
         ), input.diskVersion)
-        return samePath.ok ? this.#saved(input, samePath.value) : failure(samePath.error.code)
+        return samePath.ok ? this.#saved(savedInput, samePath.value) : failure(samePath.error.code)
       }
       if (input.fileKey === existing.value.fileKey) return { kind: 'collision' }
       const confirmed = await this.platform.dialog.confirm({
@@ -259,9 +328,9 @@ export class DocumentGateway implements DocumentGatewayPort {
       if (!confirmed.ok || confirmed.value !== 0) return { kind: 'cancelled' }
       expected = existing.value.diskVersion
     } else if (existing.error.code !== 'not-found') return { kind: 'error' }
-    const bytes = input.preservation?.bytes ?? (input.document ? serializeRichDocument(input.document, input.encoding ?? { bom: false, newline: 'lf' }) : new Uint8Array())
+    const bytes = savedInput.preservation?.bytes ?? (savedInput.document ? serializeRichDocument(savedInput.document, savedInput.encoding ?? { bom: false, newline: 'lf' }) : new Uint8Array())
     const replaced = await this.platform.fs.atomicReplace(selected.value, bytes, expected)
-    return replaced.ok ? this.#saved(input, replaced.value) : failure(replaced.error.code)
+    return replaced.ok ? this.#saved(savedInput, replaced.value) : failure(replaced.error.code)
   }
 
   async updateMenuState(): Promise<void> {}
@@ -276,8 +345,29 @@ export class DocumentGateway implements DocumentGatewayPort {
 
   #saved(input: GatewayDocument, read: { readonly diskVersion: DiskVersion; readonly fileKey: FileKey; readonly path: Path }): SaveOutcome {
     const document = this.adopt(input, read)
+    this.#documents.set(input.id, document)
     this.#watchDocument(document)
     return { document, kind: 'saved' }
+  }
+
+  async #readImageSource(id: string, source: string): Promise<import('../platform/contracts').FileRead | undefined> {
+    const document = this.#documents.get(id)
+    if (!document?.path) return undefined
+    const resolved = this.platform.paths.resolve(document.path, source)
+    if (!resolved.ok) return undefined
+    const read = await this.platform.fs.read(resolved.value)
+    return read.ok && validateRaster(read.value.bytes, String(read.value.path)).ok ? read.value : undefined
+  }
+
+  #assetUrl(id: string, bytes: Uint8Array, path: string): string {
+    const validation = validateRaster(bytes, path)
+    if (!validation.ok) throw new Error('Invalid memory raster')
+    const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    const url = URL.createObjectURL(new Blob([body], { type: validation.info.mime }))
+    const urls = this.#assetUrls.get(id) ?? new Set<string>()
+    urls.add(url)
+    this.#assetUrls.set(id, urls)
+    return url
   }
 
   #watchDocument(document: GatewayDocument): void {
@@ -314,6 +404,26 @@ export class DocumentGateway implements DocumentGatewayPort {
 
 export class ElectronDocumentGateway implements DocumentGatewayPort {
   constructor(readonly api: MarkzenApi) {}
+
+  async authorizeImage(id: string, source: string): Promise<ImageIntentOutcome> {
+    const result = await this.api.asset.authorize(asTabId(id), 0, source)
+    return result.ok ? result.value : { kind: 'error' }
+  }
+
+  async commitImage(id: string, candidateId: string): Promise<ImageIntentOutcome> {
+    const result = await this.api.asset.commit(asTabId(id), 0, candidateId)
+    return result.ok ? result.value : { kind: 'error' }
+  }
+
+  async resolveImage(id: string, source: string): Promise<ImageIntentOutcome> {
+    const result = await this.api.asset.resolve(asTabId(id), 0, source)
+    return result.ok ? result.value : { kind: 'error' }
+  }
+
+  async selectImage(id: string): Promise<ImageIntentOutcome> {
+    const result = await this.api.asset.select(asTabId(id), 0)
+    return result.ok ? result.value : { kind: 'error' }
+  }
 
   async closeTab(id: string): Promise<void> {
     await this.api.document.close(asTabId(id), 0)
@@ -434,6 +544,7 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
       tabId: asTabId(input.id),
       title: input.title,
       titleDirty: true,
+      ...(input.document ? { encoding: input.encoding ?? { bom: false, newline: 'lf' }, model: input.document } : {}),
     })
     return remoteSaveOutcome(input, result)
   }
@@ -472,6 +583,9 @@ function remoteSaveOutcome(
       diskVersion: result.value.file.diskVersion,
       fileKey: result.value.file.fileKey,
       path: result.value.file.path,
+      ...(result.value.file.rebasedDocument ? { document: result.value.file.rebasedDocument as RichDocument } : {}),
+      ...(result.value.file.assetsRevoked ? { assetsRevoked: true } : {}),
+      ...(result.value.file.sourceRebases ? { sourceRebases: result.value.file.sourceRebases } : {}),
       ...(result.value.file.secondaryPath ? { secondaryPath: result.value.file.secondaryPath } : {}),
       title: displayDocumentStem(basename(result.value.file.path)),
     }
@@ -486,3 +600,22 @@ const failure = (code: string): SaveOutcome => ({ kind: code === 'conflict' ? 'c
 const basename = (path: Path): string => String(path).split(/[\\/]/).at(-1) ?? ''
 const dirname = (path: Path): Path => String(path).slice(0, Math.max(String(path).lastIndexOf('/'), String(path).lastIndexOf('\\'))) as Path
 const join = (parent: Path, name: string): Path => `${parent}${String(parent).includes('\\') ? '\\' : '/'}${name}` as Path
+
+function rebaseMemoryDocument(
+  document: RichDocument,
+  oldPath: Path | undefined,
+  newPath: Path,
+  paths: import('../platform/contracts').PathPort,
+): { readonly document: RichDocument; readonly sourceRebases: readonly import('../platform/contracts').SourceRebase[] } {
+  const sourceRebases: import('../platform/contracts').SourceRebase[] = []
+  const visit = (node: import('./markdown').RichNode): import('./markdown').RichNode => {
+    const content = node.content?.map(visit)
+    if (node.type !== 'image') return { ...node, ...(content ? { content } : {}) }
+    const source = typeof node.attrs?.src === 'string' ? node.attrs.src : ''
+    const rebased = paths.rebase(source, node.attrs?.internal === true, oldPath, newPath)
+    if (!rebased || rebased.source === source) return { ...node, attrs: { ...node.attrs, assetUrl: null, internal: false }, ...(content ? { content } : {}) }
+    sourceRebases.push({ ...(typeof node.attrs?.assetId === 'string' ? { assetId: node.attrs.assetId } : {}), from: source, to: rebased.source })
+    return { ...node, attrs: { ...node.attrs, assetUrl: null, internal: false, src: rebased.source }, ...(content ? { content } : {}) }
+  }
+  return { document: visit(document) as RichDocument, sourceRebases }
+}

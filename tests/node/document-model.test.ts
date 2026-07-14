@@ -93,3 +93,16 @@ describe('spec 0002 Markdown model and serialization', () => {
     expect(serialized).toContain('![Alt](images/a.png "Pic")')
   })
 })
+
+describe('spec 0005 table serialization', () => {
+  test('AC14 AC15: the independent GFM model and golden preserve rectangular semantics and supported nesting', async () => {
+    const value = await fixture('gfm')
+    const parsed = parseDocumentBytes(value.source)
+    expect(parsed.mode).toBe('rich')
+    if (parsed.mode !== 'rich') throw new Error('expected rich parsing')
+    expect(parsed.document).toEqual(value.expected)
+    expect(serializeRichDocument(parsed.document, parsed.encoding)).toEqual(value.golden)
+    const reparsed = parseDocumentBytes(value.golden)
+    expect(reparsed.mode === 'rich' ? reparsed.document : undefined).toEqual(value.expected)
+  })
+})

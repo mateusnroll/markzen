@@ -82,7 +82,7 @@ test('AC50 AC69 AC70 AC87: native Find/Settings commands and preload surface rem
   try {
     const page = await app.firstWindow()
     const surface = await page.evaluate(() => Object.keys(window.markzen ?? {}).sort())
-    expect(surface).toEqual(['bootstrap', 'document', 'openExternal', 'settings', 'version', 'window', 'workspace'])
+    expect(surface).toEqual(['asset', 'bootstrap', 'document', 'openExternal', 'settings', 'version', 'window', 'workspace'])
     const menu = await callMain<readonly MenuItem[]>(app, 'getApplicationMenuSnapshot', [process.platform])
     const items = flatten(menu)
     expect(items.find((item) => item.label === 'Find…')?.accelerator).toBe('CmdOrCtrl+F')
