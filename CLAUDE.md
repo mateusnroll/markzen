@@ -57,7 +57,7 @@ Corollaries:
 
 1. **Platform boundary.** Nothing outside `src/platform/` imports Electron or shell-specific APIs. The preload exposes only typed capabilities; the main process validates IPC senders and payloads.
 2. **Secure renderers.** Keep Node integration disabled, context isolation and sandboxing enabled, CSP restrictive, permissions denied by default, and renderer navigation/popups blocked.
-3. **Window-scoped authority.** Main-owned `WindowId`, `TabId`, and `RootId` values scope resources and events. Renderer-provided IDs never grant authority.
+3. **Scoped authority.** Main-owned `WindowId`, `TabId`, and `RootId` values scope resources and events. Renderer-provided IDs never grant authority. The only bearer exception is spec 0005's main-issued, exact-resource local-image token: possession authorizes that one resource until its issuing owner closes or the grant is revoked.
 4. **Canonical identity.** UI uses display paths; equality, deduplication, containment, and reservations use Platform-provided canonical `FileKey` values.
 5. **Async ownership.** Async work captures its owner and generation before awaiting and commits only if both remain current. Never write through “the active tab/root” after an await.
 6. **Shared save transaction.** All document writes use the save coordinator and failure-atomic writer. A save clears only the snapshot it committed; later edits remain dirty.

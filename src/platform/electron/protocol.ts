@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import nodePath from 'node:path'
 
 import { app, protocol } from 'electron'
+import { assetRegistry } from './asset-registry'
 
 export const APP_ORIGIN = 'markzen://app'
 
@@ -9,7 +10,7 @@ export const PRODUCTION_CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self'",
-  "img-src 'self' data:",
+  "img-src 'self' data: markzen-asset:",
   "font-src 'self'",
   "connect-src 'none'",
   "media-src 'none'",
@@ -35,10 +36,21 @@ protocol.registerSchemesAsPrivileged([
     },
     scheme: 'markzen',
   },
+  {
+    privileges: {
+      allowServiceWorkers: false,
+      bypassCSP: false,
+      corsEnabled: false,
+      secure: true,
+      standard: false,
+      stream: false,
+      supportFetchAPI: false,
+    },
+    scheme: 'markzen-asset',
+  },
 ])
 
 let registered = false
-
 export async function registerApplicationProtocol(): Promise<void> {
   if (registered) return
   const assets = await rendererAssets(nodePath.join(app.getAppPath(), 'dist'))
@@ -57,7 +69,37 @@ export async function registerApplicationProtocol(): Promise<void> {
       return response('Unavailable', 503, 'text/plain; charset=utf-8')
     }
   })
+  protocol.handle('markzen-asset', async (request) => {
+    if (request.method !== 'GET' || unsafeRawUrl(request.url)) return assetDenial()
+    let url: URL
+    try {
+      url = new URL(request.url)
+    } catch {
+      return assetDenial()
+    }
+    if (url.protocol !== 'markzen-asset:' || url.username || url.password || url.port || url.search || url.hash || (url.hostname && url.pathname !== '' && url.pathname !== '/')) return assetDenial()
+    const token = url.hostname || url.pathname.replace(/^\//, '')
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return assetDenial()
+    const asset = await assetRegistry.read(token)
+    if (!asset) return assetDenial()
+    const body = asset.bytes.buffer.slice(asset.bytes.byteOffset, asset.bytes.byteOffset + asset.bytes.byteLength) as ArrayBuffer
+    return new Response(body, {
+      headers: {
+        'Cache-Control': 'no-store',
+        'Content-Type': asset.mime,
+        'X-Content-Type-Options': 'nosniff',
+      },
+      status: 200,
+    })
+  })
   registered = true
+}
+
+function assetDenial(): Response {
+  return new Response('Not found', {
+    headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' },
+    status: 404,
+  })
 }
 
 async function rendererAssets(root: string): Promise<Map<string, string>> {

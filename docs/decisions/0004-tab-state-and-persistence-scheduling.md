@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Spec:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md)
+**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md)
 
 ## Context
 
@@ -28,6 +28,7 @@ Each tab needs independent ProseMirror state, history, selection, scroll, title,
 - Repeated Save for the same captured revision coalesces. A later explicit Save records one follow-up snapshot; failure/conflict/cancellation clears automatic follow-up intent.
 - Success updates only the captured baseline. Later edits remain dirty. Close requests waiting on a save resume through the normal clean/dirty decision after it settles.
 - Save All is an outer sequential loop over per-tab coordinators and stops at the first non-success.
+- A successful rebasing Save As returns the rebased captured model plus exact old/new source pairs. The renderer applies matching pairs to surviving live image nodes in one non-history transaction, adopts the returned captured model as baseline, and compares the resulting live model to that baseline so later content or metadata edits remain dirty.
 
 ## Consequences
 

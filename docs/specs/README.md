@@ -20,7 +20,13 @@ If Implemented behavior changes, return the spec to Draft, update and reapprove 
 | 0002 | [Document lifecycle and tabs](0002-document-lifecycle-and-tabs.md) | Loss-safe editing, opening, saving, renaming, switching, and closing |
 | 0003 | [Folder workspaces](0003-folder-workspaces.md) | Multi-root folder windows, preview tabs, live trees, and persisted workspace settings |
 | 0004 | [Everyday writing experience](0004-everyday-writing-experience.md) | Accessible formatting, links, search, themes, and toolbar preferences |
-| 0005 | [Structured content and assets](0005-structured-content-and-assets.md) | Accessible tables and securely rendered images |
+| 0005 | [Structured content and local assets](0005-structured-content-and-assets.md) | Accessible tables and securely rendered local images |
+
+Post-rewrite feature specs continue the same lifecycle:
+
+| # | Feature | Status |
+|---|---|---|
+| 0006 | [Remote and embedded images](0006-remote-and-embedded-images.md) | Draft |
 
 ## Scenario routing
 

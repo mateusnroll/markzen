@@ -88,7 +88,7 @@ describe('spec 0002 rich editor', () => {
     expect(editor.querySelector('h5')?.textContent).toBe('Deep')
     expect(editor.querySelector('a')).toBeNull()
     expect(editor.querySelector('img:not(.ProseMirror-separator)')).toBeNull()
-    expect(editor.querySelector('[data-markzen-image]')?.getAttribute('aria-label')).toBe('Diagram')
+    expect(editor.querySelector('[data-markzen-image]')?.getAttribute('aria-label')).toBe('Diagram, blocked')
     expect(editor.querySelector('script')).toBeNull()
     expect(getComputedStyle(byTestId('document-page')).maxWidth).toBe('720px')
     expect(getComputedStyle(editor).lineHeight).toBe('30.6px')

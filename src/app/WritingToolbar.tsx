@@ -12,10 +12,12 @@ export function WritingToolbar({
   editor,
   mode,
   onOpenLink,
+  onOpenImage,
 }: {
   readonly editor: Editor
   readonly mode: ToolbarMode
   readonly onOpenLink: (selection: Selection) => void
+  readonly onOpenImage: (selection: Selection) => void
 }) {
   const bookmark = useRef<SelectionBookmark>(editor.state.selection.getBookmark())
   const [expanded, setExpanded] = useState(mode === 'regular')
@@ -98,6 +100,7 @@ export function WritingToolbar({
     orderedList: canAt(editor, selection, (chain) => chain.toggleOrderedList()),
     strike: canAt(editor, selection, (chain) => chain.setMark('strike')),
     taskList: canAt(editor, selection, (chain) => chain.toggleTaskList()),
+    table: canAt(editor, selection, (chain) => chain.insertTable({ cols: 3, rows: 3, withHeaderRow: true })),
   }), [editor, selection])
 
   const withSelection = useCallback((operation: (chain: ReturnType<Editor['chain']>) => ReturnType<Editor['chain']>) => {
@@ -131,6 +134,16 @@ export function WritingToolbar({
     onOpenLink(current)
     setMoreOpen(false)
   }, [editor, onOpenLink])
+
+  const insertTable = useCallback(() => {
+    withSelection((chain) => chain.insertTable({ cols: 3, rows: 3, withHeaderRow: true }))
+    setMoreOpen(false)
+  }, [withSelection])
+
+  const openImage = useCallback(() => {
+    onOpenImage(resolveBookmark(editor, bookmark.current))
+    setMoreOpen(false)
+  }, [editor, onOpenImage])
 
   if (mode === 'minimal' && !expanded) {
     return (
@@ -198,6 +211,8 @@ export function WritingToolbar({
             <button aria-description={!availability.taskList ? 'Task list is unavailable at this selection.' : undefined} data-testid="format-task-list" disabled={!availability.taskList} onClick={() => runBlock('taskList')} role="menuitem" type="button">Task list</button>
             <button aria-description={!availability.blockquote ? 'Blockquote is unavailable at this selection.' : undefined} data-testid="format-blockquote" disabled={!availability.blockquote} onClick={() => runBlock('blockquote')} role="menuitem" type="button">Blockquote</button>
             <button aria-description={!availability.link ? 'Link is unavailable at this selection.' : undefined} data-testid="format-link" disabled={!availability.link} onClick={openLink} role="menuitem" type="button">Link</button>
+            <button aria-description={!availability.table ? 'A table cannot be inserted at this selection.' : undefined} data-testid="insert-table" disabled={!availability.table} onClick={insertTable} role="menuitem" type="button">Table</button>
+            <button data-testid="insert-image" onClick={openImage} role="menuitem" type="button">Image</button>
           </div>
         ) : null}
       </div>

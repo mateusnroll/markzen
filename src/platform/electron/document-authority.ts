@@ -34,7 +34,8 @@ export function validateDocumentRequest(
     ? ['bytes', 'documentDirty', 'generation', 'tabId', 'title', 'titleDirty']
     : ['generation', 'tabId']
   const keys = external ? [...expected, 'diskVersion'] : closeDecision ? [...expected, 'name'] : expected
-  if (!exactKeys(payload, keys)) return fail('validation')
+  const optionalSaveAs = intent === 'save-as' && 'model' in payload && 'encoding' in payload
+  if (!exactKeys(payload, optionalSaveAs ? [...keys, 'encoding', 'model'] : keys)) return fail('validation')
   const identity = validateIdentity(payload)
   if (!identity.ok) return identity
   if (closeDecision) {
@@ -46,12 +47,16 @@ export function validateDocumentRequest(
   if (!(payload.bytes instanceof Uint8Array) || payload.bytes.byteLength > 32 * 1024 * 1024) return fail('validation')
   if (typeof payload.documentDirty !== 'boolean' || typeof payload.titleDirty !== 'boolean') return fail('validation')
   if (typeof payload.title !== 'string' || payload.title.length > 255) return fail('validation')
+  const encoding = optionalSaveAs ? validEncoding(payload.encoding) : undefined
+  const model = optionalSaveAs ? validModel(payload.model) : undefined
+  if (optionalSaveAs && (!encoding || !model)) return fail('validation')
   const request: DocumentWriteRequest = {
     bytes: payload.bytes,
     documentDirty: payload.documentDirty,
     ...identity.value,
     title: payload.title,
     titleDirty: payload.titleDirty,
+    ...(encoding && model ? { encoding, model } : {}),
   }
   return external ? ok({ ...request, diskVersion: asDiskVersion(String(payload.diskVersion)) }) : ok(request)
 }
@@ -75,6 +80,22 @@ const validateIdentity = (payload: Record<string, unknown>): PlatformResult<Docu
 
 const plainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+function validEncoding(value: unknown): DocumentWriteRequest['encoding'] | undefined {
+  if (!plainObject(value) || !exactKeys(value, ['bom', 'newline'])) return undefined
+  return typeof value.bom === 'boolean' && (value.newline === 'lf' || value.newline === 'crlf')
+    ? { bom: value.bom, newline: value.newline }
+    : undefined
+}
+
+function validModel(value: unknown): unknown | undefined {
+  try {
+    const serialized = JSON.stringify(value)
+    return serialized.length <= 32 * 1024 * 1024 && plainObject(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const exactKeys = (value: Record<string, unknown>, expected: readonly string[]): boolean => {
   const keys = Object.keys(value).sort()

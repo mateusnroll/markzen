@@ -46,6 +46,7 @@ import {
   type WorkspaceRootOutcome,
   type EffectiveTheme,
   type ExternalOpenResult,
+  type ImageIntentOutcome,
   type ThemePreference,
 } from '../contracts'
 import { OwnerRegistry } from '../ownership'
@@ -53,6 +54,7 @@ import { DocumentRegistry, type DocumentOwner } from '../../documents/registry'
 import { DocumentWatchState, type WatchToken } from '../../documents/watch-state'
 import { SaveCoordinator } from '../../documents/save-coordinator'
 import { deriveDocumentFilename, getRecognizedExtension } from '../../documents/filename'
+import { serializeRichDocument, type RichDocument } from '../../documents/markdown'
 import { resolveWindowSender, validateWindowRequest } from './authority'
 import {
   authorizeDocumentRequest,
@@ -65,6 +67,8 @@ import {
 import { channels } from './channels'
 import { APP_ORIGIN, registerApplicationProtocol } from './protocol'
 import { RealFileSystem } from './real-fs'
+import { assetRegistry } from './asset-registry'
+import { rebaseDocumentImages } from './asset-paths'
 import { buildApplicationMenuTemplate, installApplicationMenu } from './menu'
 import { SettingsFileStore } from './settings-store'
 import { DEFAULT_SETTINGS, parseSettings, SettingsService, type SettingsLoadResult } from '../../settings/settings'
@@ -72,6 +76,7 @@ import { RootRegistry, WorkspaceWatchBatcher, selectContainingRoot } from '../..
 import { validateWorkspaceEntryRequest } from '../../workspaces/authority'
 import { classifyExternalDestination, validateExternalOpenPayload } from '../../links/external'
 import { ExternalRequestRegistry } from '../../links/external-requests'
+import { MAX_RASTER_BYTES, validateRaster } from '../../assets/raster'
 
 type WindowRecord = {
   closeApproved: boolean
@@ -120,6 +125,7 @@ const workspaceSnapshots = new Map<string, readonly DirectoryEntry[]>()
 const workspaceGenerations = new Map<string, number>()
 const pendingFolderWindows = new Set<string>()
 const externalRequests = new ExternalRequestRegistry<WindowId>()
+const imageCandidates = new Map<string, { readonly basePath?: Path; readonly fileKey: FileKey; readonly path: Path; readonly source: string; readonly tabId: TabId; readonly windowId: WindowId }>()
 let settingsService: SettingsService | undefined
 let settingsWarning: string | undefined
 let handlersRegistered = false
@@ -208,6 +214,15 @@ export async function runRealFsRoundTrip(directory: string, payload: string): Pr
   return { cleaned, payload: decoded }
 }
 
+export async function issueAssetForShellTest(windowId: string, path: string): Promise<string> {
+  const record = [...windowsByContents.values()].find((candidate) => candidate.id === windowId)
+  if (!record) throw new Error('Unknown window')
+  const read = await readValidatedRaster(asPath(path))
+  if (!read) throw new Error('Invalid raster')
+  const token = assetRegistry.issue({ fileKey: read.fileKey, issuer: record.id, path: read.path, tabId: asTabId('shell-test') })
+  return `markzen-asset://${token}`
+}
+
 async function openFolderForShellTest(): Promise<void> {
   const focused = BrowserWindow.getFocusedWindow()
   await openFolderWorkspace(focused ? windowsByContents.get(focused.webContents.id) : undefined)
@@ -293,6 +308,53 @@ function registerSecurityPolicy(): void {
 function registerIpcHandlers(): void {
   if (handlersRegistered) return
   handlersRegistered = true
+  ipcMain.handle(channels.assetSelect, (event, payload) => withAssetDocument(event, payload, [], async (record, window) => {
+    const basePath = record.path
+    const selected = await chooseRaster(window)
+    if (!selected) return ok<ImageIntentOutcome>({ kind: 'cancelled' })
+    if (!assetRequestCurrent(record, window, basePath)) return fail('ownership')
+    const read = await readValidatedRaster(selected)
+    if (!assetRequestCurrent(record, window, basePath)) return fail('ownership')
+    if (!read) return ok<ImageIntentOutcome>({ kind: 'error' })
+    const source = imageSourceFor(record.displayPath ?? basePath, selected)
+    const candidateId = randomUUID()
+    imageCandidates.set(candidateId, { ...(basePath ? { basePath } : {}), fileKey: read.fileKey, path: read.path, source: source.value, tabId: record.tabId, windowId: window.id })
+    return ok<ImageIntentOutcome>({
+      candidate: { candidateId, internal: !record.path, name: nodePath.basename(selected), portable: source.portable, source: source.value },
+      kind: 'candidate',
+    })
+  }))
+  ipcMain.handle(channels.assetCommit, (event, payload) => withAssetDocument(event, payload, ['candidateId'], (record, window, request) => {
+    const candidate = typeof request.candidateId === 'string' ? imageCandidates.get(request.candidateId) : undefined
+    if (!candidate || candidate.tabId !== record.tabId || candidate.windowId !== window.id || candidate.basePath !== record.path) return ok<ImageIntentOutcome>({ kind: 'error' })
+    imageCandidates.delete(request.candidateId as string)
+    const token = assetRegistry.issue({ fileKey: candidate.fileKey, issuer: window.id, path: candidate.path, tabId: record.tabId })
+    return ok<ImageIntentOutcome>({ asset: { source: candidate.source, url: `markzen-asset://${token}` }, kind: 'authorized' })
+  }))
+  ipcMain.handle(channels.assetResolve, (event, payload) => withAssetDocument(event, payload, ['source'], async (record, window, request) => {
+    if (typeof request.source !== 'string') return fail('validation')
+    const basePath = record.path
+    const target = await resolveLocalAsset(record, window, request.source, false)
+    if (!assetRequestCurrent(record, window, basePath)) return fail('ownership')
+    if (!target) return ok<ImageIntentOutcome>({ kind: 'blocked' })
+    const token = assetRegistry.issue({ fileKey: target.fileKey, issuer: window.id, path: target.path, tabId: record.tabId })
+    return ok<ImageIntentOutcome>({ asset: { source: request.source, url: `markzen-asset://${token}` }, kind: 'authorized' })
+  }))
+  ipcMain.handle(channels.assetAuthorize, (event, payload) => withAssetDocument(event, payload, ['source'], async (record, window, request) => {
+    if (typeof request.source !== 'string') return fail('validation')
+    const basePath = record.path
+    const target = await resolveLocalAsset(record, window, request.source, true)
+    if (!assetRequestCurrent(record, window, basePath)) return fail('ownership')
+    if (!target) return ok<ImageIntentOutcome>({ kind: 'blocked' })
+    const selected = await chooseRaster(window)
+    if (!selected) return ok<ImageIntentOutcome>({ kind: 'cancelled' })
+    if (!assetRequestCurrent(record, window, basePath)) return fail('ownership')
+    const read = await readValidatedRaster(selected)
+    if (!assetRequestCurrent(record, window, basePath)) return fail('ownership')
+    if (!read || read.fileKey !== target.fileKey) return ok<ImageIntentOutcome>({ kind: 'mismatch' })
+    const token = assetRegistry.issue({ fileKey: read.fileKey, issuer: window.id, path: read.path, tabId: record.tabId })
+    return ok<ImageIntentOutcome>({ asset: { source: request.source, url: `markzen-asset://${token}` }, kind: 'authorized' })
+  }))
   ipcMain.handle(channels.bootstrap, (event, payload) => withWindow(event, payload, (record) => ok<BootstrapPayload>({
     appearance: effectiveAppearance(),
     kind: record.kind,
@@ -533,10 +595,12 @@ function registerIpcHandlers(): void {
       : ok<DocumentIntentOutcome>({ kind: 'error' })
   }))
   ipcMain.handle(channels.documentClose, (event, payload) => withDocument(event, 'close', payload, (record) => {
+    assetRegistry.revokeTab(record.tabId)
     disposeDocumentWatcher(record.tabId)
     documentSaveCoordinators.delete(record.tabId)
     releaseRecordIdentity(record)
     documents.delete(record.tabId)
+    for (const [id, candidate] of imageCandidates) if (candidate.tabId === record.tabId) imageCandidates.delete(id)
     return ok(undefined)
   }))
   ipcMain.handle(channels.windowGetState, (event, payload) => withWindow(event, payload, (record) => ok(windowState(record.window))))
@@ -952,6 +1016,8 @@ async function saveDocumentAs(
   })
   if (selected.canceled || !selected.filePath) return ok({ kind: 'cancelled' })
   const path = asPath(selected.filePath)
+  const prepared = prepareSaveAsPayload(request, record.path, path)
+  if (!prepared) return ok({ kind: 'error' })
   const fs = new RealFileSystem()
   const existing = await fs.read(path)
   let expected: DiskVersion | 'missing' = 'missing'
@@ -963,11 +1029,12 @@ async function saveDocumentAs(
     }
     if (record.fileKey === existing.value.fileKey && record.path === existing.value.path) {
       if (!record.diskVersion) return ok({ kind: 'missing' })
-      const samePath = await fs.atomicReplace(record.path, request.bytes, record.diskVersion)
+      const samePath = await fs.atomicReplace(record.path, prepared.bytes, record.diskVersion)
       if (!samePath.ok) return ok({ kind: documentFailure(samePath.error.code) })
       adoptRecord(record, samePath.value)
       watchDocument(record)
-      return ok({ file: filePayload(record, samePath.value), kind: 'saved' })
+      assetRegistry.revokeTab(record.tabId)
+      return ok({ file: { ...filePayload(record, samePath.value), assetsRevoked: true, ...prepared.payload }, kind: 'saved' })
     }
     if (record.fileKey === existing.value.fileKey) return ok({ kind: 'collision' })
     const confirmation = await dialog.showMessageBox(window.window, {
@@ -986,15 +1053,40 @@ async function saveDocumentAs(
   const owner = ownerOf(record)
   const reservation = documentRegistry.claim(canonical.value.fileKey, owner)
   if (!reservation.ok) return ok({ kind: 'collision' })
-  const replaced = await fs.atomicReplace(path, request.bytes, expected)
+  const replaced = await fs.atomicReplace(path, prepared.bytes, expected)
   if (!replaced.ok) {
     documentRegistry.release(canonical.value.fileKey, owner)
     return ok({ kind: documentFailure(replaced.error.code) })
   }
   if (record.fileKey) documentRegistry.release(record.fileKey, owner)
   adoptRecord(record, replaced.value)
+  assetRegistry.revokeTab(record.tabId)
   watchDocument(record)
-  return ok({ file: filePayload(record, replaced.value), kind: 'saved' })
+  return ok({ file: { ...filePayload(record, replaced.value), assetsRevoked: true, ...prepared.payload }, kind: 'saved' })
+}
+
+function prepareSaveAsPayload(
+  request: DocumentWriteRequest,
+  oldPath: Path | undefined,
+  newPath: Path,
+): { readonly bytes: Uint8Array; readonly payload: Pick<DocumentFilePayload, 'rebasedDocument' | 'sourceRebases'> } | undefined {
+  if (!request.model || !request.encoding) return { bytes: request.bytes, payload: {} }
+  if (!richDocument(request.model)) return undefined
+  try {
+    const rebased = rebaseDocumentImages(request.model, oldPath, newPath)
+    return {
+      bytes: serializeRichDocument(rebased.document, request.encoding),
+      payload: { rebasedDocument: rebased.document, sourceRebases: rebased.sourceRebases },
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function richDocument(value: unknown): value is RichDocument {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return record.type === 'doc' && Array.isArray(record.content)
 }
 
 async function saveAndRenameDocument(
@@ -1052,6 +1144,100 @@ function withDocument(
   })
 }
 
+function withAssetDocument(
+  event: IpcMainInvokeEvent,
+  payload: unknown,
+  extraKeys: readonly string[],
+  operation: (record: MainDocumentRecord, window: WindowRecord, request: Record<string, unknown>) => unknown,
+): unknown {
+  return withAuthorizedWindow(event, (window) => {
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return fail('validation')
+    const request = payload as Record<string, unknown>
+    const keys = Object.keys(request).sort()
+    const expected = ['generation', 'tabId', ...extraKeys].sort()
+    if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) return fail('validation')
+    if (typeof request.tabId !== 'string' || request.tabId.length === 0 || request.tabId.length > 128 || typeof request.generation !== 'number' || !Number.isSafeInteger(request.generation) || request.generation < 0) return fail('validation')
+    if ('source' in request && (typeof request.source !== 'string' || request.source.length === 0 || request.source.length > 4096)) return fail('validation')
+    if ('candidateId' in request && (typeof request.candidateId !== 'string' || !/^[0-9a-f-]{36}$/i.test(request.candidateId))) return fail('validation')
+    const tabId = asTabId(request.tabId)
+    const record = documents.get(tabId)
+    if (!record) return fail('ownership')
+    const authorized = authorizeDocumentRequest(record, window.id, tabId, request.generation)
+    return authorized.ok ? operation(record, window, request) : authorized
+  })
+}
+
+async function chooseRaster(window: WindowRecord): Promise<Path | undefined> {
+  const selected = await dialog.showOpenDialog(window.window, {
+    filters: [{ extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'], name: 'Raster images' }],
+    properties: ['openFile'],
+    title: 'Choose Image From Disk',
+  })
+  return selected.canceled || selected.filePaths.length !== 1 ? undefined : asPath(selected.filePaths[0]!)
+}
+
+async function readValidatedRaster(path: Path): Promise<import('../contracts').FileRead | undefined> {
+  const fs = new RealFileSystem()
+  const canonical = await fs.canonicalize(path)
+  if (!canonical.ok) return undefined
+  const metadata = await fs.stat(canonical.value.path)
+  if (!metadata.ok || metadata.value.fileKey !== canonical.value.fileKey || metadata.value.kind !== 'file' || metadata.value.size > MAX_RASTER_BYTES) return undefined
+  const read = await fs.read(canonical.value.path)
+  return read.ok && read.value.fileKey === canonical.value.fileKey && validateRaster(read.value.bytes, String(read.value.path)).ok ? read.value : undefined
+}
+
+function imageSourceFor(documentPath: Path | undefined, imagePath: Path): { readonly portable: boolean; readonly value: string } {
+  if (!documentPath) return { portable: false, value: String(imagePath).split(nodePath.sep).join('/') }
+  const relative = nodePath.relative(nodePath.dirname(documentPath), imagePath)
+  if (nodePath.isAbsolute(relative)) return { portable: false, value: String(imagePath).split(nodePath.sep).join('/') }
+  return { portable: true, value: relative.split(nodePath.sep).join('/') }
+}
+
+async function resolveLocalAsset(
+  record: MainDocumentRecord,
+  window: WindowRecord,
+  source: string,
+  allowOutside: boolean,
+): Promise<{ readonly fileKey: FileKey; readonly path: Path } | undefined> {
+  if (!source || source.length > 4096 || source.includes('\0') || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(source)) return undefined
+  const platformSource = nodePath.sep === '/' ? source : source.replaceAll('/', nodePath.sep)
+  const logical = nodePath.isAbsolute(platformSource)
+    ? asPath(platformSource)
+    : record.path ? asPath(nodePath.resolve(nodePath.dirname(record.path), platformSource)) : undefined
+  if (!logical) return undefined
+  const fs = new RealFileSystem()
+  const canonical = await fs.canonicalize(logical)
+  if (!canonical.ok) return undefined
+  if (!allowOutside) {
+    const scopes = window.kind === 'workspace'
+      ? workspaceRoots.values(window.id).map((root) => root.path)
+      : record.path ? [asPath(nodePath.dirname(record.path))] : []
+    let authorized = false
+    for (const scope of scopes) {
+      const canonicalScope = await fs.canonicalize(scope)
+      if (canonicalScope.ok && contained(canonicalScope.value.path, canonical.value.path)) { authorized = true; break }
+    }
+    if (!authorized) return undefined
+  }
+  const metadata = await fs.stat(canonical.value.path)
+  if (!metadata.ok || metadata.value.fileKey !== canonical.value.fileKey || metadata.value.kind !== 'file' || metadata.value.size > MAX_RASTER_BYTES) return undefined
+  const read = await fs.read(canonical.value.path)
+  if (!read.ok || read.value.fileKey !== canonical.value.fileKey || !validateRaster(read.value.bytes, String(read.value.path)).ok) return undefined
+  return read.value
+}
+
+function contained(parent: Path, child: Path): boolean {
+  const relative = nodePath.relative(parent, child)
+  return relative === '' || (!relative.startsWith(`..${nodePath.sep}`) && relative !== '..' && !nodePath.isAbsolute(relative))
+}
+
+function assetRequestCurrent(record: MainDocumentRecord, window: WindowRecord, basePath: Path | undefined): boolean {
+  return documents.get(record.tabId) === record
+    && windowsByContents.get(window.window.webContents.id) === window
+    && !window.window.isDestroyed()
+    && record.path === basePath
+}
+
 function withAuthorizedWindow(event: IpcMainInvokeEvent, operation: (record: WindowRecord) => unknown): unknown {
   const frame = event.senderFrame
   const authorized = resolveWindowSender(
@@ -1077,6 +1263,7 @@ function focusDocumentOwner(owner: DocumentOwner): void {
 }
 
 function releaseRecordIdentity(record: MainDocumentRecord): void {
+  assetRegistry.revokeTab(record.tabId)
   disposeDocumentWatcher(record.tabId)
   if (record.fileKey) documentRegistry.release(record.fileKey, ownerOf(record))
   if (record.cleanup) documentRegistry.release(record.cleanup.fileKey, ownerOf(record))
@@ -1334,6 +1521,8 @@ function bindWindowEvents(record: WindowRecord): void {
     }
     windowsByContents.delete(contentsId)
     externalRequests.dispose(record.id)
+    assetRegistry.revokeIssuer(record.id)
+    for (const [id, candidate] of imageCandidates) if (candidate.windowId === record.id) imageCandidates.delete(id)
     for (const root of workspaceRoots.values(record.id)) {
       const key = rootKey(record.id, root.rootId)
       workspaceSnapshots.delete(key)
@@ -1377,7 +1566,7 @@ app.on('will-quit', () => nativeTheme.removeListener('updated', broadcastAppeara
 Object.defineProperty(app, 'markzenShellHarness', {
   configurable: false,
   enumerable: false,
-  value: Object.freeze({ createMarkzenWindow, emitWindowStateForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentWatcherCount, getWindowOptionsForPlatform, getWorkspaceWatcherCount, openFolderForShellTest, runRealFsRoundTrip }),
+  value: Object.freeze({ createMarkzenWindow, emitWindowStateForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentWatcherCount, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, openFolderForShellTest, runRealFsRoundTrip }),
   writable: false,
 })
 

@@ -22,6 +22,7 @@ import {
   type SettingsPatch,
   type WorkspaceEventPayload,
   type WorkspaceRootOutcome,
+  type ImageIntentOutcome,
 } from '../contracts'
 import { channels } from './channels'
 
@@ -29,6 +30,12 @@ const invoke = <T>(channel: string, payload: unknown = {}): Promise<PlatformResu
   ipcRenderer.invoke(channel, payload) as Promise<PlatformResult<T>>
 
 const api: MarkzenApi = deepFreeze({
+  asset: {
+    authorize: (tabId: TabId, generation: number, source: string) => invoke<ImageIntentOutcome>(channels.assetAuthorize, { generation, source, tabId }),
+    commit: (tabId: TabId, generation: number, candidateId: string) => invoke<ImageIntentOutcome>(channels.assetCommit, { candidateId, generation, tabId }),
+    resolve: (tabId: TabId, generation: number, source: string) => invoke<ImageIntentOutcome>(channels.assetResolve, { generation, source, tabId }),
+    select: (tabId: TabId, generation: number) => invoke<ImageIntentOutcome>(channels.assetSelect, { generation, tabId }),
+  },
   bootstrap: () => invoke<BootstrapPayload>(channels.bootstrap),
   document: {
     acceptExternal: (tabId: TabId, generation: number, diskVersion: DiskVersion) =>

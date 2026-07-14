@@ -1,4 +1,8 @@
 export const channels = {
+  assetAuthorize: 'markzen:asset:authorize',
+  assetCommit: 'markzen:asset:commit',
+  assetResolve: 'markzen:asset:resolve',
+  assetSelect: 'markzen:asset:select',
   bootstrap: 'markzen:bootstrap',
   externalOpen: 'markzen:external:open',
   documentClose: 'markzen:document:close',
