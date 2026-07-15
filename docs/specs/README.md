@@ -12,6 +12,12 @@ The spec is the test plan: every observable in-scope behavior is a numbered acce
 
 If Implemented behavior changes, return the spec to Draft, update and reapprove it, then restore Implemented only after verification passes.
 
+### Polish prototype exception
+
+`$polish` may explore visual presentation, existing-control interactions, accessibility states, and shell chrome as an uncommitted prototype before drafting the final behavior contract. `CLAUDE.md` defines the exact boundary. The prototype branch must keep its starting `HEAD` unchanged and may not be committed or pushed.
+
+When the user ends the session, the normal lifecycle resumes at Draft. Approval, AC coverage, baseline-failure proof, verification, review, and close remain mandatory as defined by `CLAUDE.md` and the repository skills.
+
 ## Milestones
 
 | # | Milestone | Verification checkpoint |

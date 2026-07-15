@@ -17,11 +17,13 @@ Read `CLAUDE.md`, `docs/specs/README.md`, and the target spec. Stop before chang
 - Normative behavior remains outside numbered ACs.
 - For rewrite milestones 0002–0005, the previous milestone is not **Implemented**.
 
+An uncommitted `$polish` prototype is allowed only when it satisfies the exception in `CLAUDE.md`: its topic branch still points at the clean starting `HEAD`, it contains no forbidden capability or data changes, and the user approved the retroactive spec after the prototype was frozen.
+
 ## Steps
 
 1. **Plan the milestone.** Read Origin references and affected code. Identify the Platform, data, accessibility, security, and failure paths. Record durable architectural choices in `docs/decisions/`; milestone 0001 creates that directory and its index before shell implementation.
 
-2. **Write tests first.** Add at least one AC-named test at each primary mapped layer. Add supporting coverage where the spec calls for it. Input-rule tests type character-by-character.
+2. **Write tests first.** Add at least one AC-named test at each primary mapped layer. Add supporting coverage where the spec calls for it. Input-rule tests type character-by-character. For the sole `$polish` exception, write the tests immediately after approval, apply only those tests in a disposable worktree at the unchanged prototype baseline `HEAD`, and prove they fail without the prototype before accepting any prototype code as implementation. Unrelated environment or setup failures are not proof.
 
 3. **Implement to green.** Follow `CLAUDE.md`, especially the Platform boundary, shared save transaction, canonical identity, async ownership, serialization integrity, and accessibility baseline.
 

@@ -13,6 +13,8 @@ Produce a decision-complete feature spec that doubles as the test plan. `/implem
 
 2. **Gather context.** Read every spec and current module the behavior touches. If the idea has a BACKLOG entry, use its context and delete or narrow that entry in the same change. If `~/dev/markzen-old` exists and prior behavior matters, it may be researched and cited in Origin, but copy none of its code, fixtures, ADRs, or documents into this repository.
 
+   If `$polish` supplied an uncommitted prototype, inspect its diff as design research only. Confirm it stayed within the Polish exception and keep the starting `HEAD` unchanged. Do not infer that prototype behavior is approved or route uncovered behavior into the spec merely because code exists.
+
 3. **Interview real decisions.** Ask about non-goals and defensible product choices. Sweep failure/recovery, cancellation, concurrent edits, async races, accessibility, security/privacy, platform differences, data loss, and measurable performance. Do not ask questions research already settles.
 
 4. **Route every scenario.** Observable in-scope behavior becomes a numbered AC; exclusions become Non-goals; unresolved decisions become Open questions; architecture goes to a Constraint or ADR; later work goes to BACKLOG.md. Never leave normative behavior in an unnumbered “edge case” bullet.

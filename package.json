@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "polish": "node .claude/skills/polish/scripts/preview.mjs",
     "build:renderer": "vite build",
     "build:electron": "esbuild src/platform/electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.mjs && esbuild src/platform/electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs",
     "build": "npm run build:renderer && npm run build:electron",

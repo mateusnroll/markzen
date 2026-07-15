@@ -51,9 +51,11 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 let registered = false
-export async function registerApplicationProtocol(): Promise<void> {
+export async function registerApplicationProtocol(options: { readonly serveApplication?: boolean } = {}): Promise<void> {
   if (registered) return
-  const assets = await rendererAssets(nodePath.join(app.getAppPath(), 'dist'))
+  const assets = options.serveApplication === false
+    ? new Map<string, string>()
+    : await rendererAssets(nodePath.join(app.getAppPath(), 'dist'))
   protocol.handle('markzen', async (request) => {
     if (unsafeRawUrl(request.url)) return response('Not found', 404, 'text/plain; charset=utf-8')
     const url = new URL(request.url)
