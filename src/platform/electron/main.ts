@@ -65,6 +65,12 @@ import {
   type CloseDecisionRequest,
 } from './document-authority'
 import { channels } from './channels'
+import {
+  DEVELOPMENT_RENDERER_SWITCH,
+  isAllowedNavigation,
+  parseDevelopmentRendererOrigin,
+  POLISH_WORKSPACE_SWITCH,
+} from './development'
 import { APP_ORIGIN, registerApplicationProtocol } from './protocol'
 import { RealFileSystem } from './real-fs'
 import { assetRegistry } from './asset-registry'
@@ -109,6 +115,13 @@ type MainSaveTask = {
 
 const userDataOverride = app.commandLine.getSwitchValue('user-data-dir')
 if (userDataOverride) app.setPath('userData', nodePath.resolve(userDataOverride))
+const developmentRendererOrigin = parseDevelopmentRendererOrigin(
+  app.commandLine.getSwitchValue(DEVELOPMENT_RENDERER_SWITCH),
+  app.isPackaged,
+)
+const polishWorkspaceOverride = developmentRendererOrigin
+  ? app.commandLine.getSwitchValue(POLISH_WORKSPACE_SWITCH)
+  : ''
 
 const windowsByContents = new Map<number, WindowRecord>()
 const owners = new OwnerRegistry<WindowId>()
@@ -172,7 +185,7 @@ export async function createMarkzenWindow(kind: WindowKind = 'single-file', init
   const record: WindowRecord = { closeApproved: false, id, kind, window }
   windowsByContents.set(window.webContents.id, record)
   owners.open(id)
-  secureWebContents(window.webContents)
+  secureWebContents(window.webContents, developmentRendererOrigin ?? APP_ORIGIN)
   bindWindowEvents(record)
   if (initialFolder) {
     const accepted = await acceptWorkspaceRoot(record, initialFolder)
@@ -183,7 +196,7 @@ export async function createMarkzenWindow(kind: WindowKind = 'single-file', init
     }
   }
   const ready = new Promise<void>((resolve) => window.once('ready-to-show', () => resolve()))
-  await window.loadURL(`${APP_ORIGIN}/`)
+  await window.loadURL(`${developmentRendererOrigin ?? APP_ORIGIN}/`)
   await ready
   if (!window.isDestroyed()) window.show()
   return id
@@ -230,13 +243,16 @@ async function openFolderForShellTest(): Promise<void> {
 
 async function start(): Promise<void> {
   await app.whenReady()
-  await registerApplicationProtocol()
+  await registerApplicationProtocol({ serveApplication: !developmentRendererOrigin })
   await initializeSettings()
   nativeTheme.on('updated', broadcastAppearance)
   registerSecurityPolicy()
   registerIpcHandlers()
   installApplicationMenu(normalizePlatform(process.platform), dispatchApplicationCommand)
-  if (BrowserWindow.getAllWindows().length === 0) await createMarkzenWindow()
+  if (BrowserWindow.getAllWindows().length === 0) {
+    const initialFolder = polishWorkspaceOverride ? asPath(nodePath.resolve(polishWorkspaceOverride)) : undefined
+    await createMarkzenWindow(initialFolder ? 'workspace' : 'single-file', initialFolder)
+  }
 }
 
 function dispatchApplicationCommand(command: ApplicationCommand): void {
@@ -1247,7 +1263,7 @@ function withAuthorizedWindow(event: IpcMainInvokeEvent, operation: (record: Win
       url: frame?.url ?? '',
     },
     windowsByContents,
-    APP_ORIGIN,
+    developmentRendererOrigin ?? APP_ORIGIN,
     (record) => !record.window.isDestroyed(),
   )
   return authorized.ok ? operation(authorized.value) : authorized
@@ -1473,9 +1489,9 @@ function withWindow(event: IpcMainInvokeEvent, payload: unknown, operation: (rec
   })
 }
 
-function secureWebContents(contents: WebContents): void {
+function secureWebContents(contents: WebContents, rendererOrigin: string): void {
   contents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(`${APP_ORIGIN}/`)) event.preventDefault()
+    if (!isAllowedNavigation(url, rendererOrigin)) event.preventDefault()
   })
   contents.on('will-attach-webview', (event) => event.preventDefault())
   contents.setWindowOpenHandler(() => ({ action: 'deny' }))

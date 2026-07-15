@@ -1,0 +1,4 @@
+interface:
+  display_name: "Polish"
+  short_description: "Iterate on Markzen visuals in live preview"
+  default_prompt: "Use $polish to start a live Markzen design session and iterate on what I show you."

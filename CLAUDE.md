@@ -14,6 +14,12 @@ Markzen is an open-source, cross-platform Markdown editor built with Electron, R
 
 The five rewrite milestones are implemented in order. Later feature work takes the next free number and must identify any prerequisite behavior it relies on.
 
+### Polish prototype exception
+
+The repository-local `$polish` skill may make a narrow, uncommitted visual prototype before its numbered spec exists. This exception covers CSS, layout, presentational markup, visible copy, animation, existing-control hover/focus/keyboard behavior, and shell chrome only. It never permits new dependencies, persistence, IPC or preload capabilities, filesystem authority, document semantics, security weakening, or complete feature flows.
+
+A polish session starts from a clean, updated `codex/polish-*` branch and leaves `HEAD` unchanged during prototyping: no prototype commit or push is allowed. When the user explicitly finishes, the diff is research for a retroactive Draft, not approved behavior. The user must approve that spec before the prototype can become implementation. AC-named tests must then be shown to fail against the unchanged starting `HEAD` in a disposable worktree, pass with the retained implementation, and complete the normal verification and simplicity gates. If approval is withheld, the prototype stays uncommitted and is not implementation.
+
 Scenario routing is strict:
 
 - Observable and in scope → numbered AC.

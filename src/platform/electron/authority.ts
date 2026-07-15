@@ -1,4 +1,5 @@
 import { fail, ok, type PlatformResult, type WindowId } from '../contracts'
+import { isAllowedNavigation } from './development'
 
 export type SenderDescriptor = {
   readonly contentsId: number
@@ -13,7 +14,7 @@ export function resolveWindowSender<Record>(
   isLive: (record: Record) => boolean,
 ): PlatformResult<Record, 'sender'> {
   const record = windowsByContents.get(sender.contentsId)
-  if (!sender.isMainFrame || !sender.url.startsWith(`${applicationOrigin}/`) || !record || !isLive(record)) return fail('sender')
+  if (!sender.isMainFrame || !isAllowedNavigation(sender.url, applicationOrigin) || !record || !isLive(record)) return fail('sender')
   return ok(record)
 }
 
