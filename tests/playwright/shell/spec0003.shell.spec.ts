@@ -56,9 +56,10 @@ test('AC6 AC78 AC130 AC139: native folder commands and the preload expose only n
     const items = flatten(menu)
     expect(items.find((item) => item.label === 'Open Folder…')?.accelerator).toBe('CmdOrCtrl+Shift+O')
     expect(items.find((item) => item.label === 'Add Folder…')).toBeDefined()
+    const dragTestId = process.platform === 'linux' ? 'window-drag-region' : 'tab-strip'
     const regions = {
       sidebar: await page.getByTestId('shell-content').evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-app-region')),
-      titlebar: await page.getByTestId('window-drag-region').evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-app-region')),
+      titlebar: await page.getByTestId(dragTestId).evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-app-region')),
     }
     expect(regions.sidebar).not.toBe('drag')
     expect(regions.titlebar).toBe('drag')

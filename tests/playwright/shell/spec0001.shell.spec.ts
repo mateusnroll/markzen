@@ -96,24 +96,32 @@ test('AC6: macOS activation recreates one disposed window', async () => {
   }
 })
 
-test('AC7: macOS uses hiddenInset custom chrome around explicit traffic lights', async () => {
+test('spec 0007 AC1 AC2: macOS embeds native traffic lights in the sidebar or tab strip', async () => {
   test.skip(process.platform !== 'darwin', 'AC7 applies to macOS')
   const app = await launchMarkzen()
   try {
     const options = await callMain<{ titleBarStyle: string; trafficLightPosition: { x: number; y: number } }>(app, 'getWindowOptionsForPlatform', ['darwin'])
-    expect(options.titleBarStyle).toBe('hiddenInset')
-    expect(options.trafficLightPosition.x).toBeGreaterThan(0)
-    await expect((await app.firstWindow()).getByTestId('titlebar')).toHaveAttribute('data-platform', 'darwin')
+    expect(options.titleBarStyle).toBe('hidden')
+    expect(options.trafficLightPosition).toEqual({ x: 14, y: 13 })
+    const singleFile = await app.firstWindow()
+    await expect(singleFile.getByTestId('titlebar')).toHaveCount(0)
+    await expect(singleFile.getByTestId('tab-strip')).toHaveCSS('padding-left', '78px')
+
+    const workspacePage = app.waitForEvent('window')
+    await callMain(app, 'createMarkzenWindow', ['workspace'])
+    const workspace = await workspacePage
+    await expect(workspace.getByTestId('workspace-native-titlebar')).toHaveCSS('height', '40px')
+    await expect(workspace.getByTestId('workspace-native-titlebar')).toHaveCSS('border-bottom-width', '0px')
   } finally {
     await quitMarkzen(app)
   }
 })
 
-test('AC8: Windows and Linux are frameless with working custom controls', async () => {
-  test.skip(process.platform === 'darwin', 'AC8 applies to Windows and Linux')
+test('AC8 and spec 0007 AC5: Linux remains frameless with working custom controls', async () => {
+  test.skip(process.platform !== 'linux', 'Renderer window controls remain Linux-specific')
   const app = await launchMarkzen()
   try {
-    const options = await callMain<{ frame: boolean }>(app, 'getWindowOptionsForPlatform', [process.platform])
+    const options = await callMain<{ frame: boolean }>(app, 'getWindowOptionsForPlatform', ['linux'])
     expect(options.frame).toBe(false)
     const page = await app.firstWindow()
     await page.getByTestId('window-maximize').click()
@@ -123,7 +131,8 @@ test('AC8: Windows and Linux are frameless with working custom controls', async 
   }
 })
 
-test('AC9: minimum-size chrome remains non-overlapping at 100% and 200% zoom', async () => {
+test('AC9 and spec 0007 AC6: Linux minimum-size chrome remains non-overlapping at 100% and 200% zoom', async () => {
+  test.skip(process.platform !== 'linux', 'Renderer titlebar geometry is Linux-specific')
   const app = await launchMarkzen()
   try {
     const page = await app.firstWindow()
@@ -144,7 +153,8 @@ test('AC9: minimum-size chrome remains non-overlapping at 100% and 200% zoom', a
   }
 })
 
-test('AC10: only the designated non-interactive titlebar region is draggable', async () => {
+test('AC10 and spec 0007 AC5: only the designated Linux titlebar region is draggable', async () => {
+  test.skip(process.platform !== 'linux', 'Renderer titlebar geometry is Linux-specific')
   const app = await launchMarkzen()
   try {
     const page = await app.firstWindow()
@@ -159,6 +169,46 @@ test('AC10: only the designated non-interactive titlebar region is draggable', a
     })
     expect(regions.drag).toBe('drag')
     expect(regions.outsideDrag).not.toBe('drag')
+  } finally {
+    await quitMarkzen(app)
+  }
+})
+
+test('spec 0007 AC3 AC4: Windows uses a themed 40px native title-bar overlay', async () => {
+  const app = await launchMarkzen()
+  try {
+    const light = await callMain<{
+      frame: boolean
+      titleBarOverlay: { color: string; height: number; symbolColor: string }
+      titleBarStyle: string
+    }>(app, 'getWindowOptionsForPlatform', ['win32', 'light', true])
+    const dark = await callMain<typeof light>(app, 'getWindowOptionsForPlatform', ['win32', 'dark', false])
+    const systemDark = await callMain<typeof light>(app, 'getWindowOptionsForPlatform', ['win32', 'system', true])
+
+    expect(light.frame).toBe(true)
+    expect(light.titleBarStyle).toBe('hidden')
+    expect(light.titleBarOverlay).toEqual({ color: '#f7f5f2', height: 40, symbolColor: '#202124' })
+    expect(dark.titleBarOverlay).toEqual({ color: '#191715', height: 40, symbolColor: '#f4f1ec' })
+    expect(systemDark.titleBarOverlay).toEqual(dark.titleBarOverlay)
+  } finally {
+    await quitMarkzen(app)
+  }
+})
+
+test('spec 0007 AC7: the native File menu retains Open, Save, and Save As after renderer buttons are removed', async () => {
+  const app = await launchMarkzen()
+  try {
+    const menu = await callMain<Array<{ label?: string; submenu?: Array<{ accelerator?: string; label?: string }> }>>(app, 'getApplicationMenuSnapshot', [process.platform])
+    const file = menu.find((item) => item.label === 'File')
+    expect(file?.submenu).toEqual(expect.arrayContaining([
+      expect.objectContaining({ accelerator: 'CmdOrCtrl+O', label: 'Open…' }),
+      expect.objectContaining({ accelerator: 'CmdOrCtrl+S', label: 'Save' }),
+      expect.objectContaining({ accelerator: 'CmdOrCtrl+Shift+S', label: 'Save As…' }),
+    ]))
+    const page = await app.firstWindow()
+    await expect(page.getByTestId('open-document')).toHaveCount(0)
+    await expect(page.getByTestId('save-document')).toHaveCount(0)
+    await expect(page.getByTestId('save-as-document')).toHaveCount(0)
   } finally {
     await quitMarkzen(app)
   }

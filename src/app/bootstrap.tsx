@@ -4,6 +4,7 @@ import { ShellApp } from './ShellApp'
 import { DocumentGateway, ElectronDocumentGateway } from '../documents/gateway'
 import {
   MARKZEN_API_VERSION,
+  type RendererCommand,
   type MarkzenApi,
   type WindowPort,
   asRootId,
@@ -210,18 +211,25 @@ export async function bootstrapApplication(): Promise<BootResult> {
   const settingsListeners = new Set<(snapshot: SettingsSnapshotPayload) => void>()
   const appearanceListeners = new Set<(appearance: EffectiveTheme) => void>()
   const appearance: EffectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  const gateway = fixture.externalAfterOpen
-    ? new class extends DocumentGateway {
-      override async open(id?: string) {
-        const outcome = await super.open(id)
-        if (outcome.kind === 'opened') {
-          const external = fixture.externalAfterOpen!
-          setTimeout(() => { void memory.harness.externalWrite(external.path, new TextEncoder().encode(external.bytes)) }, external.delay)
-        }
-        return outcome
+  const gateway = new class extends DocumentGateway {
+    override onCommand(listener: (command: RendererCommand) => void): () => void {
+      const receiveFixtureCommand = (event: Event) => {
+        if (!(event instanceof CustomEvent) || !isRendererCommand(event.detail)) return
+        listener(event.detail)
       }
-    }(memory.platform)
-    : new DocumentGateway(memory.platform)
+      window.addEventListener('markzen:fixture-command', receiveFixtureCommand)
+      return () => window.removeEventListener('markzen:fixture-command', receiveFixtureCommand)
+    }
+
+    override async open(id?: string) {
+      const outcome = await super.open(id)
+      if (outcome.kind === 'opened' && fixture.externalAfterOpen) {
+        const external = fixture.externalAfterOpen
+        setTimeout(() => { void memory.harness.externalWrite(external.path, new TextEncoder().encode(external.bytes)) }, external.delay)
+      }
+      return outcome
+    }
+  }(memory.platform)
   const workspaceRoots = await Promise.all([...(fixture.workspaceRoots ?? []), ...generatedRootPaths].map(async (path, index) => {
     const listed = await memory.platform.fs.list(memory.harness.path(path))
     if (!listed.ok) throw new Error(`Could not list fixture root: ${path}`)
@@ -267,6 +275,21 @@ export async function bootstrapApplication(): Promise<BootResult> {
     }),
     ok: true,
   }
+}
+
+function isRendererCommand(value: unknown): value is RendererCommand {
+  return typeof value === 'string' && [
+    'close-tab',
+    'close-window',
+    'find',
+    'new',
+    'open',
+    'save',
+    'save-all',
+    'save-all-for-quit',
+    'save-as',
+    'settings',
+  ].includes(value)
 }
 
 async function bootstrapElectron(api: MarkzenApi): Promise<BootResult> {
