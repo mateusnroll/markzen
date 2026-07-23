@@ -55,7 +55,9 @@ test('AC50 AC51 AC56 AC57 AC96 AC140 AC141: persistent edits and ordinary New/Op
 
   await treeRow(page, 'beta.md').click()
   await expect(page.getByTestId('document-tab')).toHaveCount(2)
-  await page.getByTestId('save-document').click()
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('markzen:fixture-command', { detail: 'save' }))
+  })
   await expect(page.getByTestId('document-tab').last()).not.toHaveAttribute('aria-label', /Preview/)
 })
 

@@ -52,7 +52,7 @@ test('AC150 AC151 AC162: packaged Open consumes a test-stubbed native dialog thr
       'acceptExternal', 'close', 'completeQuitSaveAll', 'confirmClose', 'confirmWindowClose', 'createTab', 'onCommand',
       'onExternalChange', 'open', 'overwriteExternal', 'retryCleanup', 'save', 'saveAndRename', 'saveAs', 'updateMenuState',
     ])
-    await page.getByTestId('open-document').click()
+    await openDocumentForShellTest(app, page)
     await expect(page.getByTestId('document-title')).toHaveValue('Olá world')
     await expect(page.getByTestId('rich-editor')).toContainText('Shell open')
   } finally {
@@ -179,7 +179,7 @@ test('AC154-AC161: packaged exact-file watcher reloads clean content and reports
       mutable.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] })
     }, file)
     const page = await app.firstWindow()
-    await page.getByTestId('open-document').click()
+    await openDocumentForShellTest(app, page)
     await expect(page.getByTestId('rich-editor')).toContainText('Initial')
     expect(await callMain<number>(app, 'getDocumentWatcherCount')).toBe(1)
     await writeFile(file, '# External clean\n')
@@ -212,9 +212,11 @@ test('AC45 AC46 AC116: main-owned registry focuses one owner across two windows'
     const secondPromise = app.waitForEvent('window')
     await callMain(app, 'createMarkzenWindow')
     const second = await secondPromise
-    await first.getByTestId('open-document').click()
+    await first.bringToFront()
+    await openDocumentForShellTest(app, first)
     await expect(first.getByTestId('document-title')).toHaveValue('one')
-    await second.getByTestId('open-document').click()
+    await second.bringToFront()
+    await openDocumentForShellTest(app, second)
     await expect(second.getByTestId('document-title')).toHaveValue('')
     await expect(first.getByTestId('document-title')).toHaveValue('one')
   } finally {
@@ -224,3 +226,12 @@ test('AC45 AC46 AC116: main-owned registry focuses one owner across two windows'
 })
 
 const flatten = (items: readonly MenuItem[]): MenuItem[] => items.flatMap((item) => [item, ...flatten(item.submenu ?? [])])
+
+async function openDocumentForShellTest(
+  app: import('@playwright/test').ElectronApplication,
+  page: import('@playwright/test').Page,
+): Promise<void> {
+  const windowId = await page.getByTestId('window-id').textContent()
+  if (!windowId) throw new Error('Expected a window ID')
+  await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'open'])
+}

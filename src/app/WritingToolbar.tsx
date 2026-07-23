@@ -94,7 +94,8 @@ export function WritingToolbar({
     bold: canAt(editor, selection, (chain) => chain.setMark('bold')),
     bulletList: canAt(editor, selection, (chain) => chain.toggleBulletList()),
     code: canAt(editor, selection, (chain) => chain.setMark('code')),
-    heading: canAt(editor, selection, (chain) => chain.setHeading({ level: 1 })),
+    heading: canAt(editor, selection, (chain) => chain.setParagraph())
+      || ([1, 2, 3, 4] as const).some((level) => canAt(editor, selection, (chain) => chain.setHeading({ level }))),
     italic: canAt(editor, selection, (chain) => chain.setMark('italic')),
     link: canAt(editor, selection, (chain) => chain.setLink({ href: 'https://example.com' })),
     orderedList: canAt(editor, selection, (chain) => chain.toggleOrderedList()),
@@ -147,14 +148,28 @@ export function WritingToolbar({
 
   if (mode === 'minimal' && !expanded) {
     return (
-      <div className="formatting-toolbar formatting-toolbar-minimal" data-testid="formatting-toolbar">
+      <div
+        aria-label="Formatting"
+        className="formatting-toolbar formatting-toolbar-minimal"
+        data-testid="formatting-toolbar"
+        onKeyDown={handleToolbarKeys}
+        ref={toolbar}
+        role="toolbar"
+      >
         <button
           aria-label={`Formatting: ${summary}`}
           className="toolbar-summary"
           data-testid="toolbar-summary"
           onClick={() => setExpanded(true)}
+          title={`Formatting: ${summary}`}
           type="button"
-        >{summary}</button>
+        >
+          <ToolbarIcon name="format" />
+          <span className="visually-hidden">{summary}</span>
+        </button>
+        <button aria-label="Expand formatting toolbar" data-testid="toolbar-expand" onClick={() => setExpanded(true)} title="More formatting controls" type="button">
+          <ToolbarIcon name="more" />
+        </button>
       </div>
     )
   }
@@ -168,8 +183,12 @@ export function WritingToolbar({
       role="toolbar"
       ref={toolbar}
     >
-      <button aria-description={!availability.bold ? 'Bold is unavailable at this selection.' : undefined} aria-label="Bold" aria-pressed={markStateValue(markStates.bold)} data-testid="format-bold" disabled={!availability.bold} onClick={() => toggleMark('bold')} type="button">Bold</button>
-      <button aria-description={!availability.italic ? 'Italic is unavailable at this selection.' : undefined} aria-label="Italic" aria-pressed={markStateValue(markStates.italic)} data-testid="format-italic" disabled={!availability.italic} onClick={() => toggleMark('italic')} type="button">Italic</button>
+      <button aria-description={!availability.bold ? 'Bold is unavailable at this selection.' : undefined} aria-label="Bold" aria-pressed={markStateValue(markStates.bold)} data-testid="format-bold" disabled={!availability.bold} onClick={() => toggleMark('bold')} title="Bold" type="button">
+        <ToolbarIcon name="bold" />
+      </button>
+      <button aria-description={!availability.italic ? 'Italic is unavailable at this selection.' : undefined} aria-label="Italic" aria-pressed={markStateValue(markStates.italic)} data-testid="format-italic" disabled={!availability.italic} onClick={() => toggleMark('italic')} title="Italic" type="button">
+        <ToolbarIcon name="italic" />
+      </button>
       <div className="toolbar-popup-owner">
         <button
           aria-expanded={headingOpen}
@@ -180,8 +199,11 @@ export function WritingToolbar({
           disabled={!availability.heading}
           onClick={() => { setHeadingOpen((value) => !value); setMoreOpen(false) }}
           ref={headingTrigger}
+          title={`Heading: ${summary.split(' · ')[0] ?? 'Paragraph'}`}
           type="button"
-        >{summary.startsWith('H') ? summary.split(' · ')[0] : 'Text'}</button>
+        >
+          <ToolbarIcon name="heading" />
+        </button>
         {headingOpen ? (
           <div aria-label="Heading level" className="toolbar-menu" data-testid="heading-menu" role="menu">
             <button aria-checked={summary.startsWith('Paragraph')} data-testid="heading-paragraph" onClick={() => runHeading(0)} role="menuitemradio" type="button">Paragraph</button>
@@ -200,8 +222,11 @@ export function WritingToolbar({
           data-testid="toolbar-more"
           onClick={() => { setMoreOpen((value) => !value); setHeadingOpen(false) }}
           ref={moreTrigger}
+          title="More formatting"
           type="button"
-        >•••</button>
+        >
+          <ToolbarIcon name="more" />
+        </button>
         {moreOpen ? (
           <div aria-label="More formatting" className="toolbar-menu toolbar-menu-more" data-testid="toolbar-more-menu" role="menu">
             <button aria-checked={markStateValue(markStates.strike)} aria-description={!availability.strike ? 'Strikethrough is unavailable at this selection.' : undefined} data-testid="format-strike" disabled={!availability.strike} onClick={() => toggleMark('strike')} role="menuitemcheckbox" type="button">Strikethrough</button>
@@ -217,9 +242,24 @@ export function WritingToolbar({
         ) : null}
       </div>
       {mode === 'minimal' ? (
-        <button aria-label="Collapse formatting toolbar" data-testid="toolbar-collapse" onClick={() => setExpanded(false)} type="button">−</button>
+        <button aria-label="Collapse formatting toolbar" data-testid="toolbar-collapse" onClick={() => setExpanded(false)} title="Collapse formatting toolbar" type="button">
+          <ToolbarIcon name="collapse" />
+        </button>
       ) : null}
     </div>
+  )
+}
+
+function ToolbarIcon({ name }: { readonly name: 'bold' | 'collapse' | 'format' | 'heading' | 'italic' | 'more' }) {
+  return (
+    <svg aria-hidden="true" className={`toolbar-icon toolbar-icon-${name}`} viewBox="0 0 24 24">
+      {name === 'bold' ? <path d="M6 4h7.5a4 4 0 0 1 0 8H6V4Zm0 8h8.5a4 4 0 0 1 0 8H6v-8Z" /> : null}
+      {name === 'italic' ? <path d="M10 4h7M7 20h7M14 4 10 20" /> : null}
+      {name === 'heading' ? <path d="M4 5v14M13 5v14M4 12h9M17 10l2-2v11M17 19h4" /> : null}
+      {name === 'format' ? <path d="M5 5h14M12 5v14M8 19h8" /> : null}
+      {name === 'more' ? <path d="M5 12h.01M12 12h.01M19 12h.01" /> : null}
+      {name === 'collapse' ? <path d="m9 6 6 6-6 6" /> : null}
+    </svg>
   )
 }
 
@@ -287,7 +327,7 @@ const blockLabel = (name: string): string => name === 'codeBlock' ? 'Code block'
 const markLabel = (name: InlineMark): string => name === 'code' ? 'Inline code' : name[0]?.toUpperCase() + name.slice(1)
 
 function handleToolbarKeys(event: KeyboardEvent<HTMLDivElement>): void {
-  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  if (!['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
   const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(':scope > button, :scope > .toolbar-popup-owner > button')]
     .filter((button) => !button.disabled)
   if (buttons.length === 0) return
@@ -296,7 +336,7 @@ function handleToolbarKeys(event: KeyboardEvent<HTMLDivElement>): void {
     ? buttons[0]
     : event.key === 'End'
       ? buttons.at(-1)
-      : buttons[(index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length]
+      : buttons[(index + (['ArrowDown', 'ArrowRight'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length]
   if (!next) return
   event.preventDefault()
   next.focus()
