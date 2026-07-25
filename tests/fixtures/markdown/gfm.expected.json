@@ -55,6 +55,14 @@
         { "type": "text", "text": " and " },
         { "type": "image", "attrs": { "src": "images/a.png", "alt": "Alt", "title": "Pic" } }
       ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "image", "attrs": { "src": "https://images.example/cat.png?x=1#part", "alt": "Remote" } },
+        { "type": "text", "text": " and " },
+        { "type": "image", "attrs": { "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "alt": "Embedded" } }
+      ]
     }
   ]
 }

@@ -45,7 +45,9 @@ const InertImage = Node.create({
       decorative: { default: false, rendered: false },
       internal: { default: false, rendered: false },
       loadState: { default: 'blocked', rendered: false },
+      origin: { default: null, rendered: false },
       src: { default: '' },
+      sourceKind: { default: null, rendered: false },
       title: { default: null },
     }
   },
@@ -55,16 +57,44 @@ const InertImage = Node.create({
   renderHTML({ node }) {
     const alt = typeof node.attrs.alt === 'string' ? node.attrs.alt : ''
     const loaded = typeof node.attrs.assetUrl === 'string' && /^(?:markzen-asset:|blob:)/.test(node.attrs.assetUrl) && node.attrs.loadState !== 'broken'
-    const state = node.attrs.loadState === 'broken' ? 'broken' : loaded ? 'loaded' : 'blocked'
+    const state = node.attrs.loadState === 'broken'
+      ? 'broken'
+      : loaded ? 'loaded'
+        : ['remote', 'loading', 'error'].includes(String(node.attrs.loadState)) ? String(node.attrs.loadState)
+          : 'blocked'
     const label = node.attrs.decorative === true ? 'Decorative image' : alt || 'Image without alternative text'
-    return ['span', {
+    const wrapper = {
       'aria-label': `${label}, ${state}`,
       'data-image-state': state,
       'data-markzen-image': '',
-      'data-testid': loaded ? 'local-image' : state === 'broken' ? 'broken-image' : 'blocked-image',
-      role: 'img',
+      'data-testid': loaded ? 'local-image' : state === 'broken' ? 'broken-image' : node.attrs.sourceKind === 'remote' ? 'remote-image' : 'blocked-image',
+      role: node.attrs.sourceKind === 'remote' && !loaded ? 'group' : 'img',
       tabindex: '0',
-    }, ...(loaded ? [['img', { alt: node.attrs.decorative === true ? '' : alt, draggable: 'false', src: node.attrs.assetUrl }]] : [label])]
+    }
+    if (loaded) {
+      return ['span', wrapper, ['img', {
+        alt: node.attrs.decorative === true ? '' : alt,
+        'data-testid': 'loaded-image',
+        draggable: 'false',
+        src: node.attrs.assetUrl,
+      }]]
+    }
+    if (node.attrs.sourceKind === 'remote') {
+      const origin = typeof node.attrs.origin === 'string' ? node.attrs.origin : ''
+      const action = state === 'remote' ? 'Load' : state === 'error' ? 'Retry' : undefined
+      const status = state === 'loading' ? 'Loading remote image' : state === 'error' ? 'Remote image could not be loaded' : 'Remote image blocked'
+      return ['span', wrapper,
+        ['span', { 'aria-label': label, role: 'img' }, label],
+        ['span', { 'data-testid': 'remote-image-origin' }, origin],
+        ['span', { 'aria-live': 'polite', 'data-testid': 'remote-image-status', role: 'status' }, status],
+        ...(action ? [['button', {
+          'data-image-remote-action': '',
+          'data-testid': action === 'Load' ? 'image-load' : 'image-retry',
+          type: 'button',
+        }, action]] : []),
+      ]
+    }
+    return ['span', wrapper, label]
   },
   markdownTokenName: 'image',
   parseMarkdown(token: MarkdownToken) {

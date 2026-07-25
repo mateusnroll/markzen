@@ -19,14 +19,24 @@ describe('spec 0005 local raster validation', () => {
     expect(validateRaster(png(640, 480), 'photo.png')).toMatchObject({ info: { height: 480, mime: 'image/png', width: 640 }, ok: true })
     expect(validateRaster(Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0, 7, 8, 0, 2, 0, 3]), 'photo.jpeg'))
       .toMatchObject({ info: { height: 2, mime: 'image/jpeg', width: 3 }, ok: true })
-    expect(validateRaster(Uint8Array.from([...new TextEncoder().encode('GIF89a'), 3, 0, 2, 0]), 'photo.gif'))
+    expect(validateRaster(animatedGif(3, 2, 1), 'photo.gif'))
       .toMatchObject({ info: { height: 2, mime: 'image/gif', width: 3 }, ok: true })
-    const webp = new Uint8Array(30)
-    webp.set(new TextEncoder().encode('RIFF'), 0)
-    webp.set(new TextEncoder().encode('WEBPVP8X'), 8)
-    webp.set([2, 0, 0], 24)
-    webp.set([1, 0, 0], 27)
-    expect(validateRaster(webp, 'photo.webp')).toMatchObject({ info: { height: 2, mime: 'image/webp', width: 3 }, ok: true })
+    expect(validateRaster(animatedWebp(3, 2, 1), 'photo.webp')).toMatchObject({ info: { height: 2, mime: 'image/webp', width: 3 }, ok: true })
+  })
+
+  test('AC41 / spec 0006 AC25: GIF/WebP frame count and aggregate full-canvas pixels are bounded', () => {
+    expect(validateRaster(animatedGif(10, 10, 2), 'animated.gif')).toMatchObject({
+      info: { frames: 2, height: 10, width: 10 },
+      ok: true,
+    })
+    expect(validateRaster(animatedGif(1000, 1000, 101), 'animated.gif')).toEqual({ ok: false, reason: 'frames' })
+    expect(validateRaster(animatedGif(1, 1, 501), 'animated.gif')).toEqual({ ok: false, reason: 'frames' })
+    expect(validateRaster(animatedWebp(10, 10, 2), 'animated.webp')).toMatchObject({
+      info: { frames: 2, height: 10, width: 10 },
+      ok: true,
+    })
+    expect(validateRaster(animatedWebp(1, 1, 501), 'animated.webp')).toEqual({ ok: false, reason: 'frames' })
+    expect(validateRaster(malformedAnimatedWebp(), 'animated.webp')).toEqual({ ok: false, reason: 'signature' })
   })
 
   test('AC41: size, dimensions, extension/signature mismatch, SVG, and unsupported bytes are rejected', () => {
@@ -74,4 +84,53 @@ function imageDocument(images: readonly Record<string, unknown>[]): RichDocument
 
 function imageSources(document: RichDocument): string[] {
   return (document.content[0]?.content ?? []).map((node) => String(node.attrs?.src))
+}
+
+function animatedGif(width: number, height: number, frames: number): Uint8Array {
+  const bytes = [
+    ...new TextEncoder().encode('GIF89a'),
+    width & 0xff, width >>> 8,
+    height & 0xff, height >>> 8,
+    0, 0, 0,
+  ]
+  for (let index = 0; index < frames; index += 1) {
+    bytes.push(0x2c, 0, 0, 0, 0, width & 0xff, width >>> 8, height & 0xff, height >>> 8, 0, 2, 1, 0, 0)
+  }
+  bytes.push(0x3b)
+  return Uint8Array.from(bytes)
+}
+
+function animatedWebp(width: number, height: number, frames: number): Uint8Array {
+  const chunks: number[] = []
+  chunks.push(...chunk('VP8X', Uint8Array.from([0x02, 0, 0, 0, ...u24(width - 1), ...u24(height - 1)])))
+  chunks.push(...chunk('ANIM', new Uint8Array(6)))
+  for (let index = 0; index < frames; index += 1) {
+    const packed = ((height - 1) << 14) | (width - 1)
+    const frame = Uint8Array.from([
+      0, 0, 0, 0, 0, 0,
+      ...u24(width - 1), ...u24(height - 1),
+      0, 0, 0, 0,
+      ...chunk('VP8L', Uint8Array.from([0x2f, ...u32(packed)])),
+    ])
+    chunks.push(...chunk('ANMF', frame))
+  }
+  const size = 4 + chunks.length
+  return Uint8Array.from([...new TextEncoder().encode('RIFF'), ...u32(size), ...new TextEncoder().encode('WEBP'), ...chunks])
+}
+
+function malformedAnimatedWebp(): Uint8Array {
+  const valid = animatedWebp(2, 2, 1)
+  return valid.slice(0, valid.byteLength - 1)
+}
+
+function chunk(name: string, body: Uint8Array): number[] {
+  return [...new TextEncoder().encode(name), ...u32(body.length), ...body, ...(body.length % 2 ? [0] : [])]
+}
+
+function u24(value: number): number[] {
+  return [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff]
+}
+
+function u32(value: number): number[] {
+  return [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]
 }

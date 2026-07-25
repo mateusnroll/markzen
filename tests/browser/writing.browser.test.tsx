@@ -197,7 +197,7 @@ describe('spec 0005 local images', () => {
     await renderWorkspaceWithGateway(gateway, [{ id: 'blocked', title: 'Blocked', document: { type: 'doc', content: [
       { type: 'paragraph', content: [{ type: 'image', attrs: { alt: 'Remote', src: 'https://example.com/a.png' } }] },
     ] } }])
-    expect(editor().querySelector('[data-testid="blocked-image"]')).not.toBeNull()
+    expect(editor().querySelector('[data-testid="remote-image"]')).not.toBeNull()
     expect(editor().querySelector('[data-markzen-image] img')).toBeNull()
     await userEvent.click(page.getByTestId('toolbar-summary'))
     await userEvent.click(page.getByTestId('toolbar-more'))

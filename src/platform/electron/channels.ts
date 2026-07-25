@@ -1,7 +1,10 @@
 export const channels = {
   assetAuthorize: 'markzen:asset:authorize',
   assetCommit: 'markzen:asset:commit',
+  assetEmbeddedResolve: 'markzen:asset:embedded-resolve',
+  assetRemoteLoad: 'markzen:asset:remote-load',
   assetResolve: 'markzen:asset:resolve',
+  assetRevoke: 'markzen:asset:revoke',
   assetSelect: 'markzen:asset:select',
   bootstrap: 'markzen:bootstrap',
   externalOpen: 'markzen:external:open',

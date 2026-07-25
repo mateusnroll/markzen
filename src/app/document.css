@@ -504,8 +504,10 @@
 
 .ProseMirror [data-markzen-image] {
   display: inline-block;
+  max-width: 100%;
   padding: 12px;
   border: 1px dashed #77716a;
+  overflow-wrap: anywhere;
 }
 
 .ProseMirror [data-markzen-image] img {
@@ -519,6 +521,17 @@
 .ProseMirror .ProseMirror-selectednode[data-markzen-image] {
   outline: 2px solid var(--mz-focus);
   outline-offset: 3px;
+}
+
+.ProseMirror [data-testid="remote-image"] {
+  display: inline-grid;
+  gap: 6px;
+  align-items: start;
+}
+
+.ProseMirror [data-testid="remote-image"] button {
+  width: fit-content;
+  min-height: 32px;
 }
 
 .table-actions,
@@ -676,5 +689,10 @@
   .search-match-current {
     color: HighlightText;
     background: Highlight;
+  }
+
+  .ProseMirror [data-markzen-image] {
+    border-color: CanvasText;
+    forced-color-adjust: none;
   }
 }

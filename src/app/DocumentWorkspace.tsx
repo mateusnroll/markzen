@@ -1073,9 +1073,13 @@ function persistentDocumentsEqual(left: ProseMirrorNode, right: ProseMirrorNode)
   delete leftAttrs.assetUrl
   delete leftAttrs.assetId
   delete leftAttrs.loadState
+  delete leftAttrs.origin
+  delete leftAttrs.sourceKind
   delete rightAttrs.assetUrl
   delete rightAttrs.assetId
   delete rightAttrs.loadState
+  delete rightAttrs.origin
+  delete rightAttrs.sourceKind
   if (JSON.stringify(leftAttrs) !== JSON.stringify(rightAttrs)) return false
   for (let index = 0; index < left.marks.length; index += 1) if (!left.marks[index]?.eq(right.marks[index]!)) return false
   for (let index = 0; index < left.childCount; index += 1) if (!persistentDocumentsEqual(left.child(index), right.child(index))) return false

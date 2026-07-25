@@ -13,3 +13,4 @@ Accepted architecture decisions for the Electron rewrite live here. Specs define
 | [0007](0007-settings-persistence.md) | Accepted | Main-owned settings schema, revisions, atomic persistence, recovery, retry, and quit flushing |
 | [0008](0008-accessible-windowed-workspace-tree.md) | Accepted | Accessible tree windowing, responsive sidebar behavior, and non-blocking performance measurement |
 | [0009](0009-local-raster-asset-capabilities.md) | Accepted | Exact-resource local raster bearers, trusted path authorization, validation, protocol policy, and revocation |
+| [0010](0010-remote-image-acquisition.md) | Accepted | Explicit remote/embedded acquisition, pinned public networking, byte budgets, and per-node generation ownership |

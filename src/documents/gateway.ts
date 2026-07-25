@@ -1,5 +1,6 @@
 import { displayDocumentStem, deriveDocumentFilename, getRecognizedExtension } from './filename'
 import { parseDocumentBytes, serializeRichDocument, type DocumentEncoding, type RichDocument } from './markdown'
+import { decodeEmbeddedImage, MAX_ACQUIRED_IMAGE_BYTES } from '../assets/image-sources'
 import { validateRaster } from '../assets/raster'
 import { SaveCoordinator } from './save-coordinator'
 import { DocumentWatchState, type WatchToken } from './watch-state'
@@ -56,6 +57,7 @@ export interface DocumentGatewayPort {
   confirmClose(id: string, name: string): Promise<'cancel' | 'discard' | 'save'>
   confirmWindowClose(dirtyNames: readonly string[]): Promise<'cancel' | 'discard' | 'save-all'>
   commitImage(id: string, candidateId: string): Promise<ImageIntentOutcome>
+  loadRemoteImage(id: string, assetId: string, source: string, generation: number): Promise<ImageIntentOutcome>
   completeQuitSaveAll(success: boolean): Promise<void>
   createTabId(): Promise<string>
   open(id?: string): Promise<OpenOutcome>
@@ -64,7 +66,9 @@ export interface DocumentGatewayPort {
   onExternalChange(listener: (event: ExternalGatewayEvent) => void): () => void
   overwriteExternal(input: SaveInput, diskVersion: DiskVersion): Promise<SaveOutcome>
   retryCleanup(input: GatewayDocument): Promise<SaveOutcome>
+  resolveEmbeddedImage(id: string, assetId: string, source: string, generation: number): Promise<ImageIntentOutcome>
   resolveImage(id: string, source: string): Promise<ImageIntentOutcome>
+  revokeImage(id: string, assetId: string, source: string, generation: number, url?: string): Promise<void>
   save(input: SaveInput): Promise<SaveOutcome>
   saveAndRename(input: SaveInput): Promise<SaveOutcome>
   saveAs(input: GatewayDocument): Promise<SaveOutcome>
@@ -108,6 +112,11 @@ export class DocumentGateway implements DocumentGatewayPort {
     return { asset: { source: value.candidate.source, url: this.#assetUrl(id, read.value.bytes, String(read.value.path)) }, kind: 'authorized' }
   }
 
+  async loadRemoteImage(_id: string, _assetId: string, _source: string, _generation: number): Promise<ImageIntentOutcome> {
+    void _id; void _assetId; void _source; void _generation
+    return { kind: 'retryable' }
+  }
+
   async resolveImage(id: string, source: string): Promise<ImageIntentOutcome> {
     const read = await this.#readImageSource(id, source)
     if (!read) return { kind: 'blocked' }
@@ -116,6 +125,19 @@ export class DocumentGateway implements DocumentGatewayPort {
     const explicitlyGranted = this.#imageGrants.get(`${id}:${source}`) === read.fileKey
     if (!explicitlyGranted && (!scope?.ok || !this.platform.paths.contains(scope.value.path, read.path))) return { kind: 'blocked' }
     return { asset: { source, url: this.#assetUrl(id, read.bytes, String(read.path)) }, kind: 'authorized' }
+  }
+
+  async resolveEmbeddedImage(id: string, _assetId: string, source: string, _generation: number): Promise<ImageIntentOutcome> {
+    void _generation
+    const decoded = decodeEmbeddedImage(source)
+    if (!decoded.ok || !validateRaster(decoded.bytes, { expectedMime: decoded.mime, maxBytes: MAX_ACQUIRED_IMAGE_BYTES }).ok) return { kind: 'blocked' }
+    return { asset: { source, url: this.#assetUrl(id, decoded.bytes, `embedded.${decoded.mime.slice('image/'.length)}`) }, kind: 'authorized' }
+  }
+
+  async revokeImage(id: string, _assetId: string, _source: string, _generation: number, url?: string): Promise<void> {
+    if (!url) return
+    URL.revokeObjectURL(url)
+    this.#assetUrls.get(id)?.delete(url)
   }
 
   async selectImage(id: string): Promise<ImageIntentOutcome> {
@@ -416,9 +438,24 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
     return result.ok ? result.value : { kind: 'error' }
   }
 
+  async loadRemoteImage(id: string, assetId: string, source: string, generation: number): Promise<ImageIntentOutcome> {
+    const result = await this.api.asset.loadRemote(asTabId(id), assetId, source, generation)
+    return result.ok ? result.value : { kind: 'error' }
+  }
+
   async resolveImage(id: string, source: string): Promise<ImageIntentOutcome> {
     const result = await this.api.asset.resolve(asTabId(id), 0, source)
     return result.ok ? result.value : { kind: 'error' }
+  }
+
+  async resolveEmbeddedImage(id: string, assetId: string, source: string, generation: number): Promise<ImageIntentOutcome> {
+    const result = await this.api.asset.resolveEmbedded(asTabId(id), assetId, source, generation)
+    return result.ok ? result.value : { kind: 'blocked' }
+  }
+
+  async revokeImage(id: string, assetId: string, source: string, generation: number, url?: string): Promise<void> {
+    void url
+    await this.api.asset.revoke(asTabId(id), assetId, source, generation)
   }
 
   async selectImage(id: string): Promise<ImageIntentOutcome> {

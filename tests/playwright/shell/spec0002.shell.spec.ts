@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import { expect, test } from '@playwright/test'
 
-import { callMain, launchMarkzen, quitMarkzen } from './helpers'
+import { callMain, focusMarkzen, launchMarkzen, quitMarkzen } from './helpers'
 
 type MenuItem = { readonly accelerator?: string; readonly label?: string; readonly role?: string; readonly submenu?: readonly MenuItem[] }
 
@@ -71,6 +71,7 @@ test('AC139-AC141: menu enablement follows the focused window document state', a
       saveAll: Menu.getApplicationMenu()?.getMenuItemById('markzen-save-all')?.enabled,
       saveAs: Menu.getApplicationMenu()?.getMenuItemById('markzen-save-as')?.enabled,
     }))).toEqual({ close: true, save: false, saveAll: false, saveAs: true })
+    await focusMarkzen(app)
     await page.getByTestId('rich-editor-content').click()
     await page.keyboard.type('dirty')
     await expect.poll(() => app.evaluate(({ Menu }) => ({

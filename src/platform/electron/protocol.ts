@@ -10,7 +10,7 @@ export const PRODUCTION_CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self'",
-  "img-src 'self' data: markzen-asset:",
+  "img-src 'self' markzen-asset:",
   "font-src 'self'",
   "connect-src 'none'",
   "media-src 'none'",

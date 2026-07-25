@@ -17,6 +17,10 @@ export class FakeDocumentGateway implements DocumentGatewayPort {
 
   async authorizeImage(id: string, source: string): Promise<ImageIntentOutcome> { void id; void source; return { kind: 'blocked' } }
   async commitImage(id: string, candidateId: string): Promise<ImageIntentOutcome> { void id; void candidateId; return { kind: 'error' } }
+  async loadRemoteImage(id: string, assetId: string, source: string, generation: number): Promise<ImageIntentOutcome> {
+    void id; void assetId; void source; void generation
+    return { kind: 'retryable' }
+  }
 
   async acceptExternal(): Promise<boolean> { return true }
   async closeTab(): Promise<void> {}
@@ -47,7 +51,14 @@ export class FakeDocumentGateway implements DocumentGatewayPort {
     return { document: input, kind: 'saved' }
   }
   async retryCleanup(): Promise<SaveOutcome> { return { kind: 'unchanged' } }
+  async resolveEmbeddedImage(id: string, assetId: string, source: string, generation: number): Promise<ImageIntentOutcome> {
+    void id; void assetId; void source; void generation
+    return { kind: 'blocked' }
+  }
   async resolveImage(id: string, source: string): Promise<ImageIntentOutcome> { void id; void source; return { kind: 'blocked' } }
+  async revokeImage(id: string, assetId: string, source: string, generation: number, url?: string): Promise<void> {
+    void id; void assetId; void source; void generation; void url
+  }
   async save(input: SaveInput): Promise<SaveOutcome> { return { document: input, kind: 'saved' } }
   async saveAndRename(input: SaveInput): Promise<SaveOutcome> { return { document: input, kind: 'saved' } }
   async saveAs(input: GatewayDocument): Promise<SaveOutcome> { return { document: input, kind: 'saved' } }

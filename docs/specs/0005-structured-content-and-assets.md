@@ -12,10 +12,10 @@ Tables and local images are common in real Markdown but are difficult to manipul
 - Table column resizing, cell merging, per-column alignment controls, CSV import/paste conversion, or row/column reordering.
 - Always-visible delete controls on every row or column; structural deletion lives in contextual table actions.
 - Image paste/drop insertion, copying images into the note folder, resizing, captions, alignment, movement, or orphan management.
-- Rendering remote HTTP(S), protocol-relative, or embedded `data:` images. Their source Markdown is preserved and they remain blocked until spec 0006.
+- Remote HTTP(S) acquisition and embedded `data:` decoding, which are owned exclusively by spec 0006 and do not widen this milestone's local-file authority.
 - Executing or rendering SVG content.
 - Following image destinations or exposing a general renderer-readable filesystem protocol.
-- A separate aggregate decoded-frame budget for animated GIF or WebP beyond this milestone's source-byte and canvas-dimension limits.
+- Animation playback controls or decoded-pixel memory accounting beyond spec 0006's bounded complete-frame structural validation.
 
 ## Constraints and shared invariants
 
@@ -26,7 +26,7 @@ Tables and local images are common in real Markdown but are difficult to manipul
 - Folder windows automatically authorize raster assets canonically contained by an opened root. Standalone documents automatically authorize raster assets contained by their document directory. Explicit image selection authorizes that exact canonical file.
 - Path authorization, resolution, relative conversion, and containment use trusted Platform operations after symlink resolution. Existing lexical helpers remain display-only. The resulting exact resource is identified by `FileKey`; serialized Markdown retains a user-facing `/`-separated relative or absolute source.
 - A Markdown-authored source outside automatic scope never creates authority. It can receive an exact-file grant only when the user explicitly selects the same `FileKey` through Authorize.
-- PNG, JPEG, GIF, and WebP sources are limited to 25 MiB encoded bytes, 16,384 pixels on either canvas axis, and 40,000,000 canvas pixels. Animated GIF/WebP uses the same encoded-byte and canvas limits; aggregate frame limits are deferred to spec 0006. MIME, signature, and dimensions must agree before a capability is issued.
+- PNG, JPEG, GIF, and WebP sources are limited to 25 MiB encoded bytes, 16,384 pixels on either canvas axis, and 40,000,000 canvas pixels. Animated GIF/WebP must also have a complete valid structure, at most 500 frames, and at most 100,000,000 aggregate full-canvas frame pixels. MIME, signature, dimensions, and frame structure must agree before a capability is issued.
 - Save As rebasing extends the shared failure-atomic save transaction. Destination selection/reservation and byte commit form one main-owned, generation-scoped operation; a renderer may receive only the bounded path data needed to compute a rebased snapshot plus an opaque commit token, never authority to choose another destination.
 - Implementing this milestone updates spec 0001's exact CSP/asset-protocol contract, narrows spec 0002's temporary inert-image AC167, expands spec 0002's independently authored GFM fixture proof, and updates ADRs 0001–0004 where their accepted decisions are extended.
 
@@ -80,8 +80,8 @@ Tables and local images are common in real Markdown but are difficult to manipul
 - AC38: Given a `markzen-asset:` response, when Chromium loads it, then CSP admits it only as an image, its response is `nosniff` and non-cacheable, and it cannot navigate, execute script, request subresources, use CORS, enter the File System API, or expose a general readable response.
 - AC39: Given a local source disappears, changes identity, or becomes unreadable after authorization, when rendering fails, then a selectable broken-image placeholder preserves and exposes safe alt text without leaking an unauthorized absolute path.
 - AC40: Given an issuing window closes, its document base changes, or an exact-file grant is revoked, when a later request uses the former token, then it receives AC37's non-disclosing denial.
-- AC41: Given a PNG, JPEG, GIF, or WebP candidate at or below all encoded-byte and canvas bounds with a matching signature, when validated, then it may render; a source above 25 MiB, above 16,384 pixels on either axis, above 40,000,000 pixels, with mismatched signature/MIME, or SVG/unsupported content is blocked while existing Markdown round-trips unchanged.
-- AC42: Given an HTTP(S), protocol-relative, credential-bearing URL, `data:`, `file:`, `javascript:`, `blob:`, malformed, or custom-scheme source, when rendered in this milestone, then no network/system request or asset grant occurs and a selectable accessible blocked placeholder preserves the original Markdown.
+- AC41: Given a PNG, JPEG, GIF, or WebP candidate at or below all encoded-byte, canvas, 500-frame, and 100,000,000 aggregate full-canvas frame-pixel bounds with a matching signature and complete frame structure, when validated, then it may render; a source above any bound, with incomplete/malformed animation structure, mismatched signature/MIME, or SVG/unsupported content is blocked while existing Markdown round-trips unchanged.
+- AC42: Given an HTTP(S), protocol-relative, credential-bearing URL, `data:`, `file:`, `javascript:`, `blob:`, malformed, or custom-scheme source without spec 0006's current exact remote/embedded authorization, when rendered, then no network/system request or asset grant occurs and a selectable accessible placeholder preserves the original Markdown. Spec 0006 alone owns explicit HTTPS Load/Retry and strict embedded-data resolution.
 
 ### Image editing and shared layout
 

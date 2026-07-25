@@ -76,6 +76,7 @@ import { APP_ORIGIN, registerApplicationProtocol } from './protocol'
 import { RealFileSystem } from './real-fs'
 import { assetRegistry } from './asset-registry'
 import { rebaseDocumentImages } from './asset-paths'
+import { ImageAcquisitionService, type AcquisitionOutcome } from './image-acquisition'
 import { buildApplicationMenuTemplate, installApplicationMenu } from './menu'
 import { SettingsFileStore } from './settings-store'
 import { DEFAULT_SETTINGS, parseSettings, SettingsService, type SettingsLoadResult } from '../../settings/settings'
@@ -84,6 +85,7 @@ import { validateWorkspaceEntryRequest } from '../../workspaces/authority'
 import { classifyExternalDestination, validateExternalOpenPayload } from '../../links/external'
 import { ExternalRequestRegistry } from '../../links/external-requests'
 import { MAX_RASTER_BYTES, validateRaster } from '../../assets/raster'
+import { MAX_ACQUIRED_IMAGE_BYTES } from '../../assets/image-sources'
 
 type WindowRecord = {
   closeApproved: boolean
@@ -139,6 +141,7 @@ const workspaceSnapshots = new Map<string, readonly DirectoryEntry[]>()
 const workspaceGenerations = new Map<string, number>()
 const pendingFolderWindows = new Set<string>()
 const externalRequests = new ExternalRequestRegistry<WindowId>()
+const imageAcquisition = new ImageAcquisitionService({ registry: assetRegistry })
 const imageCandidates = new Map<string, { readonly basePath?: Path; readonly fileKey: FileKey; readonly path: Path; readonly source: string; readonly tabId: TabId; readonly windowId: WindowId }>()
 let settingsService: SettingsService | undefined
 let settingsWarning: string | undefined
@@ -253,6 +256,28 @@ export async function issueAssetForShellTest(windowId: string, path: string): Pr
   if (!read) throw new Error('Invalid raster')
   const token = assetRegistry.issue({ fileKey: read.fileKey, issuer: record.id, path: read.path, tabId: asTabId('shell-test') })
   return `markzen-asset://${token}`
+}
+
+export async function issueEmbeddedAssetForShellTest(windowId: string, source: string): Promise<{ readonly token: string; readonly url: string }> {
+  const record = [...windowsByContents.values()].find((candidate) => candidate.id === windowId)
+  if (!record) throw new Error('Unknown window')
+  const result = await imageAcquisition.acquireEmbedded({
+    assetId: randomUUID(),
+    generation: 1,
+    issuer: record.id,
+    source,
+    tabId: asTabId(`shell-${randomUUID()}`),
+  })
+  if (result.kind !== 'authorized') throw new Error(`Embedded raster rejected: ${result.kind}`)
+  return { token: result.token, url: result.asset.url }
+}
+
+export function revokeAssetForShellTest(token: string): void {
+  assetRegistry.revoke(token)
+}
+
+export function getRemoteRequestCountForShellTest(): number {
+  return imageAcquisition.requestCount()
 }
 
 async function openFolderForShellTest(): Promise<void> {
@@ -371,6 +396,36 @@ function registerIpcHandlers(): void {
     imageCandidates.delete(request.candidateId as string)
     const token = assetRegistry.issue({ fileKey: candidate.fileKey, issuer: window.id, path: candidate.path, tabId: record.tabId })
     return ok<ImageIntentOutcome>({ asset: { source: candidate.source, url: `markzen-asset://${token}` }, kind: 'authorized' })
+  }))
+  ipcMain.handle(channels.assetRemoteLoad, (event, payload) => withAcquisitionDocument(event, payload, async (record, window, request) => {
+    const outcome = await imageAcquisition.acquireRemote({
+      assetId: request.assetId,
+      generation: request.generation,
+      issuer: window.id,
+      source: request.source,
+      tabId: record.tabId,
+    })
+    return ok<ImageIntentOutcome>(imageIntentOutcome(outcome))
+  }))
+  ipcMain.handle(channels.assetEmbeddedResolve, (event, payload) => withAcquisitionDocument(event, payload, async (record, window, request) => {
+    const outcome = await imageAcquisition.acquireEmbedded({
+      assetId: request.assetId,
+      generation: request.generation,
+      issuer: window.id,
+      source: request.source,
+      tabId: record.tabId,
+    })
+    return ok<ImageIntentOutcome>(imageIntentOutcome(outcome))
+  }))
+  ipcMain.handle(channels.assetRevoke, (event, payload) => withAcquisitionDocument(event, payload, (record, window, request) => {
+    imageAcquisition.cancel({
+      assetId: request.assetId,
+      generation: request.generation,
+      issuer: window.id,
+      source: request.source,
+      tabId: record.tabId,
+    })
+    return ok(undefined)
   }))
   ipcMain.handle(channels.assetResolve, (event, payload) => withAssetDocument(event, payload, ['source'], async (record, window, request) => {
     if (typeof request.source !== 'string') return fail('validation')
@@ -1080,7 +1135,7 @@ async function saveDocumentAs(
       if (!samePath.ok) return ok({ kind: documentFailure(samePath.error.code) })
       adoptRecord(record, samePath.value)
       watchDocument(record)
-      assetRegistry.revokeTab(record.tabId)
+      imageAcquisition.cancelTab(record.tabId)
       return ok({ file: { ...filePayload(record, samePath.value), assetsRevoked: true, ...prepared.payload }, kind: 'saved' })
     }
     if (record.fileKey === existing.value.fileKey) return ok({ kind: 'collision' })
@@ -1107,7 +1162,7 @@ async function saveDocumentAs(
   }
   if (record.fileKey) documentRegistry.release(record.fileKey, owner)
   adoptRecord(record, replaced.value)
-  assetRegistry.revokeTab(record.tabId)
+  imageAcquisition.cancelTab(record.tabId)
   watchDocument(record)
   return ok({ file: { ...filePayload(record, replaced.value), assetsRevoked: true, ...prepared.payload }, kind: 'saved' })
 }
@@ -1214,6 +1269,46 @@ function withAssetDocument(
   })
 }
 
+type AcquisitionRequest = {
+  readonly assetId: string
+  readonly generation: number
+  readonly source: string
+  readonly tabId: TabId
+}
+
+function withAcquisitionDocument(
+  event: IpcMainInvokeEvent,
+  payload: unknown,
+  operation: (record: MainDocumentRecord, window: WindowRecord, request: AcquisitionRequest) => unknown,
+): unknown {
+  return withAuthorizedWindow(event, (window) => {
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return fail('validation')
+    const value = payload as Record<string, unknown>
+    const expected = ['assetId', 'generation', 'source', 'tabId'].sort()
+    const keys = Object.keys(value).sort()
+    if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) return fail('validation')
+    if (typeof value.tabId !== 'string' || value.tabId.length === 0 || value.tabId.length > 128) return fail('validation')
+    if (typeof value.assetId !== 'string' || value.assetId.length === 0 || value.assetId.length > 128) return fail('validation')
+    if (typeof value.generation !== 'number' || !Number.isSafeInteger(value.generation) || value.generation < 1) return fail('validation')
+    if (typeof value.source !== 'string' || value.source.length === 0 || value.source.length > Math.ceil(MAX_ACQUIRED_IMAGE_BYTES / 3) * 4 + 64) return fail('validation')
+    const tabId = asTabId(value.tabId)
+    const record = documents.get(tabId)
+    if (!record || record.windowId !== window.id) return fail('ownership')
+    return operation(record, window, {
+      assetId: value.assetId,
+      generation: value.generation,
+      source: value.source,
+      tabId,
+    })
+  })
+}
+
+function imageIntentOutcome(outcome: AcquisitionOutcome): ImageIntentOutcome {
+  return outcome.kind === 'authorized'
+    ? { asset: outcome.asset, kind: 'authorized' }
+    : { kind: outcome.kind }
+}
+
 async function chooseRaster(window: WindowRecord): Promise<Path | undefined> {
   const selected = await dialog.showOpenDialog(window.window, {
     filters: [{ extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'], name: 'Raster images' }],
@@ -1310,7 +1405,7 @@ function focusDocumentOwner(owner: DocumentOwner): void {
 }
 
 function releaseRecordIdentity(record: MainDocumentRecord): void {
-  assetRegistry.revokeTab(record.tabId)
+  imageAcquisition.cancelTab(record.tabId)
   disposeDocumentWatcher(record.tabId)
   if (record.fileKey) documentRegistry.release(record.fileKey, ownerOf(record))
   if (record.cleanup) documentRegistry.release(record.cleanup.fileKey, ownerOf(record))
@@ -1568,7 +1663,7 @@ function bindWindowEvents(record: WindowRecord): void {
     }
     windowsByContents.delete(contentsId)
     externalRequests.dispose(record.id)
-    assetRegistry.revokeIssuer(record.id)
+    imageAcquisition.cancelIssuer(record.id)
     for (const [id, candidate] of imageCandidates) if (candidate.windowId === record.id) imageCandidates.delete(id)
     for (const root of workspaceRoots.values(record.id)) {
       const key = rootKey(record.id, root.rootId)
@@ -1613,7 +1708,7 @@ app.on('will-quit', () => nativeTheme.removeListener('updated', broadcastAppeara
 Object.defineProperty(app, 'markzenShellHarness', {
   configurable: false,
   enumerable: false,
-  value: Object.freeze({ createMarkzenWindow, dispatchApplicationCommandForShellTest, emitWindowStateForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentWatcherCount, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, openFolderForShellTest, runRealFsRoundTrip }),
+  value: Object.freeze({ createMarkzenWindow, dispatchApplicationCommandForShellTest, emitWindowStateForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentWatcherCount, getRemoteRequestCountForShellTest, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, issueEmbeddedAssetForShellTest, openFolderForShellTest, revokeAssetForShellTest, runRealFsRoundTrip }),
   writable: false,
 })
 
