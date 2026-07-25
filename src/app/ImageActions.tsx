@@ -2,6 +2,7 @@ import type { Editor } from '@tiptap/core'
 import { NodeSelection, type Selection, type SelectionBookmark } from '@tiptap/pm/state'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 
+import { classifyImageSource } from '../assets/image-sources'
 import type { DocumentGatewayPort } from '../documents/gateway'
 import type { ImageCandidate } from '../platform/contracts'
 import { useOverlaySurface } from './overlays'
@@ -12,6 +13,15 @@ export type ImageActionsHandle = {
 }
 
 type Surface = 'insert' | 'metadata'
+type RuntimeEntry = {
+  generation: number
+  readonly kind: 'blocked' | 'embedded' | 'local' | 'remote'
+  readonly source: string
+  state: 'blocked' | 'error' | 'loaded' | 'loading' | 'remote'
+  url?: string
+}
+
+const imageRuntimes = new WeakMap<Editor, Map<string, RuntimeEntry>>()
 
 export const ImageActions = forwardRef<ImageActionsHandle, {
   readonly editor: Editor
@@ -26,7 +36,7 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
   const [decorative, setDecorative] = useState(false)
   const [selected, setSelected] = useState(false)
   const bookmark = useRef<SelectionBookmark>(editor.state.selection.getBookmark())
-  const attempted = useRef(new Set<string>())
+  const runtime = useRef(runtimeFor(editor))
   const popover = useRef<HTMLDivElement>(null)
   const firstControl = useRef<HTMLButtonElement | HTMLInputElement>(null)
 
@@ -78,16 +88,25 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
     }
     const map = ({ transaction }: { transaction: import('@tiptap/pm/state').Transaction }) => {
       if (surface) bookmark.current = bookmark.current.map(transaction.mapping)
-      void resolveImages(editor, gateway, tabId, attempted.current)
+      void syncImages(editor, gateway, tabId, runtime.current)
     }
     update()
-    void resolveImages(editor, gateway, tabId, attempted.current)
+    void syncImages(editor, gateway, tabId, runtime.current)
     const imageError = (event: Event) => {
       const image = event.target
       if (!(image instanceof HTMLImageElement)) return
       const wrapper = image.closest<HTMLElement>('[data-markzen-image]')
       if (!wrapper) return
       const position = editor.view.posAtDOM(wrapper, 0)
+      const current = editor.state.doc.nodeAt(position)
+      const assetId = typeof current?.attrs.assetId === 'string' ? current.attrs.assetId : ''
+      const entry = runtime.current.get(assetId)
+      if (entry) {
+        entry.generation += 1
+        entry.state = 'blocked'
+        void gateway.revokeImage(tabId, assetId, entry.source, entry.generation, entry.url)
+        delete entry.url
+      }
       editor.commands.command(({ state, tr }) => {
         const node = state.doc.nodeAt(position)
         if (!node || node.type.name !== 'image') return false
@@ -95,16 +114,39 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
         return true
       })
     }
+    const remoteAction = (event: Event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const button = target.closest<HTMLButtonElement>('[data-image-remote-action]')
+      const wrapper = button?.closest<HTMLElement>('[data-markzen-image]')
+      if (!button || !wrapper) return
+      event.preventDefault()
+      const position = editor.view.posAtDOM(wrapper, 0)
+      void loadRemoteImage(editor, gateway, tabId, position, runtime.current)
+    }
     const editorDom = editor.view.dom
     editorDom.addEventListener('error', imageError, true)
+    editorDom.addEventListener('click', remoteAction)
     editor.on('selectionUpdate', update)
     editor.on('transaction', map)
     return () => {
       editor.off('selectionUpdate', update)
       editor.off('transaction', map)
       editorDom.removeEventListener('error', imageError, true)
+      editorDom.removeEventListener('click', remoteAction)
     }
   }, [editor, gateway, surface, tabId])
+
+  useEffect(() => () => {
+    queueMicrotask(() => {
+      if (!editor.isDestroyed) return
+      for (const [assetId, entry] of runtime.current) {
+        entry.generation += 1
+        void gateway.revokeImage(tabId, assetId, entry.source, entry.generation, entry.url)
+      }
+      runtime.current.clear()
+    })
+  }, [editor, gateway, tabId])
 
   const fromDisk = async () => {
     const outcome = await gateway.selectImage(tabId)
@@ -152,7 +194,13 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
     const outcome = await gateway.authorizeImage(tabId, source)
     if (outcome.kind === 'mismatch') { onIssue('The selected file does not match this image reference.'); return }
     if (outcome.kind !== 'authorized') return
-    setAssetUrl(editor, selection.from, source, outcome.asset.url)
+    const assetId = typeof selection.node.attrs.assetId === 'string' ? selection.node.attrs.assetId : ''
+    const entry = runtime.current.get(assetId)
+    if (entry) {
+      entry.state = 'loaded'
+      entry.url = outcome.asset.url
+    }
+    setImageState(editor, assetId, source, { assetUrl: outcome.asset.url, loadState: 'loaded', sourceKind: 'local' })
   }
 
   return (
@@ -160,7 +208,9 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
       {selected ? (
         <div className="image-actions" data-testid="image-actions-owner">
           <button aria-label="Image Actions" data-testid="image-actions" onClick={openSelected} type="button">Image Actions</button>
-          {editor.state.selection instanceof NodeSelection && !editor.state.selection.node.attrs.assetUrl ? (
+          {editor.state.selection instanceof NodeSelection
+            && !editor.state.selection.node.attrs.assetUrl
+            && classifyImageSource(String(editor.state.selection.node.attrs.src ?? '')).kind === 'local' ? (
             <button data-testid="image-authorize" onClick={() => void authorize()} type="button">Authorize</button>
           ) : null}
         </div>
@@ -187,30 +237,160 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
   )
 })
 
-async function resolveImages(editor: Editor, gateway: DocumentGatewayPort, tabId: string, pending: Set<string>): Promise<void> {
-  const entries: Array<{ readonly position: number; readonly source: string }> = []
-  editor.state.doc.descendants((node, position) => {
-    if (node.type.name !== 'image' || node.attrs.assetUrl) return
+async function syncImages(editor: Editor, gateway: DocumentGatewayPort, tabId: string, runtime: Map<string, RuntimeEntry>): Promise<void> {
+  await Promise.resolve()
+  if (editor.isDestroyed) return
+  const live = new Set<string>()
+  const entries: Array<{ readonly assetId: string; readonly source: string }> = []
+  editor.state.doc.descendants((node) => {
+    if (node.type.name !== 'image') return
     const source = typeof node.attrs.src === 'string' ? node.attrs.src : ''
-    const key = `${typeof node.attrs.assetId === 'string' ? node.attrs.assetId : position}:${source}`
-    if (source && !pending.has(key)) entries.push({ position, source })
+    const assetId = typeof node.attrs.assetId === 'string' ? node.attrs.assetId : ''
+    if (!source || !assetId) return
+    live.add(assetId)
+    const existing = runtime.get(assetId)
+    if (existing && existing.source !== source) {
+      existing.generation += 1
+      void gateway.revokeImage(tabId, assetId, existing.source, existing.generation, existing.url)
+      runtime.delete(assetId)
+    }
+    if (existing?.url && node.attrs.assetUrl !== existing.url) {
+      existing.generation += 1
+      void gateway.revokeImage(tabId, assetId, existing.source, existing.generation, existing.url)
+      runtime.delete(assetId)
+    }
+    if (!runtime.has(assetId) && typeof node.attrs.assetUrl === 'string') {
+      const kind = classifyImageSource(source).kind
+      runtime.set(assetId, {
+        generation: 0,
+        kind: kind === 'remote' || kind === 'embedded' || kind === 'local' ? kind : 'blocked',
+        source,
+        state: 'loaded',
+        url: node.attrs.assetUrl,
+      })
+    }
+    if (!runtime.has(assetId)) entries.push({ assetId, source })
   })
+  for (const [assetId, entry] of runtime) {
+    if (live.has(assetId)) continue
+    entry.generation += 1
+    void gateway.revokeImage(tabId, assetId, entry.source, entry.generation, entry.url)
+    runtime.delete(assetId)
+  }
   for (const entry of entries) {
-    const node = editor.state.doc.nodeAt(entry.position)
-    const key = `${typeof node?.attrs.assetId === 'string' ? node.attrs.assetId : entry.position}:${entry.source}`
-    pending.add(key)
-    const outcome = await gateway.resolveImage(tabId, entry.source)
-    if (outcome.kind === 'authorized') setAssetUrl(editor, entry.position, entry.source, outcome.asset.url)
+    const classification = classifyImageSource(entry.source)
+    if (classification.kind === 'remote') {
+      runtime.set(entry.assetId, { generation: 0, kind: 'remote', source: entry.source, state: 'remote' })
+      setImageState(editor, entry.assetId, entry.source, { assetUrl: null, loadState: 'remote', origin: classification.origin, sourceKind: 'remote' })
+      continue
+    }
+    if (classification.kind === 'embedded') {
+      const state: RuntimeEntry = { generation: 1, kind: 'embedded', source: entry.source, state: 'loading' }
+      runtime.set(entry.assetId, state)
+      setImageState(editor, entry.assetId, entry.source, { assetUrl: null, loadState: 'loading', origin: null, sourceKind: 'embedded' })
+      const outcome = await gateway.resolveEmbeddedImage(tabId, entry.assetId, entry.source, state.generation)
+      applyOutcome(editor, gateway, tabId, entry.assetId, entry.source, state.generation, outcome, runtime)
+      continue
+    }
+    if (classification.kind === 'local') {
+      const state: RuntimeEntry = { generation: 0, kind: 'local', source: entry.source, state: 'blocked' }
+      runtime.set(entry.assetId, state)
+      const outcome = await gateway.resolveImage(tabId, entry.source)
+      if (outcome.kind === 'authorized') {
+        state.state = 'loaded'
+        state.url = outcome.asset.url
+        setImageState(editor, entry.assetId, entry.source, { assetUrl: outcome.asset.url, loadState: 'loaded', origin: null, sourceKind: 'local' })
+      } else {
+        setImageState(editor, entry.assetId, entry.source, { assetUrl: null, loadState: 'blocked', origin: null, sourceKind: 'local' })
+      }
+      continue
+    }
+    runtime.set(entry.assetId, { generation: 0, kind: 'blocked', source: entry.source, state: 'blocked' })
+    setImageState(editor, entry.assetId, entry.source, { assetUrl: null, loadState: 'blocked', origin: null, sourceKind: 'blocked' })
   }
 }
 
-function setAssetUrl(editor: Editor, position: number, source: string, url: string): void {
+async function loadRemoteImage(
+  editor: Editor,
+  gateway: DocumentGatewayPort,
+  tabId: string,
+  position: number,
+  runtime: Map<string, RuntimeEntry>,
+): Promise<void> {
+  const node = editor.state.doc.nodeAt(position)
+  const assetId = typeof node?.attrs.assetId === 'string' ? node.attrs.assetId : ''
+  const source = typeof node?.attrs.src === 'string' ? node.attrs.src : ''
+  const entry = runtime.get(assetId)
+  if (!entry || entry.kind !== 'remote' || entry.source !== source || entry.state === 'loading') return
+  entry.generation += 1
+  entry.state = 'loading'
+  setImageState(editor, assetId, source, { assetUrl: null, loadState: 'loading', sourceKind: 'remote' })
+  const outcome = await gateway.loadRemoteImage(tabId, assetId, source, entry.generation)
+  applyOutcome(editor, gateway, tabId, assetId, source, entry.generation, outcome, runtime)
+}
+
+function applyOutcome(
+  editor: Editor,
+  gateway: DocumentGatewayPort,
+  tabId: string,
+  assetId: string,
+  source: string,
+  generation: number,
+  outcome: Awaited<ReturnType<DocumentGatewayPort['loadRemoteImage']>>,
+  runtime: Map<string, RuntimeEntry>,
+): void {
+  if (editor.isDestroyed) {
+    if (outcome.kind === 'authorized') void gateway.revokeImage(tabId, assetId, source, generation + 1, outcome.asset.url)
+    return
+  }
+  const entry = runtime.get(assetId)
+  const position = imagePosition(editor, assetId, source)
+  if (!entry || entry.generation !== generation || entry.source !== source || position === undefined) {
+    if (outcome.kind === 'authorized') void gateway.revokeImage(tabId, assetId, source, generation + 1, outcome.asset.url)
+    return
+  }
+  if (outcome.kind === 'authorized') {
+    entry.state = 'loaded'
+    entry.url = outcome.asset.url
+    setImageState(editor, assetId, source, { assetUrl: outcome.asset.url, loadState: 'loaded' })
+    return
+  }
+  if (outcome.kind === 'retryable' || outcome.kind === 'error') {
+    entry.state = 'error'
+    setImageState(editor, assetId, source, { assetUrl: null, loadState: 'error' })
+    return
+  }
+  if (outcome.kind === 'blocked') {
+    entry.state = 'blocked'
+    setImageState(editor, assetId, source, { assetUrl: null, loadState: 'blocked' })
+  }
+}
+
+function setImageState(editor: Editor, assetId: string, source: string, attrs: Record<string, unknown>): void {
+  const position = imagePosition(editor, assetId, source)
+  if (position === undefined) return
   editor.commands.command(({ state, tr }) => {
     const node = state.doc.nodeAt(position)
-    if (!node || node.type.name !== 'image' || node.attrs.src !== source) return false
-    tr.setNodeMarkup(position, undefined, { ...node.attrs, assetUrl: url, loadState: 'loaded' }).setMeta('addToHistory', false)
+    if (!node || node.type.name !== 'image' || node.attrs.src !== source || node.attrs.assetId !== assetId) return false
+    tr.setNodeMarkup(position, undefined, { ...node.attrs, ...attrs }).setMeta('addToHistory', false)
     return true
   })
+}
+
+function imagePosition(editor: Editor, assetId: string, source: string): number | undefined {
+  let result: number | undefined
+  editor.state.doc.descendants((node, position) => {
+    if (result === undefined && node.type.name === 'image' && node.attrs.assetId === assetId && node.attrs.src === source) result = position
+  })
+  return result
+}
+
+function runtimeFor(editor: Editor): Map<string, RuntimeEntry> {
+  const existing = imageRuntimes.get(editor)
+  if (existing) return existing
+  const created = new Map<string, RuntimeEntry>()
+  imageRuntimes.set(editor, created)
+  return created
 }
 
 function resolveSelection(editor: Editor, bookmark: SelectionBookmark): Selection {

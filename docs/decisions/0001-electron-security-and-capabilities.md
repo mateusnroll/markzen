@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md)
+**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md)
 
 ## Context
 
@@ -16,7 +16,7 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 
 - Register `markzen` as a standard, secure scheme before Electron becomes ready and serve the renderer only from `markzen://app`.
 - Build an allowlist from packaged renderer assets. Protocol requests select an allowlisted key; URL paths are never joined directly to arbitrary filesystem paths.
-- Return the exact production CSP required by spec 0001 AC20 on every application response. Vite development allowances exist only in the browser development server and never in packaged responses.
+- Return the exact production CSP required by spec 0001 AC20 on every application response. Its image directive is only `'self' markzen-asset:`: raw `data:`, `blob:`, and remote sources are never admitted. Vite development allowances exist only in the browser development server and never in packaged responses.
 - Keep `nodeIntegration`, insecure content, experimental features, webviews, drag navigation, and explicit Blink features disabled. Keep context isolation, sandboxing, and web security enabled.
 - Reject top-level navigation away from the application origin, all popups, all webview attachment, and all Chromium permission checks and requests.
 
@@ -38,6 +38,7 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - Workspace list, preview, watcher, settings, readiness, error, and registry events route only to the live frame registered for their captured owner and generation, and contain the minimum logical data required by that renderer.
 - External opening is one closed `openExternal(destination)` intent. Main validates the application-origin main-frame sender before a bounded one-field payload, independently classifies the destination with the shared WHATWG policy, and never accepts a renderer confirmation flag. Credential-free HTTP(S), mailto, and normalized bare hostnames delegate directly; credential-bearing HTTP(S), file, and non-executable custom schemes require a main-owned window-modal warning; relative/fragment-only, malformed/control-character, javascript, data, and blob values never reach Electron shell.
 - Local raster selection, resolution, and authorization are closed asset intents. Main derives the tab/window owner, canonicalizes after symlink resolution, validates automatic root/document-directory containment or an exact chooser-selected `FileKey`, and issues only the exact-resource bearer described by ADR 0009. Possession of that bearer is the sole documented cross-window authority exception; paths and renderer IDs remain non-authoritative.
+- Remote Load, embedded resolution, and image revocation are separate closed asset intents. Main validates the application-origin sender and owned tab before the bounded node/source/generation tuple, performs network or base64 work only in the main-owned acquisition service from ADR 0010, and returns only a typed outcome plus an image-only bearer; the preload exposes no transport, response bytes, DNS data, or generic fetch primitive.
 - The renderer continues to prevent ordinary, middle, drag, and unapproved modified navigation plus all popup creation. A document link may request the external-opening intent only from the explicit actions in Spec 0004; parsing, rendering, focus, plain clicks, and programmatic changes remain ambient-effect free.
 
 ### Platform and identity

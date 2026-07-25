@@ -3,7 +3,7 @@ import { once } from 'node:events'
 import os from 'node:os'
 import path from 'node:path'
 
-import { _electron, type ElectronApplication } from '@playwright/test'
+import { _electron, expect, type ElectronApplication } from '@playwright/test'
 
 const profiles = new WeakMap<ElectronApplication, string>()
 const launchAttempts = 3
@@ -76,6 +76,13 @@ export async function callMain<T>(
     },
     { exportName, args: [...args] },
   ) as Promise<T>
+}
+
+export async function focusMarkzen(electronApp: ElectronApplication): Promise<void> {
+  const page = await electronApp.firstWindow()
+  await page.bringToFront()
+  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus())
+  await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => Boolean(BrowserWindow.getFocusedWindow()))).toBe(true)
 }
 
 export async function findPackagedExecutable(): Promise<string> {

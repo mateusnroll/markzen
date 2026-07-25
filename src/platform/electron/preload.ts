@@ -33,7 +33,13 @@ const api: MarkzenApi = deepFreeze({
   asset: {
     authorize: (tabId: TabId, generation: number, source: string) => invoke<ImageIntentOutcome>(channels.assetAuthorize, { generation, source, tabId }),
     commit: (tabId: TabId, generation: number, candidateId: string) => invoke<ImageIntentOutcome>(channels.assetCommit, { candidateId, generation, tabId }),
+    loadRemote: (tabId: TabId, assetId: string, source: string, generation: number) =>
+      invoke<ImageIntentOutcome>(channels.assetRemoteLoad, { assetId, generation, source, tabId }),
+    resolveEmbedded: (tabId: TabId, assetId: string, source: string, generation: number) =>
+      invoke<ImageIntentOutcome>(channels.assetEmbeddedResolve, { assetId, generation, source, tabId }),
     resolve: (tabId: TabId, generation: number, source: string) => invoke<ImageIntentOutcome>(channels.assetResolve, { generation, source, tabId }),
+    revoke: (tabId: TabId, assetId: string, source: string, generation: number) =>
+      invoke<void>(channels.assetRevoke, { assetId, generation, source, tabId }),
     select: (tabId: TabId, generation: number) => invoke<ImageIntentOutcome>(channels.assetSelect, { generation, tabId }),
   },
   bootstrap: () => invoke<BootstrapPayload>(channels.bootstrap),

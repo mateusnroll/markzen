@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md)
+**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md)
 
 ## Context
 
@@ -28,7 +28,7 @@ TipTap's editor model is semantic while Markdown contains alternate spellings, u
 
 - Opaque nodes render through collision-resistant placeholders. After TipTap canonical serialization, placeholders are replaced with their exact source slices before encoding.
 - Serializer-generated newline sequences adopt the document's uniform or dominant convention; opaque slices retain their original bytes. BOM state is reapplied exactly once.
-- Link marks preserve their stored destination independently from opening policy. Spec 0004 renders focusable non-anchor link spans and permits only its explicit safe or main-confirmed external-opening actions. Spec 0005 admits only validated local raster pixels through a transient non-serialized asset URL; Markdown still serializes the stored source/alt/title, while main-owned Save As may return an explicit trusted source rebase. The independently authored GFM table fixture covers all alignments, escaped/code pipes, links, nested marks, Unicode, empty cells, and uneven valid rows.
+- Link marks preserve their stored destination independently from opening policy. Spec 0004 renders focusable non-anchor link spans and permits only its explicit safe or main-confirmed external-opening actions. Specs 0005–0006 admit validated local, remote, or embedded raster pixels only through a transient non-serialized asset URL; acquisition state, origin labels, generations, errors, tokens, and bytes never enter Markdown. Markdown always serializes the exact stored remote/data source and stored alt/title, while main-owned Save As may return an explicit trusted rebase only for local sources. The independently authored GFM table fixture covers all alignments, escaped/code pipes, links, nested marks, Unicode, empty cells, and uneven valid rows.
 
 ## Consequences
 

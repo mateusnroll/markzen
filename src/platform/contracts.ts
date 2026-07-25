@@ -251,12 +251,15 @@ export type ImageAsset = {
 export type ImageIntentOutcome =
   | { readonly candidate: ImageCandidate; readonly kind: 'candidate' }
   | { readonly asset: ImageAsset; readonly kind: 'authorized' }
-  | { readonly kind: 'blocked' | 'cancelled' | 'error' | 'mismatch' }
+  | { readonly kind: 'blocked' | 'cancelled' | 'error' | 'mismatch' | 'retryable' | 'stale' }
 
 export interface MarkzenAssetCapability {
   authorize(tabId: TabId, generation: number, source: string): Promise<PlatformResult<ImageIntentOutcome>>
   commit(tabId: TabId, generation: number, candidateId: string): Promise<PlatformResult<ImageIntentOutcome>>
+  loadRemote(tabId: TabId, assetId: string, source: string, generation: number): Promise<PlatformResult<ImageIntentOutcome>>
+  resolveEmbedded(tabId: TabId, assetId: string, source: string, generation: number): Promise<PlatformResult<ImageIntentOutcome>>
   resolve(tabId: TabId, generation: number, source: string): Promise<PlatformResult<ImageIntentOutcome>>
+  revoke(tabId: TabId, assetId: string, source: string, generation: number): Promise<PlatformResult<void>>
   select(tabId: TabId, generation: number): Promise<PlatformResult<ImageIntentOutcome>>
 }
 
