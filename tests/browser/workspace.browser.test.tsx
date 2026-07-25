@@ -167,14 +167,15 @@ describe('spec 0003 preview tabs', () => {
     expect(document.querySelector('[data-testid="empty-document-message"]')?.textContent).toBe('Select a file from the sidebar')
   })
 
-  test('AC47 AC53 AC54: preview tabs expose non-visual state and pointer or accessible Keep Open promotion', async () => {
+  test('AC47 AC53 AC54 and spec 0007 AC8: preview tabs expose non-visual state and keyboard or pointer Keep Open promotion', async () => {
     const gateway = new WorkspaceFakeGateway()
     await renderDocumentWorkspace(gateway, [{ id: 'preview', preview: true, title: 'Draft' }])
     const tab = document.querySelector<HTMLButtonElement>('[data-testid="document-tab"]')!
     expect(tab.classList.contains('document-tab-preview')).toBe(true)
     expect(tab.getAttribute('aria-label')).toContain('Preview')
-    const keep = document.querySelector<HTMLButtonElement>('[data-testid="preview-keep-open"]')!
-    await userEvent.click(keep)
+    expect(tab.getAttribute('aria-description')).toContain('Cmd/Ctrl+Enter')
+    tab.focus()
+    await userEvent.keyboard(navigator.platform.includes('Mac') ? '{Meta>}{Enter}{/Meta}' : '{Control>}{Enter}{/Control}')
     expect(tab.classList.contains('document-tab-preview')).toBe(false)
 
     root?.unmount()

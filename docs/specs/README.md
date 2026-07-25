@@ -33,6 +33,7 @@ Post-rewrite feature specs continue the same lifecycle:
 | # | Feature | Status |
 |---|---|---|
 | 0006 | [Remote and embedded images](0006-remote-and-embedded-images.md) | Draft |
+| 0007 | [Native chrome and editor polish](0007-native-chrome-and-editor-polish.md) | Implemented |
 
 ## Scenario routing
 

@@ -77,10 +77,6 @@ button {
   user-select: none;
 }
 
-.titlebar[data-platform="darwin"] {
-  padding-left: 78px;
-}
-
 .window-drag-region {
   -webkit-app-region: drag;
   display: flex;

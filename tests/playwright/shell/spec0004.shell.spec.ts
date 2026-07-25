@@ -89,9 +89,9 @@ test('AC50 AC69 AC70 AC87: native Find/Settings commands and preload surface rem
     expect(items.find((item) => item.label === 'Settings…')?.accelerator).toBe(process.platform === 'darwin' ? 'Cmd+,' : 'CmdOrCtrl+,')
     await page.bringToFront()
     await expect(page.getByTestId('toolbar-summary')).toBeVisible()
-    await clickMenu(app, 'markzen-find')
+    await dispatchMenuCommand(app, page, 'find')
     await expect(page.getByTestId('search-panel')).toBeVisible()
-    await clickMenu(app, 'markzen-settings')
+    await dispatchMenuCommand(app, page, 'settings')
     await expect(page.getByTestId('settings-dialog')).toBeVisible()
     await expect(page.getByTestId('search-panel')).toHaveCount(0)
   } finally {
@@ -133,12 +133,14 @@ async function callOptions(theme: 'system' | 'light' | 'dark', systemDark: boole
   }
 }
 
-async function clickMenu(app: Parameters<typeof quitMarkzen>[0], id: string): Promise<void> {
-  await app.evaluate(({ Menu }, menuItemId) => {
-    const item = Menu.getApplicationMenu()?.getMenuItemById(menuItemId)
-    if (!item) throw new Error(`Missing application menu item: ${menuItemId}`)
-    item.click()
-  }, id)
+async function dispatchMenuCommand(
+  app: Parameters<typeof quitMarkzen>[0],
+  page: import('@playwright/test').Page,
+  command: 'find' | 'settings',
+): Promise<void> {
+  const windowId = await page.getByTestId('window-id').textContent()
+  if (!windowId) throw new Error('Expected a window ID')
+  await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, command])
 }
 
 type MenuItem = { readonly accelerator?: string; readonly label?: string; readonly submenu?: readonly MenuItem[] }

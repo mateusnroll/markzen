@@ -72,6 +72,33 @@ describe('spec 0004 formatting toolbar', () => {
     await frame()
     expect(document.querySelector('[data-testid="heading-menu"]')).toBeNull()
   })
+
+  test('spec 0007 AC10–AC12: the outlined vertical toolbar has two collapsed controls, four-way roving focus, and converts an H1', async () => {
+    await renderWorkspace([headingSeed(1)], {})
+    await userEvent.click(editor().querySelector('h1')!)
+    await frame()
+
+    const collapsed = byTestId<HTMLElement>('formatting-toolbar')
+    expect(getComputedStyle(collapsed).position).toBe('absolute')
+    expect(getComputedStyle(collapsed).right).toBe('8px')
+    expect(getComputedStyle(collapsed).flexDirection).toBe('column')
+    expect(collapsed.querySelectorAll(':scope > button')).toHaveLength(2)
+    expect(collapsed.querySelectorAll('svg.toolbar-icon')).toHaveLength(2)
+
+    collapsed.querySelector<HTMLButtonElement>('button')?.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(collapsed.querySelectorAll('button').item(1))
+    await userEvent.keyboard('{ArrowUp}')
+    expect(document.activeElement).toBe(collapsed.querySelectorAll('button').item(0))
+
+    await userEvent.click(page.getByTestId('toolbar-summary'))
+    const heading = page.getByTestId('toolbar-heading')
+    await expect.element(heading).toBeEnabled()
+    await userEvent.click(heading)
+    await userEvent.click(page.getByTestId('heading-paragraph'))
+    expect(editor().querySelector('h1')).toBeNull()
+    expect(editor().querySelector('p')?.textContent).toBe('Heading')
+  })
 })
 
 describe('spec 0005 tables', () => {

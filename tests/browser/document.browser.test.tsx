@@ -90,8 +90,8 @@ describe('spec 0002 rich editor', () => {
     expect(editor.querySelector('img:not(.ProseMirror-separator)')).toBeNull()
     expect(editor.querySelector('[data-markzen-image]')?.getAttribute('aria-label')).toBe('Diagram, blocked')
     expect(editor.querySelector('script')).toBeNull()
-    expect(getComputedStyle(byTestId('document-page')).maxWidth).toBe('720px')
-    expect(getComputedStyle(editor).lineHeight).toBe('30.6px')
+    expect(getComputedStyle(byTestId('document-page')).maxWidth).toBe('860px')
+    expect(getComputedStyle(editor).lineHeight).toBe('23.2px')
   })
 
   test('AC35-AC36 AC48: preservation fallback is complete, read-only, and explains why rich editing is blocked', async () => {
@@ -103,8 +103,8 @@ describe('spec 0002 rich editor', () => {
     expect(byTestId('preservation-view').textContent).toContain('A\\x00\\xFF\\x0A')
     expect(byTestId('preservation-explanation').textContent).toContain('disabled to prevent data loss')
     expect(document.querySelector('[contenteditable="true"]')).toBeNull()
-    expect(byTestId<HTMLButtonElement>('save-document').disabled).toBe(true)
-    expect(byTestId<HTMLButtonElement>('save-as-document').disabled).toBe(false)
+    expect(document.querySelector('[data-testid="save-document"]')).toBeNull()
+    expect(document.querySelector('[data-testid="save-as-document"]')).toBeNull()
   })
 })
 
@@ -188,7 +188,7 @@ describe('spec 0002 tabs, title, focus, and accessibility', () => {
     expect(title.getAttribute('aria-label')).toBe('Document title')
     await userEvent.fill(title, 'CON')
     expect(byTestId('title-error').textContent).toContain('reserved')
-    expect(byTestId<HTMLButtonElement>('save-document').disabled).toBe(true)
+    expect(title.getAttribute('aria-invalid')).toBe('true')
     await userEvent.fill(title, 'Changed')
     expect(byTestId('document-tab').getAttribute('aria-label')).toContain('dirty')
     await userEvent.keyboard('{Escape}')
@@ -266,7 +266,7 @@ describe('spec 0002 tabs, title, focus, and accessibility', () => {
 
     editable().dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
     await userEvent.keyboard('字')
-    byTestId<HTMLButtonElement>('save-document').click()
+    gateway.emitCommand('save')
     await frame()
     expect(JSON.stringify(saved?.document)).toContain('文字')
 

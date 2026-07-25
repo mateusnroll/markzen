@@ -36,7 +36,9 @@ test('AC15 AC16 AC49 AC67 AC168: controlled document performance report', async 
 
   await page.goto('/?fixture=performance-10mb')
   const openStart = performance.now()
-  await page.getByTestId('open-document').click()
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('markzen:fixture-command', { detail: 'open' }))
+  })
   await page.getByTestId('document-title').waitFor({ state: 'visible', timeout: 120_000 })
   await page.getByTestId('document-title').evaluate((element) => {
     if (!(element instanceof HTMLInputElement) || element.value !== 'large') throw new Error('10MB document did not open')

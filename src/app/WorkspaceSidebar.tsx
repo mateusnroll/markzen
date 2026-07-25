@@ -301,6 +301,7 @@ export function WorkspaceSidebar({
       data-testid="workspace-sidebar"
       style={{ width: effectiveWidth }}
     >
+      <div aria-hidden="true" className="workspace-native-titlebar" data-testid="workspace-native-titlebar" />
       <div className="workspace-tree-scroll" onScroll={(event) => setRenderStart(Math.max(0, Math.floor(event.currentTarget.scrollTop / 28)))}>
         {roots.map((root, rootIndex) => {
           const expanded = expandedRoots.has(root.rootId)

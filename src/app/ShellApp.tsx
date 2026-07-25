@@ -168,7 +168,7 @@ export function ShellApp({
     void operation()
   }, [])
 
-  const windowControls = platformName === 'darwin' ? null : (
+  const windowControls = platformName === 'linux' ? (
     <div className="window-controls" data-testid="window-controls">
       <button
         aria-label="Minimize window"
@@ -199,7 +199,7 @@ export function ShellApp({
         <span aria-hidden="true">×</span>
       </button>
     </div>
-  )
+  ) : null
 
   const effectiveTheme = settingsSnapshot.theme === 'system' ? appearance : settingsSnapshot.theme
 
@@ -208,18 +208,22 @@ export function ShellApp({
     <main
       className="app-shell"
       data-forced-colors={String(environment.forcedColors)}
+      data-platform={platformName}
       data-reduced-motion={String(environment.reducedMotion)}
       data-testid="app-shell"
       data-theme={effectiveTheme}
+      data-window-kind={workspace ? 'workspace' : 'single-file'}
       data-window-state-ready={String(windowStateReady)}
       data-window-status={state.status}
     >
-      <header className="titlebar" data-platform={platformName} data-testid="titlebar">
-        <div className="window-drag-region" data-testid="window-drag-region">
-          <span className="app-name">Markzen</span>
-        </div>
-        {windowControls}
-      </header>
+      {platformName === 'linux' ? (
+        <header className="titlebar" data-platform={platformName} data-testid="titlebar">
+          <div className="window-drag-region" data-testid="window-drag-region">
+            <span className="app-name">Markzen</span>
+          </div>
+          {windowControls}
+        </header>
+      ) : null}
       <section aria-label="Document workspace" className="shell-content" data-testid="shell-content">
         <DocumentWorkspace
           closeRequest={closeRequest}

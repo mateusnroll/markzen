@@ -28,6 +28,7 @@ import {
   type ApplicationCommand,
   type DirectoryEntry,
   type PlatformName,
+  type RendererCommand,
   type DocumentFilePayload,
   type DocumentCommand,
   type DocumentIntentOutcome,
@@ -152,17 +153,22 @@ export function getWindowOptionsForPlatform(
 ): BrowserWindowConstructorOptions {
   const platformName = normalizePlatform(platformValue)
   const isMac = platformName === 'darwin'
-  const dark = theme === 'dark' || (theme === 'system' && systemDark)
+  const isWindows = platformName === 'win32'
+  const palette = nativeChromePalette(theme, systemDark)
   return {
     autoHideMenuBar: true,
-    backgroundColor: dark ? '#191715' : '#f7f5f2',
-    frame: isMac,
+    backgroundColor: palette.background,
+    frame: platformName !== 'linux',
     height: 800,
     minHeight: 320,
     minWidth: 480,
     show: false,
     title: 'Markzen',
-    ...(isMac ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 14 } } : {}),
+    ...(isMac ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 14, y: 13 } } : {}),
+    ...(isWindows ? {
+      titleBarOverlay: { color: palette.background, height: 40, symbolColor: palette.foreground },
+      titleBarStyle: 'hidden' as const,
+    } : {}),
     webPreferences: {
       allowRunningInsecureContent: false,
       contextIsolation: true,
@@ -176,6 +182,19 @@ export function getWindowOptionsForPlatform(
     },
     width: 1200,
   }
+}
+
+function nativeChromePalette(theme: ThemePreference, systemDark = nativeTheme.shouldUseDarkColors): { readonly background: string; readonly foreground: string } {
+  const dark = theme === 'dark' || (theme === 'system' && systemDark)
+  return dark
+    ? { background: '#191715', foreground: '#f4f1ec' }
+    : { background: '#f7f5f2', foreground: '#202124' }
+}
+
+function syncNativeChrome(window: BrowserWindow, theme: ThemePreference): void {
+  if (process.platform !== 'win32' || window.isDestroyed()) return
+  const palette = nativeChromePalette(theme)
+  window.setTitleBarOverlay({ color: palette.background, height: 40, symbolColor: palette.foreground })
 }
 
 export async function createMarkzenWindow(kind: WindowKind = 'single-file', initialFolder?: Path): Promise<WindowId> {
@@ -276,6 +295,12 @@ function dispatchApplicationCommand(command: ApplicationCommand): void {
       created?.window.webContents.send(channels.documentCommand, command)
     })
   }
+}
+
+function dispatchApplicationCommandForShellTest(windowId: string, command: RendererCommand): void {
+  const record = [...windowsByContents.values()].find((candidate) => candidate.id === windowId)
+  if (!record || record.window.isDestroyed()) throw new Error(`Unknown window: ${windowId}`)
+  record.window.webContents.send(channels.documentCommand, command)
 }
 
 function updateMenuEnablement(): void {
@@ -667,7 +692,10 @@ async function initializeSettings(): Promise<void> {
   })
   settingsService.subscribe((snapshot) => {
     for (const record of windowsByContents.values()) {
-      if (!record.window.isDestroyed()) record.window.webContents.send(channels.settingsSnapshot, snapshot)
+      if (!record.window.isDestroyed()) {
+        syncNativeChrome(record.window, snapshot.theme)
+        record.window.webContents.send(channels.settingsSnapshot, snapshot)
+      }
     }
   })
 }
@@ -679,7 +707,10 @@ function effectiveAppearance(): EffectiveTheme {
 function broadcastAppearance(): void {
   const appearance = effectiveAppearance()
   for (const record of windowsByContents.values()) {
-    if (!record.window.isDestroyed()) record.window.webContents.send(channels.settingsAppearance, appearance)
+    if (!record.window.isDestroyed()) {
+      syncNativeChrome(record.window, settingsService?.snapshot().theme ?? 'system')
+      record.window.webContents.send(channels.settingsAppearance, appearance)
+    }
   }
 }
 
@@ -1582,7 +1613,7 @@ app.on('will-quit', () => nativeTheme.removeListener('updated', broadcastAppeara
 Object.defineProperty(app, 'markzenShellHarness', {
   configurable: false,
   enumerable: false,
-  value: Object.freeze({ createMarkzenWindow, emitWindowStateForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentWatcherCount, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, openFolderForShellTest, runRealFsRoundTrip }),
+  value: Object.freeze({ createMarkzenWindow, dispatchApplicationCommandForShellTest, emitWindowStateForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentWatcherCount, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, openFolderForShellTest, runRealFsRoundTrip }),
   writable: false,
 })
 

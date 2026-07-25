@@ -183,7 +183,8 @@ export class DocumentGateway implements DocumentGatewayPort {
     return this.openPath(input.path, input.id)
   }
 
-  onCommand(): () => void {
+  onCommand(listener: (command: import('../platform/contracts').RendererCommand) => void): () => void {
+    void listener
     return () => undefined
   }
 

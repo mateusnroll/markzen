@@ -689,14 +689,6 @@ export function DocumentWorkspace({
         />
       ) : null}
       <div className="document-workspace" data-testid="document-workspace" onKeyDownCapture={handleWorkspaceKeyDown}>
-      <div className="document-command-row">
-        <button data-testid="open-document" onClick={openDocument} type="button">Open</button>
-        <button data-testid="save-document" disabled={!active || !titleValidation.valid || Boolean(active.preservation)} onClick={save} type="button">
-          Save
-        </button>
-        <button data-testid="save-as-document" disabled={!active || !titleValidation.valid} onClick={saveAs} type="button">Save As</button>
-        {active?.preview ? <button data-testid="preview-keep-open" onClick={() => pinTab(active.id)} type="button">Keep Open</button> : null}
-      </div>
       <div
         className="tab-strip"
         data-testid="tab-strip"
@@ -714,6 +706,7 @@ export function DocumentWorkspace({
               return (
                 <button
                   aria-controls="active-document-panel"
+                  aria-description={tab.preview ? 'Preview tab. Press Cmd/Ctrl+Enter to Keep Open.' : undefined}
                   aria-label={`${label}${tab.preview ? ', Preview' : ''}${isDirty ? ', dirty' : ''}`}
                   aria-selected={selected}
                   className={`document-tab${tab.preview ? ' document-tab-preview' : ''}`}
@@ -726,7 +719,10 @@ export function DocumentWorkspace({
                   }}
                   onDoubleClick={() => pinTab(tab.id)}
                   onKeyDown={(event) => {
-                    if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && tab.preview) {
+                      event.preventDefault()
+                      pinTab(tab.id)
+                    } else if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
                       event.preventDefault()
                       navigateTabFocus(tab.id, event.key)
                     } else if (event.key === 'Enter' || event.key === ' ') {
@@ -789,26 +785,36 @@ export function DocumentWorkspace({
       ) : null}
 
       {active ? (
-        <section aria-label={active.title || 'Untitled document'} className="document-surface" id="active-document-panel" role="tabpanel">
+        <section
+          aria-label={active.title || 'Untitled document'}
+          className="document-surface"
+          id="active-document-panel"
+          onMouseDown={(event) => {
+            if (active.preservation || event.button !== 0 || !(event.target instanceof Element)) return
+            const surface = event.currentTarget
+            if (event.clientX >= surface.getBoundingClientRect().left + surface.clientWidth) return
+            if (event.target.closest('button, input, textarea, select, a, dialog, [role="menu"], [role="toolbar"], .document-issue, .preservation-panel')) return
+            const titleGutter = surface.querySelector<HTMLElement>('.document-title-gutter')
+            const title = surface.querySelector<HTMLInputElement>('[data-testid="document-title"]')
+            if (titleGutter && title) {
+              const titleBounds = titleGutter.getBoundingClientRect()
+              if (event.clientY >= titleBounds.top && event.clientY <= titleBounds.bottom) {
+                event.preventDefault()
+                title.focus()
+                return
+              }
+            }
+            if (event.target.closest('[contenteditable="true"]')) return
+            event.preventDefault()
+            focusEditorAtClosestLine(active.editor, event.clientY)
+          }}
+          role="tabpanel"
+        >
           <div
             className="document-page"
             data-testid="document-page"
-            onMouseDown={(event) => {
-              if (event.target !== event.currentTarget || active.preservation) return
-              event.preventDefault()
-              const position = active.editor.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
-              active.editor.chain().focus().setTextSelection(position ?? active.editor.state.doc.content.size).run()
-            }}
           >
-            <div
-              className="document-title-gutter"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) {
-                  event.preventDefault()
-                  document.querySelector<HTMLInputElement>('[data-testid="document-title"]')?.focus()
-                }
-              }}
-            >
+            <div className="document-title-gutter">
               {!active.title ? <span aria-hidden="true" className="untitled-fallback">Untitled</span> : null}
               <input
                 aria-describedby={titleError ? 'document-title-error' : undefined}
@@ -1046,6 +1052,18 @@ function adoptGatewayResult(tab: WorkspaceTab, document: GatewayDocument, snapsh
     ...(document.secondaryPath ? { secondaryPath: document.secondaryPath } : {}),
     title: document.title,
   }
+}
+
+function focusEditorAtClosestLine(editor: Editor, clientY: number): void {
+  const editorBounds = editor.view.dom.getBoundingClientRect()
+  const top = editorBounds.top + 1
+  const bottom = Math.max(top, editorBounds.bottom - 1)
+  const position = editor.view.posAtCoords({
+    left: editorBounds.left + 1,
+    top: Math.min(Math.max(clientY, top), bottom),
+  })?.pos
+  const fallback = clientY < editorBounds.top ? 1 : editor.state.doc.content.size
+  editor.chain().focus().setTextSelection(position ?? fallback).run()
 }
 
 function persistentDocumentsEqual(left: ProseMirrorNode, right: ProseMirrorNode): boolean {
