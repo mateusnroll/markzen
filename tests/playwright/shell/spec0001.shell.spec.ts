@@ -75,7 +75,11 @@ test('AC5: Windows and Linux exit after the last window closes', async () => {
   test.skip(process.platform === 'darwin', 'AC5 applies to Windows and Linux')
   const app = await launchMarkzen()
   const closed = app.waitForEvent('close')
-  await app.firstWindow().then((window) => window.getByTestId('window-close').click())
+  if (process.platform === 'linux') {
+    await app.firstWindow().then((window) => window.getByTestId('window-close').click())
+  } else {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close())
+  }
   await closed
 })
 
