@@ -1,66 +1,180 @@
 # Backlog — Future Spec Candidates
 
-Ideas that will likely become numbered specs but aren't scheduled yet. Each entry carries just enough context (origin, prior decisions, gotchas) that drafting the spec later doesn't require re-research. When one is picked up: draft the spec from `TEMPLATE.md` with the next free number and delete the entry here.
+This is Markzen's ordered product backlog after the initial rewrite. **In scope**
+items are intended to become numbered specs in the order shown. **Later** items
+remain deliberate candidates, but are not part of the current sequence.
 
-## Auto-update
+Each entry preserves the product intent, relevant prior decisions, and known
+design or verification boundaries without pre-approving behavior. When an item
+is picked up, draft it from `TEMPLATE.md` with the next free number, resolve its
+open decisions, and delete or narrow the entry here. If it changes behavior from
+an Implemented spec, update and reapprove that affected spec as required.
 
-Ship updates via **electron-updater** (electron-builder's updater) with **GitHub Releases as the update feed** — no server to run; CI publishes artifacts + `latest.yml` on each tagged release and the app checks the feed directly. Decided 2026-07; spec 0001 already locks electron-builder as the packager for this reason.
+## In scope
 
-Cost/signing facts gathered up front (recheck at implementation):
+### 1. JSON document editing
 
-- **macOS**: Apple Developer Program ($99/yr) required — Squirrel.Mac refuses unsigned updates and notarization is needed for distribution anyway. The only real recurring cost.
-- **Windows**: free OV signing for qualifying OSS via the [SignPath Foundation](https://signpath.org/) (CI-integrated, key on their HSM); fallback Azure Trusted Signing (~$10/mo). Unsigned updates work with electron-updater but trigger SmartScreen.
-- **Linux**: $0 — AppImage self-updates via electron-updater; Flatpak/Snap stores own their update mechanism entirely.
-- Alternative considered and rejected: [update.electronjs.org](https://github.com/electron/update.electronjs.org) (free, official) — macOS/Windows only and pairs with Squirrel/Forge rather than electron-builder.
+Treat `.json` documents as first-class Markzen documents with a polished
+structured viewing and editing experience. Users should be able to navigate,
+search, expand and collapse, and edit objects, arrays, properties, and values
+with clear syntax, indentation, and validation.
 
-Testability hook for the eventual spec: electron-updater's *generic* provider can point at a local HTTP server in the shell-smoke suite, so "app on vN discovers, downloads, and stages vN+1" is an assertable AC.
+JSON documents must reuse Markzen's normal document lifecycle and
+loss-prevention behavior. The eventual spec must resolve malformed input,
+duplicate keys, number fidelity, formatting and serialization policy, large
+documents, edit validation, and the boundary between structured controls and
+direct text editing.
 
-## Source mode
+### 2. Other file types
 
-Raw-Markdown editing in CodeMirror 6, toggled per-tab with Cmd/Ctrl+E. Designed in old ADR 0004 (sync rules: hand off content only on mode switch, independent undo stacks, malformed Markdown must not throw) but **never built** — no CodeMirror dependency ever landed.
+Provide broad, intentionally modest support for files that do not warrant a
+specialized Markzen editor. Code and text files such as `.js`, `.html`, `.css`,
+and `.txt` should be editable with a good ProseMirror-based text experience and
+syntax highlighting where applicable. Other supported formats such as `.png`,
+`.jpg`, and `.webm` should have useful view-only presentation.
 
-## Additional tree file types
+This work should favor coverage, safety, and reuse over format-specific
+features. It must not grow into a collection of secondary IDE, image-editor,
+media-editor, or office-suite implementations. The eventual spec must classify
+supported extensions, editing eligibility, decoding and size limits, syntax
+selection, binary/media rendering boundaries, save behavior, and accessible
+fallbacks. CSV and JSON remain separate first-class document types rather than
+being reduced to this generic path.
 
-Milestone 0003 deliberately shows unsupported file types as subdued, disabled tree rows so folder context remains visible, but opens only `.md`, `.markdown`, and `.txt`. A later spec should classify additional text and binary formats as view-only or light-editing documents, define safe decoding/size limits and save eligibility per type, and replace each row's disabled state only when its document lifecycle and loss-prevention behavior are approved.
+Milestone 0003 currently shows unsupported file types as subdued, disabled tree
+rows and opens only `.md`, `.markdown`, and `.txt`. Those rows should become
+available only after their document lifecycle and loss-prevention behavior are
+approved.
 
-## Fuzzy file finder & tab quick switcher
+### 3. Nested-list presentation
 
-Cmd/Ctrl+P subsequence matching (VS Code style) over a flat list of all Markdown files in the folder, plus a tab switcher modal. Old ADR 0011 chose `fuzzysort` and specified the flat-list scan kept fresh by the watcher; never built. Multi-root workspaces (milestone 0003) mean the flat list spans all roots.
+Make nested Markdown lists easier to read by drawing a clear vertical guide for
+each indentation level and allowing nested sections to be collapsed and
+expanded.
 
-## Full-text content search
+The eventual spec must define the pointer and keyboard controls, focus and
+screen-reader state, what remains searchable or selectable while collapsed,
+whether collapse state survives tab switches or restarts, and how hidden
+descendants participate in copy, editing, undo, and save. Presentation state
+must never remove or silently alter serialized list content.
 
-Search across body text of all files in the open folder with ranking and excerpts. Old ADR 0012 chose Tantivy (Rust, in-memory index) — **that choice is void under Electron** (no Rust process). Re-evaluate: a worker thread in the main process with a JS index (MiniSearch/Orama/FlexSearch) is the natural Electron shape; the ADR's IPC/memory concerns read differently when the "backend" is Node.
+### 4. Table and image reordering
 
-## Expanded settings
+Spec 0005 deliberately ships table insertion, navigation, add, and delete
+actions plus image insertion, metadata editing, and deletion without structural
+reordering. Add row and column reordering plus image movement through one shared
+interaction model.
 
-Font family/size, line width, auto-save (+ delay), spell check. Old ADR 0013 designed the persistence format for all of these; the rewrite milestones implement only theme, toolbar mode, and sidebar width. Each later approved setting directly extends milestone 0003's closed typed schema rather than using a generic registry. Auto-save is behavior-heavy because it must extend milestone 0002's dirty-state, save-transaction, and pending-rename rules.
+The eventual spec must define pointer drag and keyboard grab behavior, legal
+targets, cancellation and blur/tab-switch cleanup, focus restoration,
+announcements, undo ownership, and touch behavior. Reordering must preserve
+table headers and alignment metadata plus image source serialization.
 
-## User-submitted diagnostics and hang detection
+### 5. Raw Markdown editing
 
-Spec 0008 covers opt-in Sentry release-health sessions, fatal JavaScript failures, Electron process-gone events, native minidumps, and a closed in-memory breadcrumb vocabulary. A later reliability spec may add a post-failure “Send diagnostic bundle” flow only after defining a user-visible preview, path and content redaction, explicit per-bundle confirmation, size/retention bounds, and safe handling of user-authored descriptions. The same spec should evaluate app-hang and stall detection separately because watchdog sampling, false positives, performance cost, and process-memory capture differ from crash reporting.
+Add raw-Markdown editing as a per-tab mode toggled with Cmd/Ctrl+E. The prior
+design direction used CodeMirror 6, transferred content only when switching
+modes, kept independent rich-text and source-mode undo histories, and required
+malformed Markdown never to throw. That design was never implemented and no
+CodeMirror dependency has landed, so the eventual spec must revalidate the
+dependency and synchronization contract before implementation.
 
-## Internal and fragment link navigation
+Mode switching must preserve the existing serialization-integrity and
+loss-prevention guarantees. The spec must define dirty state, selection and
+scroll restoration, failed rich-mode parsing, save ownership, external changes,
+and what happens when a tab closes or switches while either mode has pending
+work.
 
-Milestone 0004 preserves relative paths and `#fragment` destinations but does not follow them. A future spec should define whether Markdown-file links focus/open a Markzen tab, how fragments resolve to headings, how paths interact with multi-root workspaces, and how missing or ambiguous targets surface.
+### 6. Remove or reorder sidebar roots and file-tree CRUD
 
-## Native link elements and unsafe-link preference
+Add removal and reordering of workspace roots plus create, delete, rename, and
+move operations in the file tree. Milestone 0003 deliberately deferred these
+operations together because they share context-menu and command
+infrastructure.
 
-Milestone 0004 deliberately renders each editable link as a focusable `span` with link semantics while keeping the model, focus contract, and opening policy independent of that tag. A later accessibility-focused spec should migrate rich-editor links to semantic `<a>` elements without reintroducing ambient navigation, changing Markdown serialization, or making ordinary clicks leave editing context.
+The eventual spec must preserve canonical identity, root containment, preview
+and pinned tabs, watcher invalidation, cross-window ownership, the shared save
+transaction, external-conflict handling, and loss-safe behavior for open or
+dirty documents affected by a tree operation.
 
-The same future work should add a closed `allowUnsafeLinks` setting, default `false`, to milestone 0003's main-owned settings schema. When enabled it may bypass the native warning only for milestone 0004's confirmable absolute destinations (credential-bearing HTTP(S), `file:`, and non-executable custom schemes); relative/fragment-only, malformed/control-character, `javascript:`, `data:`, and `blob:` destinations remain non-openable. The preference must be supplied at bootstrap, broadcast by authoritative revision, and enforced in main rather than accepted as a renderer-provided bypass flag.
+### 7. Fuzzy file finder and tab quick switcher
 
-## Full Unicode search case folding
+Add Cmd/Ctrl+P subsequence matching in the style of VS Code over a flat list of
+openable files in the workspace, together with a tab-switcher modal. The old
+ADR 0011 selected `fuzzysort` and a watcher-maintained flat-file scan, but that
+design was never implemented and must be re-evaluated before adding a
+dependency.
 
-Milestone 0004 search intentionally implements NFC normalization plus ECMAScript locale-independent lowercase conversion with source-offset mapping. If real documents demonstrate a need for equivalences outside that contract—such as full Unicode case-fold expansions—a future spec should select a maintained Unicode data source or dependency, enumerate approved equivalences and locale behavior, preserve correct ProseMirror offsets, and measure the added search cost before changing matching semantics.
+The finder must span all roots in a multi-root workspace and, by this point in
+the sequence, account for the approved CSV, JSON, code, text, and view-only
+document types rather than assuming a Markdown-only workspace. The eventual
+spec must define ranking, path disambiguation, large-workspace performance,
+watcher freshness, preview versus pinned activation, keyboard behavior, and
+accessible result state.
 
-## Active SVG images
+### 8. Expanded settings
 
-Milestone 0005 preserves SVG sources but deliberately blocks active SVG rendering. A future security-focused spec may permit SVG after choosing and testing a sanitization or rasterization boundary that cannot execute script, navigate, fetch subresources, or escape the asset capability model.
+Add font family and size, line width, auto-save with a configurable delay, and
+spell check. The old ADR 0013 explored persistence for these settings, while
+the rewrite currently implements only theme, toolbar mode, and sidebar width.
 
-## Table and image reordering
+Each approved setting must extend milestone 0003's closed, typed,
+main-authoritative settings schema rather than introduce a generic registry.
+Auto-save requires particular care because it extends milestone 0002's dirty
+state, shared save transaction, external-conflict behavior, failure reporting,
+and pending-rename rules.
 
-Spec 0005 deliberately ships table insertion/navigation/add/delete actions and image insertion/metadata/delete without structural reordering. A later interaction spec may add row/column reordering plus image movement only after it defines one shared pointer-drag and keyboard-grab model, legal targets, cancellation/blur/tab-switch cleanup, focus restoration, announcements, undo ownership, and touch behavior. It must preserve table headers/alignment metadata and image source serialization.
+### 9. Auto-update
 
-## Remove / reorder sidebar roots & file tree CRUD
+Ship updates through **electron-updater** with **GitHub Releases as the update
+feed**. CI should publish platform artifacts and update metadata for tagged
+releases, and official builds should check that feed directly without requiring
+a Markzen-operated update server. Spec 0001 already chose electron-builder as
+the packager with this direction in mind.
 
-Milestone 0003 non-goals, deferred together: removing or reordering roots and create/delete/rename/move from the tree. These operations share context-menu infrastructure and must preserve canonical identity, preview tabs, watchers, and the shared save transaction.
+Cost and signing facts gathered in 2026-07 must be rechecked when the spec is
+drafted:
+
+- **macOS:** Apple Developer Program membership is required because
+  Squirrel.Mac refuses unsigned updates and public distribution also needs
+  notarization.
+- **Windows:** SignPath Foundation may provide free OV signing for qualifying
+  open-source projects; Azure Trusted Signing is the fallback. Unsigned updates
+  work technically but still encounter SmartScreen.
+- **Linux:** AppImage can self-update through electron-updater, while Flatpak
+  and Snap own their respective update mechanisms.
+- The rejected alternative was
+  [update.electronjs.org](https://github.com/electron/update.electronjs.org),
+  which is macOS/Windows-only and fits Squirrel/Forge rather than the selected
+  electron-builder path.
+
+The eventual shell-smoke suite can point electron-updater's generic provider at
+a local HTTP server to prove that an application on version N discovers,
+downloads, and stages version N+1 without contacting a public service.
+
+## Later
+
+### 1. Native link elements and unsafe-link preference
+
+Milestone 0004 renders each editable link as a focusable `span` with link
+semantics while keeping the document model, focus contract, and opening policy
+independent of that tag. A later accessibility-focused spec may migrate
+rich-editor links to semantic `<a>` elements without reintroducing ambient
+navigation, changing Markdown serialization, or making ordinary clicks leave
+the editing context.
+
+The same future work may add a closed `allowUnsafeLinks` setting, defaulting to
+`false`, to milestone 0003's main-owned settings schema. When enabled, it may
+bypass the native warning only for milestone 0004's confirmable absolute
+destinations: credential-bearing HTTP(S), `file:`, and non-executable custom
+schemes. Relative or fragment-only, malformed or control-character,
+`javascript:`, `data:`, and `blob:` destinations remain non-openable. The
+preference must be supplied at bootstrap, broadcast by authoritative revision,
+and enforced in main rather than accepted as a renderer-provided bypass.
+
+### 2. Active SVG images
+
+Milestone 0005 preserves SVG sources but deliberately blocks active SVG
+rendering. A later security-focused spec may permit SVG only after choosing and
+testing a sanitization or rasterization boundary that cannot execute script,
+navigate, fetch subresources, or escape the asset-capability model.
