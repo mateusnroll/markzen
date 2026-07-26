@@ -34,6 +34,7 @@ Post-rewrite feature specs continue the same lifecycle:
 |---|---|---|
 | 0006 | [Remote and embedded images](0006-remote-and-embedded-images.md) | Implemented |
 | 0007 | [Native chrome and editor polish](0007-native-chrome-and-editor-polish.md) | Implemented |
+| 0008 | [Opt-in pseudonymous usage and crash diagnostics](0008-opt-in-pseudonymous-telemetry.md) | Draft |
 
 ## Scenario routing
 

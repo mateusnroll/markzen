@@ -35,6 +35,10 @@ Search across body text of all files in the open folder with ranking and excerpt
 
 Font family/size, line width, auto-save (+ delay), spell check. Old ADR 0013 designed the persistence format for all of these; the rewrite milestones implement only theme, toolbar mode, and sidebar width. Each later approved setting directly extends milestone 0003's closed typed schema rather than using a generic registry. Auto-save is behavior-heavy because it must extend milestone 0002's dirty-state, save-transaction, and pending-rename rules.
 
+## User-submitted diagnostics and hang detection
+
+Spec 0008 covers opt-in Sentry release-health sessions, fatal JavaScript failures, Electron process-gone events, native minidumps, and a closed in-memory breadcrumb vocabulary. A later reliability spec may add a post-failure “Send diagnostic bundle” flow only after defining a user-visible preview, path and content redaction, explicit per-bundle confirmation, size/retention bounds, and safe handling of user-authored descriptions. The same spec should evaluate app-hang and stall detection separately because watchdog sampling, false positives, performance cost, and process-memory capture differ from crash reporting.
+
 ## Internal and fragment link navigation
 
 Milestone 0004 preserves relative paths and `#fragment` destinations but does not follow them. A future spec should define whether Markdown-file links focus/open a Markzen tab, how fragments resolve to headings, how paths interact with multi-root workspaces, and how missing or ambiguous targets surface.
