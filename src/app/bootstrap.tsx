@@ -163,7 +163,24 @@ const fixtures: Readonly<Record<string, Fixture>> = {
   },
   'csv-basic': {
     directories: [],
-    files: [{ bytes: 'name,note\nAda,hello\n', path: '/notes/people.csv' }],
+    files: [{
+      bytes: [
+        'name,team,role,city,status,score,last_review,focus,owner,note',
+        ...Array.from({ length: 30 }, (_, index) => [
+          `Person ${String(index + 1).padStart(2, '0')}`,
+          ['North', 'South', 'East', 'West'][index % 4],
+          ['Writer', 'Editor', 'Researcher'][index % 3],
+          ['Lisbon', 'Kyoto', 'Nairobi', 'São Paulo'][index % 4],
+          ['Active', 'Paused', 'Review'][index % 3],
+          String(72 + (index * 7) % 29),
+          `2026-07-${String((index % 26) + 1).padStart(2, '0')}`,
+          ['Clarity', 'Structure', 'Evidence', 'Tone'][index % 4],
+          `Owner ${(index % 6) + 1}`,
+          `"Review item, ${index + 1}"`,
+        ].join(',')),
+      ].join('\n'),
+      path: '/notes/people.csv',
+    }],
     workspaceRoots: ['/notes'],
   },
   'csv-stale': {

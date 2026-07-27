@@ -840,7 +840,7 @@ export function DocumentWorkspace({
       {active ? (
         <section
           aria-label={active.title || 'Untitled document'}
-          className="document-surface"
+          className={`document-surface${active.kind === 'csv' ? ' document-surface-csv' : ''}`}
           id="active-document-panel"
           onMouseDown={(event) => {
             if (active.preservation || active.kind === 'csv' || event.button !== 0 || !(event.target instanceof Element)) return
@@ -864,42 +864,46 @@ export function DocumentWorkspace({
           role="tabpanel"
         >
           <div
-            className="document-page"
+            className={`document-page${active.kind === 'csv' ? ' document-page-csv' : ''}`}
             data-testid="document-page"
           >
             <div className="document-title-gutter">
-              {!active.title ? <span aria-hidden="true" className="untitled-fallback">Untitled</span> : null}
-              <input
-                aria-describedby={titleError ? 'document-title-error' : undefined}
-                aria-invalid={titleError ? true : undefined}
-                aria-label="Document title"
-                className="document-title"
-                data-testid="document-title"
-                onChange={(event) => updateTitle(active.id, event.currentTarget.value.replace(/[\r\n]+/g, ''))}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    updateTitle(active.id, active.baselineTitle)
-                  } else if (event.key === 'Enter' || event.key === 'ArrowDown') {
-                    event.preventDefault()
-                    if (active.kind === 'csv') {
-                      document.querySelector<HTMLElement>('[data-csv-row="0"][data-csv-column="0"]')?.focus()
-                    } else active.editor.commands.focus('start')
-                  }
-                }}
-                onPaste={(event) => {
-                  const text = event.clipboardData.getData('text').replace(/[\r\n]+/g, '')
-                  if (text !== event.clipboardData.getData('text')) {
-                    event.preventDefault()
-                    const input = event.currentTarget
-                    const start = input.selectionStart ?? input.value.length
-                    const end = input.selectionEnd ?? start
-                    updateTitle(active.id, `${input.value.slice(0, start)}${text}${input.value.slice(end)}`)
-                  }
-                }}
-                placeholder="Untitled"
-                value={active.title}
-              />
+              <div className="document-title-control">
+                {!active.title ? <span aria-hidden="true" className="untitled-fallback">Untitled</span> : null}
+                <input
+                  aria-describedby={titleError ? 'document-title-error' : undefined}
+                  aria-invalid={titleError ? true : undefined}
+                  aria-label={active.kind === 'csv' ? 'Document title, .csv extension is fixed' : 'Document title'}
+                  className="document-title"
+                  data-testid="document-title"
+                  onChange={(event) => updateTitle(active.id, event.currentTarget.value.replace(/[\r\n]+/g, ''))}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      updateTitle(active.id, active.baselineTitle)
+                    } else if (event.key === 'Enter' || event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      if (active.kind === 'csv') {
+                        document.querySelector<HTMLElement>('[data-csv-row="0"][data-csv-column="0"]')?.focus()
+                      } else active.editor.commands.focus('start')
+                    }
+                  }}
+                  onPaste={(event) => {
+                    const text = event.clipboardData.getData('text').replace(/[\r\n]+/g, '')
+                    if (text !== event.clipboardData.getData('text')) {
+                      event.preventDefault()
+                      const input = event.currentTarget
+                      const start = input.selectionStart ?? input.value.length
+                      const end = input.selectionEnd ?? start
+                      updateTitle(active.id, `${input.value.slice(0, start)}${text}${input.value.slice(end)}`)
+                    }
+                  }}
+                  placeholder="Untitled"
+                  size={active.kind === 'csv' ? Math.max(1, active.title.length) : undefined}
+                  value={active.title}
+                />
+                {active.kind === 'csv' ? <span aria-hidden="true" className="csv-title-extension" data-testid="csv-title-extension">.csv</span> : null}
+              </div>
               {titleError ? (
                 <p className="title-error" data-testid="title-error" id="document-title-error" role="alert">
                   {titleError}

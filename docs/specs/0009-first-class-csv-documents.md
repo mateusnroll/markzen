@@ -18,6 +18,19 @@ layers.
 The post-green simplicity review removed redundant grid props and React matrix
 state, reused one preservation-message source, and kept document-kind authority
 in main-owned tab records.
+Returned to Draft after a 2026-07 browser-polish session refined the CSV
+workspace density, fixed grid chrome, header-mode presentation, icon actions,
+pointer selection, and layered cell editing. The retained uncommitted prototype
+was frozen as design research and explicitly approved after this revision and
+its Draft simplicity review were presented.
+The independent Draft simplicity review kept the expanded `csv-basic` data as
+supporting test/demo scaffolding rather than normative product behavior and
+removed AC64's duplicate header-mode role rules in favor of AC30.
+The final implementation simplicity review made tooltip copy derive from each
+action's accessible label and removed a redundant parent pointer guard. Final
+live inspection also exposed an initially under-filled virtualized viewport;
+the grid now measures its actual size on mount and resize, with a Playwright
+regression assertion.
 
 ## Problem
 
@@ -138,10 +151,12 @@ introducing formulas, type coercion, or silent serialization loss.
   tree, when activation revalidates it, then it opens as a CSV tab through the
   existing app-wide `FileKey`, preview/pinned, loading, collision, error, and
   stale-generation rules.
-- AC6: Given a CSV tab, then its tab label and editable title hide the
-  case-insensitive `.csv` suffix, retain the complete accessible filename, and
-  show the same workspace-relative secondary path as another recognized
-  document.
+- AC6: Given a CSV tab, then its tab label hides the case-insensitive `.csv`
+  suffix while its compact title control shows the editable stem followed
+  immediately by a separately rendered, non-editable `.csv` suffix; the input's
+  accessible name identifies the fixed extension, the complete filename remains
+  available to assistive technology, and the same workspace-relative secondary
+  path appears as for another recognized document.
 - AC7: Given a path-backed CSV title edit, then `.csv` is its managed extension:
   a case-insensitive explicit `.csv` suffix appears exactly once, a title
   without it preserves the existing suffix, and another suffix is treated as
@@ -238,15 +253,19 @@ introducing formulas, type coercion, or silent serialization loss.
 ### Spreadsheet-like grid presentation and navigation
 
 - AC29: Given an editable CSV tab, then it renders one named interactive data
-  grid with synthetic column labels and row numbers, visible cell boundaries,
+  grid edge-to-edge across the document surface and through its remaining
+  height, with synthetic row numbers, visible light cell boundaries,
   independently scrollable rows and columns, the document's complete logical
   row/column counts, and one active cell without rendering a Markdown writing
   toolbar, Markdown table actions, link actions, or image actions.
 - AC30: Given the first-row-header toggle is on and the CSV has at least one
-  record, then the first record remains ordinary editable CSV data but is
-  sticky, visually distinguished, and supplies accessible column names; given
-  the toggle is off, synthetic column labels supply those names and the first
-  record uses ordinary gridcell presentation.
+  record, then the first record remains ordinary editable CSV data but replaces
+  the synthetic A/B/C column-label strip as sticky, visually distinguished
+  editable `columnheader` cells and supplies accessible column names. Given the
+  toggle is off, the bordered A/B/C strip is sticky and the first record is
+  ordinary scrollable `gridcell` content beneath it. In both modes the fixed
+  row-number gutter and top strip use the darker document background and do not
+  visibly trail or animate after either scroll axis moves.
 - AC31: Given the header-row toggle, when pointer, Enter, or Space changes it,
   then its pressed state and resulting header semantics update immediately for
   only that tab without changing content, revision, dirty state, preview state,
@@ -263,43 +282,50 @@ introducing formulas, type coercion, or silent serialization loss.
 - AC34: Given grid navigation mode, when Tab or Shift+Tab is pressed, then
   focus moves to the next or previous cell in row-major order, wrapping between
   rows but leaving the grid normally after the final or before the first cell.
-- AC35: Given a cell is clicked, focused through grid navigation, or selected
-  as the current search result, then it becomes the active cell, receives the
-  single grid tab stop, scrolls into view without forced smooth motion under
-  reduced motion, and announces its row, column, optional header name, and a
-  bounded literal-value preview.
+- AC35: Given a cell receives primary pointer-down, is focused through grid
+  navigation, or is selected as the current search result, then it becomes the
+  sole active cell and grid tab stop immediately, scrolls into view without
+  forced smooth motion under reduced motion, and announces its row, column,
+  optional header name, and a bounded literal-value preview. Pointer movement
+  before release cannot leave a different cell looking focused or selected.
 - AC36: Given the active cell, when Enter, F2, double-click, or a printable key
   outside IME composition begins editing, then a plainly labeled, size-capped,
-  scrollable textarea is layered over and owns the mounted cell without changing
-  the 32px-by-180px grid geometry; it exposes the complete literal value, a
-  printable key replaces the selected value, and Enter, F2, or double-click
-  preserves the value and caret placement.
+  scrollable textarea visibly overflows and owns the mounted cell without
+  changing the 32px-by-180px grid geometry; it exposes the complete literal
+  value, a printable key replaces the prior value with that character and
+  places the caret after it so subsequent characters append, and Enter, F2, or
+  double-click preserves the value and caret placement.
 - AC37: Given cell edit mode, then ordinary text-editing and IME behavior,
   selection, clipboard, Home/End, and Arrow keys operate inside the field;
   Alt/Option+Enter inserts a literal LF, Escape cancels that edit, Enter commits
   and returns to grid navigation, and Tab/Shift+Tab commits before moving under
-  AC34. Clicking another cell, invoking a CSV toolbar or Find action, focusing
-  the title, switching tabs, saving, or closing also commits the live draft
-  exactly once before that action; Escape is the only cancellation path.
+  AC34. Pointer-down, click, double-click, and drag inside the textarea remain
+  text-editing interactions and do not bubble into grid selection or commit.
+  Clicking another cell, invoking a CSV toolbar or Find action, focusing the
+  title, switching tabs, saving, or closing commits the live draft exactly once
+  before that action; Escape is the only cancellation path.
 - AC38: Given an edit whose submitted string equals its pre-edit string, when it
   commits, then no document transaction, revision, dirty state, preview
   promotion, or undo entry is created.
 - AC39: Given the grid at 480×320, 200% zoom, forced colors, reduced motion, or
-  a long-field/large-column fixture, then title, CSV toolbar, headers, active
-  cell, selection, grid, both scroll axes, errors, and document controls remain
-  reachable and distinguishable without color or animation alone; rows remain
-  32px, columns remain 180px, display text is one clipped line, and embedded
-  newlines display as `↵`.
+  a long-field/large-column fixture, then a 40px single-line CSV header keeps
+  the compact filename control at the left and all CSV actions at the right,
+  while title, actions, fixed headers, active cell, selection, grid, both scroll
+  axes, errors, and document controls remain reachable and distinguishable
+  without color or animation alone. Rows remain 32px, columns remain 180px,
+  display text is one clipped non-selectable line, embedded newlines display as
+  `↵`, and edit-mode text remains selectable.
 
 ### Range selection, clipboard, and structural editing
 
 - AC40: Given an active cell in navigation mode, when Shift+Arrow extends the
-  selection or Shift+click chooses another corner, then one rectangular
+  selection or Shift+pointer-down chooses another corner, then one rectangular
   selection grows from its stable anchor, its active corner remains visible,
   and selection state is conveyed without color alone and through accurate
-  `aria-selected` state for mounted cells; an ordinary click starts a new
-  anchor, Cmd/Ctrl+A selects the complete matrix, and Select All in cell edit
-  mode remains ordinary text selection.
+  `aria-selected` state for mounted cells; ordinary primary pointer-down starts
+  a new single-cell anchor even if the pointer moves before release,
+  Cmd/Ctrl+A selects the complete matrix, and Select All in cell edit mode
+  remains ordinary text selection.
 - AC41: Given a selected range, when Cmd/Ctrl+C is invoked, then one
   spreadsheet-compatible tab-delimited rectangular `text/plain` matrix is
   written in row-major order using double-quote escaping for tab, quote, CR, or
@@ -325,13 +351,15 @@ introducing formulas, type coercion, or silent serialization loss.
   selection, revision, or undo state changes and a non-blocking accessible
   explanation identifies the rejection.
 - AC46: Given the CSV toolbar and an active cell, then named keyboard-operable
-  actions insert a row above or below and a column before or after; one action
-  adds exactly one empty record or empty field across records in one undoable
-  transaction and focuses the corresponding new cell.
+  icon actions insert a row above or below and a column before or after; each
+  exposes its accessible name as a tooltip on hover and keyboard focus, and one
+  action adds exactly one empty record or empty field across records in one
+  undoable transaction and focuses the corresponding new cell.
 - AC47: Given the CSV toolbar and an active cell, then named keyboard-operable
-  actions delete its row or column in one undoable transaction; deleting the
-  sole row or sole column leaves one empty cell instead of producing an
-  unrenderable zero-dimensional matrix.
+  icon actions delete its row or column in one undoable transaction, expose the
+  same hover and focus tooltip contract as AC46, and deleting the sole row or
+  sole column leaves one empty cell instead of producing an unrenderable
+  zero-dimensional matrix.
 - AC48: Given any cell, paste, cut, row, or column mutation would cross an
   editable bound, then the complete transaction is rejected before mutation,
   focus and selection remain current, and an accessible message explains the
@@ -405,11 +433,9 @@ introducing formulas, type coercion, or silent serialization loss.
 - AC64: Given the CSV grid uses windowing, then no more than 600 data
   `gridcell`/`columnheader` elements are mounted at once; `aria-rowcount`,
   `aria-colcount`, `aria-rowindex`, and `aria-colindex` describe only the
-  complete CSV matrix, presentational row numbers and column letters do not
-  affect those values, and roving focus remains singular across virtualization.
-  Header mode off uses `gridcell` for every field; header mode on uses editable
-  `columnheader` for the first record. The active or editing cell remains
-  mounted.
+  complete CSV matrix, presentational chrome does not affect those values,
+  AC30's roles remain accurate, and roving focus remains singular across
+  virtualization. The active or editing cell remains mounted.
 - AC65: Given a controlled 100,000-field fixture within all editable bounds,
   when CI opens it, scrolls both axes, searches at least 5,000 matches, edits
   one field, pastes a 100×10 matrix, and undo/redoes that paste, then open,
@@ -430,7 +456,9 @@ introducing formulas, type coercion, or silent serialization loss.
   keyboard-only operation, or assistive-technology inspection, then every
   pointer action has its specified keyboard path, focus remains visible,
   names/roles/counts/indexes/selected/pressed/busy/error states are accurate,
-  state is not color-only, and automated checks report no serious or critical
+  icon tooltips appear on hover and focus without required motion, grid display
+  text cannot create a browser text selection while textarea text can, state is
+  not color-only, and automated checks report no serious or critical
   violations.
 - AC69: Given a source above the existing 32 MiB outer document-transfer bound,
   then main fails before renderer transfer with an accessible error and retains

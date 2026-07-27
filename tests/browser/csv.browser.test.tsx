@@ -17,6 +17,7 @@ afterEach(() => {
   root = undefined
   for (const editor of editors.splice(0)) editor.destroy()
   document.body.innerHTML = '<div id="test-root"></div>'
+  document.documentElement.style.removeProperty('--mz-border')
 })
 
 describe('spec 0009 first-class CSV grid', () => {
@@ -33,7 +34,7 @@ describe('spec 0009 first-class CSV grid', () => {
     await expect.element(grid).toHaveAttribute('aria-colcount', '2')
     expect(document.querySelectorAll('[role="gridcell"], [role="columnheader"]').length).toBeLessThanOrEqual(600)
     expect(document.querySelectorAll('[data-testid="csv-row-number"]')[0]?.getAttribute('aria-hidden')).toBe('true')
-    expect(document.querySelectorAll('[data-testid="csv-column-letter"]')[0]?.getAttribute('aria-hidden')).toBe('true')
+    expect(document.querySelectorAll('[data-testid="csv-column-letter"]')).toHaveLength(0)
     expect(document.querySelectorAll('[role="columnheader"]')).toHaveLength(2)
     expect(cell(1, 1).textContent).toContain('first↵second')
     expect(getComputedStyle(cell(1, 1)).height).toBe('32px')
@@ -42,8 +43,66 @@ describe('spec 0009 first-class CSV grid', () => {
     await userEvent.click(page.getByTestId('csv-header-toggle'))
     expect(document.querySelectorAll('[role="columnheader"]')).toHaveLength(0)
     expect(document.querySelectorAll('[role="gridcell"]').length).toBeGreaterThan(0)
+    expect(document.querySelectorAll('[data-testid="csv-column-letter"]')).toHaveLength(2)
+    expect(document.querySelectorAll('[data-testid="csv-column-letter"]')[0]?.getAttribute('aria-hidden')).toBe('true')
     await expect.element(page.getByTestId('document-tab')).not.toHaveAttribute('aria-label', /dirty/)
     expect((await axe.run(document.body)).violations.filter((violation) => ['serious', 'critical'].includes(violation.impact ?? ''))).toEqual([])
+  })
+
+  test('AC6 AC29-AC30 AC39 AC46-AC47 AC64 AC68: compact CSV chrome exposes fixed headers and named icon actions', async () => {
+    document.documentElement.style.setProperty('--mz-border', '#d5d0c8')
+    await renderWorkspace(csvSeed([
+      ['Name', 'Team', 'Note'],
+      ['Ada', 'North', 'hello'],
+      ['Linus', 'South', 'world'],
+    ]))
+
+    const title = byTestId<HTMLInputElement>('document-title')
+    expect(title.getAttribute('aria-label')).toBe('Document title, .csv extension is fixed')
+    expect(byTestId('csv-title-extension').textContent).toBe('.csv')
+    expect(getComputedStyle(title).fontSize).toBe('16px')
+
+    const titleGutter = document.querySelector<HTMLElement>('.document-title-gutter')!
+    const toolbar = byTestId('csv-toolbar')
+    expect(titleGutter.getBoundingClientRect().height).toBe(40)
+    expect(getComputedStyle(toolbar).minHeight).toBe('40px')
+    expect(titleGutter.getBoundingClientRect().top).toBe(toolbar.getBoundingClientRect().top)
+    expect(toolbar.querySelectorAll('button')).toHaveLength(7)
+    expect(toolbar.querySelectorAll('[data-testid="csv-action-icon"]')).toHaveLength(7)
+    for (const label of ['Header row', 'Add row above', 'Add row below', 'Add column before', 'Add column after', 'Delete row', 'Delete column']) {
+      const button = toolbar.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
+      expect(getComputedStyle(button, '::after').content).toBe(`"${label}"`)
+    }
+
+    const grid = byTestId('csv-grid')
+    const pageBounds = byTestId('document-page').getBoundingClientRect()
+    const gridBounds = grid.getBoundingClientRect()
+    expect(gridBounds.left).toBe(pageBounds.left)
+    expect(gridBounds.right).toBe(pageBounds.right)
+    expect(document.querySelector('[data-testid="csv-column-labels"]')).toBeNull()
+    expect(document.querySelectorAll('[role="columnheader"]')).toHaveLength(3)
+    expect(getComputedStyle(document.querySelector('.csv-header-row')!).position).toBe('sticky')
+    expect(getComputedStyle(byTestId('csv-row-number')).position).toBe('sticky')
+    expect(getComputedStyle(document.querySelector('.csv-grid-shell')!).userSelect).toBe('none')
+
+    const addRowAbove = toolbar.querySelector<HTMLButtonElement>('[aria-label="Add row above"]')!
+    title.focus()
+    await userEvent.tab()
+    await userEvent.tab()
+    expect(document.activeElement).toBe(addRowAbove)
+    await wait(150)
+    expect(getComputedStyle(addRowAbove, '::after').content).toContain('Add row above')
+    expect(getComputedStyle(addRowAbove, '::after').opacity).toBe('1')
+
+    await userEvent.click(page.getByTestId('csv-header-toggle'))
+    const labels = byTestId('csv-column-labels')
+    expect(getComputedStyle(labels).position).toBe('sticky')
+    expect(document.querySelectorAll('[data-testid="csv-column-letter"]')).toHaveLength(3)
+    const firstLetter = document.querySelector<HTMLElement>('[data-testid="csv-column-letter"]')!
+    expect(getComputedStyle(firstLetter).borderTopWidth).toBe('1px')
+    expect(getComputedStyle(firstLetter).borderBottomWidth).toBe('1px')
+    expect(document.querySelectorAll('[role="columnheader"]')).toHaveLength(0)
+    expect(cell(0, 0).getAttribute('role')).toBe('gridcell')
   })
 
   test('AC33-AC38 AC56: navigation, layered textarea editing, commit-on-leave, cancellation, and no-op commits are deterministic', async () => {
@@ -72,6 +131,40 @@ describe('spec 0009 first-class CSV grid', () => {
     await userEvent.keyboard('{Enter}')
     await userEvent.keyboard('{Enter}')
     expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  test('AC35-AC37 AC40 AC68: pointer-down keeps one active cell and character editing retains the complete draft', async () => {
+    const onChange = vi.fn()
+    await renderGrid([['a', 'b'], ['c', 'd']], { onChange })
+
+    cell(0, 0).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+    cell(0, 1).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+    await wait(20)
+    expect(document.querySelectorAll('.csv-cell[aria-selected="true"]')).toHaveLength(1)
+    expect(document.querySelector('.csv-cell[aria-selected="true"]')).toBe(cell(0, 1))
+    expect(document.activeElement).toBe(cell(0, 1))
+
+    await userEvent.keyboard('T')
+    await wait(20)
+    const editor = byTestId<HTMLTextAreaElement>('csv-cell-editor')
+    await userEvent.keyboard('est')
+    expect(editor.value).toBe('Test')
+    expect(getComputedStyle(editor).userSelect).toBe('text')
+    expect(getComputedStyle(cell(0, 1)).overflow).toBe('visible')
+    await userEvent.click(editor)
+    expect(document.querySelector('[data-testid="csv-cell-editor"]')).toBe(editor)
+    await userEvent.keyboard('{Enter}')
+    expect(cell(0, 1).textContent).toContain('Test')
+    expect(onChange).toHaveBeenCalledOnce()
+
+    cell(1, 0).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+    cell(1, 1).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, shiftKey: true }))
+    await wait(20)
+    expect(document.querySelectorAll('.csv-cell[aria-selected="true"]')).toHaveLength(2)
+    cell(0, 0).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+    await wait(20)
+    expect(document.querySelectorAll('.csv-cell[aria-selected="true"]')).toHaveLength(1)
+    expect(document.querySelector('.csv-cell[aria-selected="true"]')).toBe(cell(0, 0))
   })
 
   test('AC40-AC49: rectangular selection, native clipboard events, paste expansion, bounds, structure, and undo ownership remain atomic', async () => {

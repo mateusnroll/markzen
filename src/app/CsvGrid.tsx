@@ -30,6 +30,7 @@ export type CsvGridProps = {
 const ROW_HEIGHT = 32
 const COLUMN_WIDTH = 180
 const ROW_NUMBER_WIDTH = 52
+const COLUMN_LABEL_HEIGHT = 28
 const OVERSCAN = 2
 const MAX_PREVIEW = 160
 const gridViewStates = new WeakMap<Editor, GridViewState>()
@@ -60,6 +61,7 @@ export function CsvGrid({
   const search = useMemo(() => getEditorSearch(editor), [editor, searchVersion, version])
   const currentSearchMatch = search.matches[search.current]
   const currentSearchCell = currentSearchMatch ? locateCsvMatch(editor, currentSearchMatch) : undefined
+  const columnLabelHeight = header ? 0 : COLUMN_LABEL_HEIGHT
 
   useEffect(() => {
     const transaction = () => {
@@ -79,6 +81,22 @@ export function CsvGrid({
     if (!scroll) return
     scroll.scrollLeft = viewport.scrollLeft
     scroll.scrollTop = viewport.scrollTop
+  }, [editor])
+
+  useEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    const measure = () => setViewport((current) => {
+      const height = scroll.clientHeight || 320
+      const width = scroll.clientWidth || 640
+      return height === current.height && width === current.width
+        ? current
+        : { ...current, height, width }
+    })
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(scroll)
+    return () => { observer.disconnect() }
   }, [editor])
 
   const emit = useCallback((nextRows: string[][]): boolean => {
@@ -112,18 +130,23 @@ export function CsvGrid({
   const reveal = useCallback((coordinate: Coordinate) => {
     const scroll = scrollRef.current
     if (!scroll) return
-    const top = coordinate.row * ROW_HEIGHT
-    const left = coordinate.column * COLUMN_WIDTH
+    const top = columnLabelHeight + coordinate.row * ROW_HEIGHT
+    const left = ROW_NUMBER_WIDTH + coordinate.column * COLUMN_WIDTH
+    const fixedTop = columnLabelHeight + (header ? ROW_HEIGHT : 0)
     const behavior: ScrollBehavior = 'auto'
-    if (top < scroll.scrollTop) scroll.scrollTo({ behavior, top })
+    if (top < scroll.scrollTop + fixedTop) {
+      scroll.scrollTo({ behavior, top: Math.max(0, top - fixedTop) })
+    }
     else if (top + ROW_HEIGHT > scroll.scrollTop + scroll.clientHeight) {
       scroll.scrollTo({ behavior, top: top + ROW_HEIGHT - scroll.clientHeight })
     }
-    if (left < scroll.scrollLeft) scroll.scrollTo({ behavior, left })
+    if (left < scroll.scrollLeft + ROW_NUMBER_WIDTH) {
+      scroll.scrollTo({ behavior, left: left - ROW_NUMBER_WIDTH })
+    }
     else if (left + COLUMN_WIDTH > scroll.scrollLeft + scroll.clientWidth) {
       scroll.scrollTo({ behavior, left: left + COLUMN_WIDTH - scroll.clientWidth })
     }
-  }, [])
+  }, [columnLabelHeight, header])
 
   const activate = useCallback((coordinate: Coordinate, extend = false) => {
     const bounded = {
@@ -178,8 +201,8 @@ export function CsvGrid({
     requestAnimationFrame(() => {
       const textarea = document.querySelector<HTMLTextAreaElement>('[data-testid="csv-cell-editor"]')
       textarea?.focus()
-      if (replacement === undefined) textarea?.setSelectionRange(value.length, value.length)
-      else textarea?.select()
+      const cursor = replacement?.length ?? value.length
+      textarea?.setSelectionRange(cursor, cursor)
     })
   }, [rows])
 
@@ -289,10 +312,10 @@ export function CsvGrid({
     })
   }, [mutate, onError, selection])
 
-  const rowStart = Math.max(0, Math.floor(viewport.scrollTop / ROW_HEIGHT) - OVERSCAN)
-  const rowEnd = Math.min(rowCount, Math.ceil((viewport.scrollTop + viewport.height) / ROW_HEIGHT) + OVERSCAN)
+  const rowStart = Math.max(0, Math.floor(Math.max(0, viewport.scrollTop - columnLabelHeight) / ROW_HEIGHT) - OVERSCAN)
+  const rowEnd = Math.min(rowCount, Math.ceil((viewport.scrollTop + viewport.height - columnLabelHeight) / ROW_HEIGHT) + OVERSCAN)
   const columnStart = Math.max(0, Math.floor(viewport.scrollLeft / COLUMN_WIDTH) - OVERSCAN)
-  const columnEnd = Math.min(columnCount, Math.ceil((viewport.scrollLeft + viewport.width) / COLUMN_WIDTH) + OVERSCAN)
+  const columnEnd = Math.min(columnCount, Math.ceil((viewport.scrollLeft + viewport.width - ROW_NUMBER_WIDTH) / COLUMN_WIDTH) + OVERSCAN)
   const coordinates = visibleCoordinates(rowStart, rowEnd, columnStart, columnEnd, selection.active, header, editing?.coordinate)
   const coordinateRows = [...new Set(coordinates.map((coordinate) => coordinate.row))]
 
@@ -300,34 +323,34 @@ export function CsvGrid({
     <section className="csv-surface">
       <div aria-label="CSV actions" className="csv-toolbar" data-testid="csv-toolbar" role="toolbar">
         <button
+          aria-label="Header row"
           aria-pressed={header}
           data-testid="csv-header-toggle"
           onClick={() => { commitEdit(); onHeaderChange(!header) }}
           type="button"
         >
-          Header row
+          <CsvActionIcon name="header" />
         </button>
-        <button data-testid="csv-add-row-above" onClick={() => mutate(insertRow(-1))} type="button">Add row above</button>
-        <button data-testid="csv-add-row-below" onClick={() => mutate(insertRow(1))} type="button">Add row below</button>
-        <button data-testid="csv-add-column-before" onClick={() => mutate(insertColumn(-1))} type="button">Add column before</button>
-        <button data-testid="csv-add-column-after" onClick={() => mutate(insertColumn(1))} type="button">Add column after</button>
-        <button data-testid="csv-delete-row" onClick={() => mutate(deleteRow)} type="button">Delete row</button>
-        <button data-testid="csv-delete-column" onClick={() => mutate(deleteColumn)} type="button">Delete column</button>
+        <button aria-label="Add row above" data-testid="csv-add-row-above" onClick={() => mutate(insertRow(-1))} type="button">
+          <CsvActionIcon name="row-above" />
+        </button>
+        <button aria-label="Add row below" data-testid="csv-add-row-below" onClick={() => mutate(insertRow(1))} type="button">
+          <CsvActionIcon name="row-below" />
+        </button>
+        <button aria-label="Add column before" data-testid="csv-add-column-before" onClick={() => mutate(insertColumn(-1))} type="button">
+          <CsvActionIcon name="column-before" />
+        </button>
+        <button aria-label="Add column after" data-testid="csv-add-column-after" onClick={() => mutate(insertColumn(1))} type="button">
+          <CsvActionIcon name="column-after" />
+        </button>
+        <button aria-label="Delete row" data-testid="csv-delete-row" onClick={() => mutate(deleteRow)} type="button">
+          <CsvActionIcon name="row-delete" />
+        </button>
+        <button aria-label="Delete column" data-testid="csv-delete-column" onClick={() => mutate(deleteColumn)} type="button">
+          <CsvActionIcon name="column-delete" />
+        </button>
       </div>
       <div className="csv-grid-shell">
-        <div aria-hidden="true" className="csv-column-labels" data-testid="csv-column-labels">
-          {Array.from({ length: columnCount }, (_, column) => (
-            <span
-              aria-hidden="true"
-              className="csv-column-letter"
-              data-testid="csv-column-letter"
-              key={column}
-              style={{ left: ROW_NUMBER_WIDTH + column * COLUMN_WIDTH, width: COLUMN_WIDTH }}
-            >
-              {csvColumnLabel(column)}
-            </span>
-          ))}
-        </div>
         <div
           aria-colcount={columnCount}
           aria-label="CSV data"
@@ -347,15 +370,49 @@ export function CsvGrid({
           <div
             className="csv-grid-canvas"
             data-testid="csv-grid-canvas"
-            style={{ height: rowCount * ROW_HEIGHT, width: columnCount * COLUMN_WIDTH }}
+            style={{
+              height: columnLabelHeight + rowCount * ROW_HEIGHT,
+              width: ROW_NUMBER_WIDTH + columnCount * COLUMN_WIDTH,
+            }}
           >
+            {!header ? (
+              <div aria-hidden="true" className="csv-column-labels" data-testid="csv-column-labels">
+                <span aria-hidden="true" className="csv-column-corner" />
+                {Array.from({ length: columnCount }, (_, column) => (
+                  <span
+                    aria-hidden="true"
+                    className="csv-column-letter"
+                    data-testid="csv-column-letter"
+                    key={column}
+                    style={{ left: ROW_NUMBER_WIDTH + column * COLUMN_WIDTH, width: COLUMN_WIDTH }}
+                  >
+                    {csvColumnLabel(column)}
+                  </span>
+                ))}
+              </div>
+            ) : null}
             {coordinateRows.map((row) => (
               <div
                 aria-rowindex={row + 1}
-                className="csv-aria-row"
+                className={`csv-aria-row${header && row === 0 ? ' csv-header-row' : ''}`}
+                data-testid="csv-row"
                 key={row}
                 role="row"
+                style={{
+                  height: ROW_HEIGHT,
+                  left: 0,
+                  top: columnLabelHeight + row * ROW_HEIGHT,
+                  width: '100%',
+                }}
               >
+                <span
+                  aria-hidden="true"
+                  className="csv-row-number"
+                  data-testid="csv-row-number"
+                  style={{ height: ROW_HEIGHT, width: ROW_NUMBER_WIDTH }}
+                >
+                  {row + 1}
+                </span>
                 {coordinates.filter((coordinate) => coordinate.row === row).map(({ column }) => {
                   const coordinate = { column, row }
                   const value = rows[row]?.[column] ?? ''
@@ -373,12 +430,13 @@ export function CsvGrid({
                   aria-label={`Row ${row + 1}, column ${column + 1}, ${columnName}: ${preview}`}
                   aria-rowindex={row + 1}
                   aria-selected={selected}
-                  className={`csv-cell${active ? ' csv-cell-active' : ''}`}
+                  className={`csv-cell${active ? ' csv-cell-active' : ''}${editing && sameCoordinate(editing.coordinate, coordinate) ? ' csv-cell-editing' : ''}`}
                   data-csv-column={column}
                   data-csv-row={row}
                   data-testid="csv-cell"
                   key={column}
-                  onClick={(event) => {
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return
                     commitEdit()
                     activate(coordinate, event.shiftKey)
                   }}
@@ -390,10 +448,9 @@ export function CsvGrid({
                   role={header && row === 0 ? 'columnheader' : 'gridcell'}
                   style={{
                     height: ROW_HEIGHT,
-                    left: column * COLUMN_WIDTH,
-                    top: header && row === 0 ? viewport.scrollTop : row * ROW_HEIGHT,
+                    left: ROW_NUMBER_WIDTH + column * COLUMN_WIDTH,
+                    top: 0,
                     width: COLUMN_WIDTH,
-                    ...(header && row === 0 ? { zIndex: 3 } : {}),
                   }}
                   tabIndex={active ? 0 : -1}
                     >
@@ -418,7 +475,9 @@ export function CsvGrid({
                         commitEdit()
                       }}
                       onChange={(event) => setEditing({ ...editing, value: event.currentTarget.value })}
+                      onDoubleClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => {
+                        event.stopPropagation()
                         if (event.nativeEvent.isComposing) return
                         if (event.key === 'Escape') {
                           event.preventDefault()
@@ -440,6 +499,7 @@ export function CsvGrid({
                           }
                         }
                       }}
+                      onPointerDown={(event) => event.stopPropagation()}
                       value={editing.value}
                         />
                       ) : null}
@@ -448,25 +508,65 @@ export function CsvGrid({
                 })}
               </div>
             ))}
-            {Array.from({ length: Math.min(rowCount, rowEnd - rowStart) }, (_, offset) => {
-              const row = rowStart + offset
-              return (
-                <span
-                  aria-hidden="true"
-                  className="csv-row-number"
-                  data-testid="csv-row-number"
-                  key={row}
-                  style={{ height: ROW_HEIGHT, left: -ROW_NUMBER_WIDTH, top: row * ROW_HEIGHT, width: ROW_NUMBER_WIDTH }}
-                >
-                  {row + 1}
-                </span>
-              )
-            })}
           </div>
         </div>
       </div>
       <div aria-live="polite" className="visually-hidden">{announcement}</div>
     </section>
+  )
+}
+
+type CsvActionIconName = 'column-after' | 'column-before' | 'column-delete' | 'header' | 'row-above' | 'row-below' | 'row-delete'
+
+function CsvActionIcon({ name }: { readonly name: CsvActionIconName }) {
+  return (
+    <svg aria-hidden="true" className="toolbar-icon csv-action-icon" data-testid="csv-action-icon" viewBox="0 0 24 24">
+      {name === 'header' ? (
+        <>
+          <rect height="16" rx="1" width="18" x="3" y="4" />
+          <path d="M3 9h18M9 4v16M15 4v16" />
+          <path className="csv-action-icon-fill" d="M4 5h16v3H4z" />
+        </>
+      ) : null}
+      {name === 'row-above' ? (
+        <>
+          <path d="M12 2v6M9 5h6" />
+          <rect height="10" rx="1" width="18" x="3" y="11" />
+          <path d="M3 16h18" />
+        </>
+      ) : null}
+      {name === 'row-below' ? (
+        <>
+          <rect height="10" rx="1" width="18" x="3" y="3" />
+          <path d="M3 8h18M12 16v6M9 19h6" />
+        </>
+      ) : null}
+      {name === 'column-before' ? (
+        <>
+          <path d="M2 12h6M5 9v6" />
+          <rect height="18" rx="1" width="10" x="11" y="3" />
+          <path d="M16 3v18" />
+        </>
+      ) : null}
+      {name === 'column-after' ? (
+        <>
+          <rect height="18" rx="1" width="10" x="3" y="3" />
+          <path d="M8 3v18M16 12h6M19 9v6" />
+        </>
+      ) : null}
+      {name === 'row-delete' ? (
+        <>
+          <rect height="16" rx="1" width="18" x="3" y="4" />
+          <path d="M3 10h18M8 15h8" />
+        </>
+      ) : null}
+      {name === 'column-delete' ? (
+        <>
+          <rect height="16" rx="1" width="18" x="3" y="4" />
+          <path d="M10 4v16M14 12h5" />
+        </>
+      ) : null}
+    </svg>
   )
 }
 
