@@ -36,6 +36,8 @@ Post-rewrite feature specs continue the same lifecycle:
 | 0007 | [Native chrome and editor polish](0007-native-chrome-and-editor-polish.md) | Implemented |
 | 0008 | [Opt-in pseudonymous usage and crash diagnostics](0008-opt-in-pseudonymous-telemetry.md) | Draft |
 | 0009 | [First-class CSV documents](0009-first-class-csv-documents.md) | Draft |
+| 0010 | [First-class JSON documents](0010-first-class-json-documents.md) | Draft |
+| 0011 | [Other file types](0011-other-file-types.md) | Draft |
 
 ## Scenario routing
 

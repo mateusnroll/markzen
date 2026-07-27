@@ -12,41 +12,7 @@ an Implemented spec, update and reapprove that affected spec as required.
 
 ## In scope
 
-### 1. JSON document editing
-
-Treat `.json` documents as first-class Markzen documents with a polished
-structured viewing and editing experience. Users should be able to navigate,
-search, expand and collapse, and edit objects, arrays, properties, and values
-with clear syntax, indentation, and validation.
-
-JSON documents must reuse Markzen's normal document lifecycle and
-loss-prevention behavior. The eventual spec must resolve malformed input,
-duplicate keys, number fidelity, formatting and serialization policy, large
-documents, edit validation, and the boundary between structured controls and
-direct text editing.
-
-### 2. Other file types
-
-Provide broad, intentionally modest support for files that do not warrant a
-specialized Markzen editor. Code and text files such as `.js`, `.html`, `.css`,
-and `.txt` should be editable with a good ProseMirror-based text experience and
-syntax highlighting where applicable. Other supported formats such as `.png`,
-`.jpg`, and `.webm` should have useful view-only presentation.
-
-This work should favor coverage, safety, and reuse over format-specific
-features. It must not grow into a collection of secondary IDE, image-editor,
-media-editor, or office-suite implementations. The eventual spec must classify
-supported extensions, editing eligibility, decoding and size limits, syntax
-selection, binary/media rendering boundaries, save behavior, and accessible
-fallbacks. CSV and JSON remain separate first-class document types rather than
-being reduced to this generic path.
-
-Milestone 0003 currently shows unsupported file types as subdued, disabled tree
-rows and opens only `.md`, `.markdown`, and `.txt`. Those rows should become
-available only after their document lifecycle and loss-prevention behavior are
-approved.
-
-### 3. Nested-list presentation
+### 1. Nested-list presentation
 
 Make nested Markdown lists easier to read by drawing a clear vertical guide for
 each indentation level and allowing nested sections to be collapsed and
@@ -58,7 +24,7 @@ whether collapse state survives tab switches or restarts, and how hidden
 descendants participate in copy, editing, undo, and save. Presentation state
 must never remove or silently alter serialized list content.
 
-### 4. Table and image reordering
+### 2. Table and image reordering
 
 Spec 0005 deliberately ships table insertion, navigation, add, and delete
 actions plus image insertion, metadata editing, and deletion without structural
@@ -70,7 +36,7 @@ targets, cancellation and blur/tab-switch cleanup, focus restoration,
 announcements, undo ownership, and touch behavior. Reordering must preserve
 table headers and alignment metadata plus image source serialization.
 
-### 5. Raw Markdown editing
+### 3. Raw Markdown editing
 
 Add raw-Markdown editing as a per-tab mode toggled with Cmd/Ctrl+E. The prior
 design direction used CodeMirror 6, transferred content only when switching
@@ -85,7 +51,7 @@ scroll restoration, failed rich-mode parsing, save ownership, external changes,
 and what happens when a tab closes or switches while either mode has pending
 work.
 
-### 6. Remove or reorder sidebar roots and file-tree CRUD
+### 4. Remove or reorder sidebar roots and file-tree CRUD
 
 Add removal and reordering of workspace roots plus create, delete, rename, and
 move operations in the file tree. Milestone 0003 deliberately deferred these
@@ -97,7 +63,7 @@ and pinned tabs, watcher invalidation, cross-window ownership, the shared save
 transaction, external-conflict handling, and loss-safe behavior for open or
 dirty documents affected by a tree operation.
 
-### 7. Fuzzy file finder and tab quick switcher
+### 5. Fuzzy file finder and tab quick switcher
 
 Add Cmd/Ctrl+P subsequence matching in the style of VS Code over a flat list of
 openable files in the workspace, together with a tab-switcher modal. The old
@@ -112,7 +78,7 @@ spec must define ranking, path disambiguation, large-workspace performance,
 watcher freshness, preview versus pinned activation, keyboard behavior, and
 accessible result state.
 
-### 8. Expanded settings
+### 6. Expanded settings
 
 Add font family and size, line width, auto-save with a configurable delay, and
 spell check. The old ADR 0013 explored persistence for these settings, while
@@ -124,7 +90,7 @@ Auto-save requires particular care because it extends milestone 0002's dirty
 state, shared save transaction, external-conflict behavior, failure reporting,
 and pending-rename rules.
 
-### 9. Auto-update
+### 7. Auto-update
 
 Ship updates through **electron-updater** with **GitHub Releases as the update
 feed**. CI should publish platform artifacts and update metadata for tagged
