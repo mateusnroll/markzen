@@ -46,7 +46,9 @@ Markzen's desktop shell consumes a separate title bar even where the operating s
 ### Workspace and formatting surfaces
 
 - AC9: Given a folder workspace in Light, Dark, System, or forced-colors mode, when the sidebar renders, then its background, text, muted/disabled rows, hover/current rows, border, and focus/splitter states derive from the shared theme tokens and remain distinguishable.
-- AC10: Given an editable active tab, when the formatting toolbar renders, then it floats vertically 8px from the editor's right edge using outlined icons; collapsed Minimal mode exposes a named formatting-summary control plus a named ellipsis expansion control, and expanded Minimal or Regular mode exposes the complete existing controls without covering the tab strip.
+- **Outdated as globally scoped by spec 0009 AC29:** AC10: Given an editable active tab, when the formatting toolbar renders, then it floats vertically 8px from the editor's right edge using outlined icons; collapsed Minimal mode exposes a named formatting-summary control plus a named ellipsis expansion control, and expanded Minimal or Regular mode exposes the complete existing controls without covering the tab strip.
+  Comment: This presentation applies to editable Markdown tabs. CSV tabs render
+  only their fixed-grid structural toolbar.
 - AC11: Given keyboard focus in the vertical formatting toolbar, when ArrowUp/ArrowDown or ArrowLeft/ArrowRight is pressed, then roving focus moves cyclically among enabled controls; Home and End move to the first and last enabled controls.
 - AC12: Given a saved selection in an H1–H4 heading or paragraph, when the heading trigger renders and a supported different level or Paragraph is valid, then the trigger remains enabled and the chosen type replaces the current block type in one existing undoable transaction.
 

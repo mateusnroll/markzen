@@ -36,6 +36,9 @@ Open `journal/Scratchpad.md`, place the caret in its practice area, and try thes
 
 ## Explore everyday features
 
+- Open `07 — Practice Tracker.csv`. Edit a cell, add a row or column, toggle the
+  header row, search for `control`, then save and reopen it to exercise the CSV
+  grid with a small disposable data set.
 - Press Cmd/Ctrl+F in `library/04 — Commonplace Index.md` and search for `virtue`; use Enter and Shift+Enter to move cyclically.
 - Open `05 — Links and Images.md`. Plain-clicking places the caret; use the link popover or the platform modifier only on the cases explicitly marked safe.
 - Put the caret in the table in `library/04 — Commonplace Index.md`. Use Tab, Shift+Tab, and **Table Actions** to add or remove structure.

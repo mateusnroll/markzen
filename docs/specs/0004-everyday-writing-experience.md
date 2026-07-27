@@ -38,12 +38,16 @@ Once document and workspace safety are established, everyday writing still needs
 ### Formatting toolbar
 
 - AC1: Given no active tab, when the editor area is empty, then no formatting toolbar is rendered or exposed to assistive technology.
-- AC2: Given the default Minimal toolbar mode and an active tab, when the caret or selection changes within one block/list context, then one compact indicator reports the active block type, list type, and inline marks in text without relying only on font styling or symbols.
+- **Outdated as globally scoped by spec 0009 AC29:** AC2: Given the default Minimal toolbar mode and an active tab, when the caret or selection changes within one block/list context, then one compact indicator reports the active block type, list type, and inline marks in text without relying only on font styling or symbols.
+  Comment: This formatting behavior applies to an active Markdown tab. CSV tabs
+  render their CSV toolbar and never render Markdown formatting controls.
 - AC3: Given a selection spanning incompatible block or list contexts, when the Minimal indicator updates, then it reports a named Mixed block state while continuing to report uniform and mixed inline-mark state accurately.
 - AC4: Given content parsed as H5 or H6, when the caret enters it, then the Minimal indicator reports H5 or H6 accurately even though the heading picker offers only paragraph and H1–H4.
 - AC5: Given the Minimal indicator, when it is activated by pointer, Enter, or Space, then the complete toolbar expands in place and its named collapse control returns it to the compact state.
 - AC6: Given an expanded Minimal toolbar, when the active tab changes, then menus close and the newly active tab starts collapsed.
-- AC7: Given the Regular toolbar mode and an active tab, then the complete toolbar remains visible and exposes no collapse affordance.
+- **Outdated as globally scoped by spec 0009 AC29:** AC7: Given the Regular toolbar mode and an active tab, then the complete toolbar remains visible and exposes no collapse affordance.
+  Comment: This remains current only for active Markdown tabs; CSV tabs do not
+  consume the Markdown toolbar preference.
 - AC8: Given Bold or Italic and an eligible saved selection, when its button is activated, then the mark toggles across that selection in one undoable editor transaction and focus returns to the resulting editor selection.
 - AC9: Given Strikethrough or Inline Code and an eligible saved selection, when its menu action is activated, then the mark toggles across that selection in one undoable editor transaction and focus returns to the resulting editor selection.
 - AC10: Given a selection whose entire range has an inline mark, when toolbar state is computed, then the matching toggle reports pressed; a partially marked range reports the accessible mixed value.
@@ -111,7 +115,9 @@ Once document and workspace safety are established, everyday writing still needs
 - AC66: Given any search lifecycle, when the active rich document is serialized before, during, and after search, then the produced bytes are identical because decorations never enter document content.
 - AC67: Given search controls and result status, when used by keyboard or assistive technology, then controls have names and disabled states, and result changes are announced through a polite live region without moving focus.
 - AC68: Given IME composition in the search input, when composing text or pressing Escape, Enter, or Shift+Enter before composition ends, then Markzen neither closes nor navigates results; one debounced search begins after the committed query is available.
-- AC69: Given there is no active rich editor, when Find is invoked, then no search panel opens and the native command is disabled when main has current menu state.
+- **Outdated as globally scoped by spec 0009 AC50:** AC69: Given there is no active rich editor, when Find is invoked, then no search panel opens and the native command is disabled when main has current menu state.
+  Comment: Find is enabled for an active searchable Markdown or CSV editor and
+  remains disabled only when there is no active searchable editor.
 
 ### Settings and theming
 

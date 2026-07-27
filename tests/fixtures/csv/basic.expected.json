@@ -1,0 +1,13 @@
+{
+  "rows": [
+    ["name", "note"],
+    ["Ada", "one, two"],
+    ["Linus", "line\nbreak"]
+  ],
+  "dialect": {
+    "bom": false,
+    "delimiter": ",",
+    "newline": "lf",
+    "terminalSeparator": true
+  }
+}

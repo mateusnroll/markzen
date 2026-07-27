@@ -154,11 +154,53 @@ const fixtures: Readonly<Record<string, Fixture>> = {
     files: [
       { bytes: '# Alpha\n', path: '/notes/alpha.md' },
       { bytes: '# Beta\n', path: '/notes/beta.md' },
+      { bytes: 'name,note\nAda,hello\n', path: '/notes/data.csv' },
       { bytes: '# Nested\n', path: '/notes/nested/deep.markdown' },
       { bytes: 'image', path: '/notes/image.png' },
       { bytes: '# Other\n', path: '/second/other.txt' },
     ],
     workspaceRoots: ['/notes', '/second'],
+  },
+  'csv-basic': {
+    directories: [],
+    files: [{
+      bytes: [
+        'name,team,role,city,status,score,last_review,focus,owner,note',
+        ...Array.from({ length: 30 }, (_, index) => [
+          `Person ${String(index + 1).padStart(2, '0')}`,
+          ['North', 'South', 'East', 'West'][index % 4],
+          ['Writer', 'Editor', 'Researcher'][index % 3],
+          ['Lisbon', 'Kyoto', 'Nairobi', 'São Paulo'][index % 4],
+          ['Active', 'Paused', 'Review'][index % 3],
+          String(72 + (index * 7) % 29),
+          `2026-07-${String((index % 26) + 1).padStart(2, '0')}`,
+          ['Clarity', 'Structure', 'Evidence', 'Tone'][index % 4],
+          `Owner ${(index % 6) + 1}`,
+          `"Review item, ${index + 1}"`,
+        ].join(',')),
+      ].join('\n'),
+      path: '/notes/people.csv',
+    }],
+    workspaceRoots: ['/notes'],
+  },
+  'csv-stale': {
+    directories: [],
+    files: [{ bytes: Array.from({ length: 1_000 }, (_, index) => `row ${index},value ${index}`).join('\n'), path: '/notes/large.csv' }],
+    workspaceRoots: ['/notes'],
+  },
+  'csv-100k': {
+    files: [],
+    initialDocuments: [{
+      csv: {
+        dialect: { bom: false, delimiter: ',', newline: 'lf', terminalSeparator: false },
+        edited: false,
+        originalBytes: new Uint8Array(),
+        rows: Array.from({ length: 1_000 }, (_, row) => Array.from({ length: 100 }, (_, column) => `${row}:${column}`)),
+      },
+      id: 'csv-performance',
+      kind: 'csv',
+      title: 'CSV performance',
+    }],
   },
   'workspace-performance-10k': {
     files: [],
@@ -283,6 +325,7 @@ function isRendererCommand(value: unknown): value is RendererCommand {
     'close-window',
     'find',
     'new',
+    'new-csv',
     'open',
     'save',
     'save-all',
@@ -296,7 +339,8 @@ async function bootstrapElectron(api: MarkzenApi): Promise<BootResult> {
   if (!isMarkzenApi(api)) return fatalBoot()
   const boot = await api.bootstrap()
   if (!boot.ok) return fatalBoot()
-  const tab = boot.value.kind === 'single-file' ? await api.document.createTab() : undefined
+  const initialDocumentKind = boot.value.initialDocumentKind ?? 'markdown'
+  const tab = boot.value.kind === 'single-file' ? await api.document.createTab(initialDocumentKind) : undefined
   if (tab && !tab.ok) return fatalBoot()
   const windowPort = electronWindowPort(api)
   const roots = boot.value.roots
@@ -307,7 +351,7 @@ async function bootstrapElectron(api: MarkzenApi): Promise<BootResult> {
       environment: browserEnvironment(),
       documentGateway: new ElectronDocumentGateway(api),
       fixtureName: 'production',
-      ...(tab?.ok ? { initialDocuments: [{ id: tab.value, title: '' }] } : {}),
+      ...(tab?.ok ? { initialDocuments: [{ id: tab.value, kind: initialDocumentKind, title: '' }] } : {}),
       platformKind: 'electron',
       platformName: boot.value.platformName,
       onOpenExternal: async (destination: string) => {

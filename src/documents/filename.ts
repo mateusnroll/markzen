@@ -1,4 +1,4 @@
-const recognizedExtension = /\.(md|markdown|txt)$/i
+const recognizedExtension = /\.(md|markdown|txt|csv)$/i
 const invalidCharacters = /[/\\:*?"<>|]/
 const reservedDevice = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
 
@@ -20,9 +20,14 @@ export function displayDocumentStem(filename: string): string {
   return filename.replace(recognizedExtension, '')
 }
 
-export function deriveDocumentFilename(title: string, existingExtension: string | undefined): string {
-  if (recognizedExtension.test(title)) return title
-  return `${title}${existingExtension ?? '.md'}`
+export function deriveDocumentFilename(
+  title: string,
+  existingExtension: string | undefined,
+  kind: 'csv' | 'markdown' = 'markdown',
+): string {
+  const explicit = kind === 'csv' ? /\.csv$/i : /\.(md|markdown|txt)$/i
+  if (explicit.test(title)) return title
+  return `${title}${existingExtension ?? (kind === 'csv' ? '.csv' : '.md')}`
 }
 
 export function getRecognizedExtension(filename: string): string | undefined {

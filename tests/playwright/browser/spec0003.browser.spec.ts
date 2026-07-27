@@ -4,12 +4,13 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/?fixture=workspace-basic')
 })
 
-test('AC7-AC9 AC14-AC16 AC23 AC30-AC32: workspace roots and the lazy empty tree remain stable', async ({ page }) => {
+test('AC7-AC9 AC14-AC16 AC23 outdated AC30 AC31-AC32: CSV is enabled while other unsupported rows remain disabled', async ({ page }) => {
   await expect(page.getByTestId('workspace-root-header')).toHaveCount(2)
   await expect(page.getByTestId('workspace-root-header').nth(0)).toContainText('notes')
   await expect(page.getByTestId('workspace-root-header').nth(1)).toContainText('second')
   await expect(page.getByTestId('empty-document-message')).toHaveText('Select a file from the sidebar')
   await expect(treeRow(page, 'image.png')).toHaveAttribute('aria-disabled', 'true')
+  await expect(treeRow(page, 'data.csv')).not.toHaveAttribute('aria-disabled', 'true')
 
   await page.getByTestId('workspace-root-header').nth(0).click()
   await expect(treeRow(page, 'alpha.md')).toHaveCount(0)

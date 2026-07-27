@@ -7,6 +7,7 @@ import type { SelectionBookmark } from '@tiptap/pm/state'
 
 import { validateDocumentName } from '../documents/filename'
 import type { DocumentGatewayPort, ExternalGatewayEvent, GatewayDocument, SaveOutcome } from '../documents/gateway'
+import { createCsvEditor, csvRowsFromEditor, type CsvDocument } from '../documents/csv'
 import { createDocumentExtensions, type RichDocument } from '../documents/markdown'
 import { acceptTabBaseline, createTabBaseline, editTabDocument, editTabTitle, isTabDirty } from '../documents/tab-state'
 import {
@@ -27,14 +28,17 @@ import { SearchPanel } from './SearchPanel'
 import { WritingToolbar } from './WritingToolbar'
 import { TableActions } from './TableActions'
 import { useOverlaySurface } from './overlays'
+import { CsvGrid } from './CsvGrid'
 
 import './document.css'
 
 export type DocumentSeed = {
+  readonly csv?: CsvDocument
   readonly document?: JSONContent
   readonly diskVersion?: DiskVersion
   readonly fileKey?: FileKey
   readonly id: string
+  readonly kind?: 'csv' | 'markdown'
   readonly path?: Path
   readonly preservation?: { readonly bytes?: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
   readonly preview?: boolean
@@ -55,10 +59,13 @@ export type DocumentWorkspaceFolder = {
 type WorkspaceTab = {
   readonly baselineTitle: string
   readonly contentDirty: boolean
+  readonly csv?: CsvDocument
   readonly editor: Editor
   readonly diskVersion?: DiskVersion
   readonly fileKey?: FileKey
   readonly id: string
+  readonly kind: 'csv' | 'markdown'
+  readonly header: boolean
   readonly path?: Path
   readonly preservation?: { readonly bytes?: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
   readonly preview: boolean
@@ -96,6 +103,7 @@ export function DocumentWorkspace({
   const [announcement, setAnnouncement] = useState('')
   const [workspaceRetry, setWorkspaceRetry] = useState<{ readonly entry: DirectoryEntry; readonly pinned: boolean; readonly rootId: RootId }>()
   const generations = useRef(new Map<string, number>())
+  const activationIntent = useRef(0)
   const lifecycleGeneration = useRef(0)
   const handledCloseRequest = useRef(0)
   const linkActions = useRef<LinkActionsHandle>(null)
@@ -113,6 +121,32 @@ export function DocumentWorkspace({
 
   const makeTab = useCallback(
     (seed: DocumentSeed): WorkspaceTab => {
+      if (seed.kind === 'csv') {
+        const csv = seed.csv ?? {
+          dialect: { bom: false, delimiter: ',', newline: 'lf', terminalSeparator: false },
+          edited: false,
+          originalBytes: new Uint8Array(),
+          rows: [['']],
+        }
+        const editor = createCsvEditor(csv, (updated) => updateDocument(seed.id, updated))
+        editors.current.add(editor)
+        baselineDocuments.current.set(seed.id, editor.state.doc)
+        return {
+          ...createTabBaseline(seed.title),
+          csv,
+          editor,
+          ...(seed.diskVersion ? { diskVersion: seed.diskVersion } : {}),
+          ...(seed.fileKey ? { fileKey: seed.fileKey } : {}),
+          header: true,
+          id: seed.id,
+          kind: 'csv',
+          ...(seed.path ? { path: seed.path } : {}),
+          ...(seed.preservation ? { preservation: seed.preservation } : {}),
+          preview: seed.preview ?? false,
+          ...(seed.secondaryPath ? { secondaryPath: seed.secondaryPath } : {}),
+          title: seed.title,
+        }
+      }
       const document = withImageIds(seed.document ?? emptyDocument)
       const editor: Editor = new Editor({
         content: document,
@@ -136,7 +170,9 @@ export function DocumentWorkspace({
         editor,
         ...(seed.diskVersion ? { diskVersion: seed.diskVersion } : {}),
         ...(seed.fileKey ? { fileKey: seed.fileKey } : {}),
+        header: false,
         id: seed.id,
+        kind: 'markdown',
         ...(seed.path ? { path: seed.path } : {}),
         ...(seed.preservation ? { preservation: seed.preservation } : {}),
         preview: seed.preview ?? false,
@@ -175,9 +211,19 @@ export function DocumentWorkspace({
     : undefined), [active?.path, active?.secondaryPath, workspace])
 
   const dirty = useCallback(
-    (tab: WorkspaceTab) => isTabDirty(tab),
+    (tab: WorkspaceTab) => {
+      if (tab.kind === 'markdown') return isTabDirty(tab)
+      const baseline = baselineDocuments.current.get(tab.id)
+      return isTabDirty(tab) || Boolean(baseline && !persistentDocumentsEqual(tab.editor.state.doc, baseline))
+    },
     [],
   )
+
+  const contentDirty = useCallback((tab: WorkspaceTab) => {
+    if (tab.kind === 'markdown') return tab.contentDirty
+    const baseline = baselineDocuments.current.get(tab.id)
+    return tab.contentDirty || Boolean(baseline && !persistentDocumentsEqual(tab.editor.state.doc, baseline))
+  }, [])
 
   const pinTab = useCallback((id: string) => {
     setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, preview: false } : tab))
@@ -240,8 +286,8 @@ export function DocumentWorkspace({
         const snapshot = tab.editor.state.doc
         generations.current.set(tab.id, generation)
         void gateway.save({
-          ...gatewayDocument(tab),
-          documentDirty: tab.contentDirty,
+          ...gatewayDocument(tab, contentDirty(tab)),
+          documentDirty: contentDirty(tab),
           titleDirty: tab.title !== tab.baselineTitle,
         }).then((result) => {
           if (result.kind === 'saved' || result.kind === 'cleanup-warning') {
@@ -258,17 +304,19 @@ export function DocumentWorkspace({
         })
       })
     },
-    [closeTab, dirty, gateway, tabs],
+    [closeTab, contentDirty, dirty, gateway, tabs],
   )
 
-  const addTab = useCallback(() => {
+  const addTab = useCallback((kind: 'csv' | 'markdown' = 'markdown') => {
+    activationIntent.current += 1
     const append = (id: string) => {
-      const tab = makeTab({ id, title: '' })
+      const tab = makeTab({ id, kind, title: '' })
       setTabs((current) => [...insertPinnedBeforePreview(current, tab)])
       setActiveId(tab.id)
       setRovingId(tab.id)
+      requestAnimationFrame(() => tab.editor.commands.focus('start'))
     }
-    void gateway.createTabId().then(append)
+    void gateway.createTabId(kind).then(append)
   }, [gateway, makeTab])
 
   const activateFromEditor = useCallback(
@@ -358,11 +406,11 @@ export function DocumentWorkspace({
     const snapshot = active.editor.state.doc
     generations.current.set(active.id, generation)
     void gateway.save({
-      ...gatewayDocument(active),
-      documentDirty: active.contentDirty,
+      ...gatewayDocument(active, contentDirty(active)),
+      documentDirty: contentDirty(active),
       titleDirty: active.title !== active.baselineTitle,
     }).then((result) => commitGatewaySave(active, result, generation, snapshot))
-  }, [active, commitGatewaySave, gateway, pinTab, titleValidation.valid])
+  }, [active, commitGatewaySave, contentDirty, gateway, pinTab, titleValidation.valid])
 
   const saveAs = useCallback(() => {
     if (!active || !titleValidation.valid) return
@@ -370,8 +418,8 @@ export function DocumentWorkspace({
     const generation = (generations.current.get(active.id) ?? 0) + 1
     const snapshot = active.editor.state.doc
     generations.current.set(active.id, generation)
-    void gateway.saveAs(gatewayDocument(active)).then((result) => commitGatewaySave(active, result, generation, snapshot))
-  }, [active, commitGatewaySave, gateway, pinTab, titleValidation.valid])
+    void gateway.saveAs(gatewayDocument(active, contentDirty(active))).then((result) => commitGatewaySave(active, result, generation, snapshot))
+  }, [active, commitGatewaySave, contentDirty, gateway, pinTab, titleValidation.valid])
 
   const openDocument = useCallback(() => {
     const reusable = Boolean(active && tabs.length === 1 && active.baselineTitle === '' && !dirty(active))
@@ -403,6 +451,7 @@ export function DocumentWorkspace({
   }, [active, dirty, gateway, makeTab, tabs])
 
   const openWorkspaceEntry = useCallback((entry: DirectoryEntry, pinned: boolean, rootId: RootId) => {
+    const activation = ++activationIntent.current
     void (async () => {
       setWorkspaceRetry(undefined)
       const previousActiveId = activeId
@@ -435,8 +484,10 @@ export function DocumentWorkspace({
           ? [...insertPinnedBeforePreview(current, placeholder)]
           : [...current.filter((tab) => !tab.preview), placeholder])
       }
-      setActiveId(id)
-      setRovingId(id)
+      if (activationIntent.current === activation) {
+        setActiveId(id)
+        setRovingId(id)
+      }
 
       const rootPath = workspace?.roots.find((root) => root.rootId === rootId)?.path
       if (!rootPath) return
@@ -507,8 +558,8 @@ export function DocumentWorkspace({
     for (const tab of dirtyTabs) {
       const snapshot = tab.editor.state.doc
       const result = await gateway.save({
-        ...gatewayDocument(tab),
-        documentDirty: tab.contentDirty,
+        ...gatewayDocument(tab, contentDirty(tab)),
+        documentDirty: contentDirty(tab),
         titleDirty: tab.title !== tab.baselineTitle,
       })
       if (result.kind !== 'saved' && result.kind !== 'cleanup-warning' && result.kind !== 'unchanged') {
@@ -523,7 +574,7 @@ export function DocumentWorkspace({
       }
     }
     return true
-  }, [gateway])
+  }, [contentDirty, gateway])
 
   const requestWindowClose = useCallback(() => {
     const dirtyTabs = tabs.filter(dirty)
@@ -554,7 +605,9 @@ export function DocumentWorkspace({
   }, [activeId])
 
   useEffect(() => gateway.onCommand((command) => {
-    if (command === 'new') addTab()
+    if (active?.kind === 'csv') document.querySelector<HTMLTextAreaElement>('[data-testid="csv-cell-editor"]')?.blur()
+    if (command === 'new') addTab('markdown')
+    if (command === 'new-csv') addTab('csv')
     if (command === 'open') openDocument()
     if (command === 'save') save()
     if (command === 'save-all') void saveTabsSequentially(tabs.filter(dirty))
@@ -764,13 +817,13 @@ export function DocumentWorkspace({
             })}
           </div>
         </div>
-        <button aria-label="New file" className="tab-add" data-testid="tab-add" onClick={addTab} type="button">
+        <button aria-label="New file" className="tab-add" data-testid="tab-add" onClick={() => addTab()} type="button">
           <span aria-hidden="true">+</span>
         </button>
         <div aria-hidden="true" className="tab-drag-space" />
       </div>
 
-      {active && !active.preservation ? (
+      {active && active.kind === 'markdown' && !active.preservation ? (
         <WritingToolbar
           editor={active.editor}
           key={`toolbar-${active.id}`}
@@ -787,10 +840,10 @@ export function DocumentWorkspace({
       {active ? (
         <section
           aria-label={active.title || 'Untitled document'}
-          className="document-surface"
+          className={`document-surface${active.kind === 'csv' ? ' document-surface-csv' : ''}`}
           id="active-document-panel"
           onMouseDown={(event) => {
-            if (active.preservation || event.button !== 0 || !(event.target instanceof Element)) return
+            if (active.preservation || active.kind === 'csv' || event.button !== 0 || !(event.target instanceof Element)) return
             const surface = event.currentTarget
             if (event.clientX >= surface.getBoundingClientRect().left + surface.clientWidth) return
             if (event.target.closest('button, input, textarea, select, a, dialog, [role="menu"], [role="toolbar"], .document-issue, .preservation-panel')) return
@@ -811,40 +864,46 @@ export function DocumentWorkspace({
           role="tabpanel"
         >
           <div
-            className="document-page"
+            className={`document-page${active.kind === 'csv' ? ' document-page-csv' : ''}`}
             data-testid="document-page"
           >
             <div className="document-title-gutter">
-              {!active.title ? <span aria-hidden="true" className="untitled-fallback">Untitled</span> : null}
-              <input
-                aria-describedby={titleError ? 'document-title-error' : undefined}
-                aria-invalid={titleError ? true : undefined}
-                aria-label="Document title"
-                className="document-title"
-                data-testid="document-title"
-                onChange={(event) => updateTitle(active.id, event.currentTarget.value.replace(/[\r\n]+/g, ''))}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    updateTitle(active.id, active.baselineTitle)
-                  } else if (event.key === 'Enter' || event.key === 'ArrowDown') {
-                    event.preventDefault()
-                    active.editor.commands.focus('start')
-                  }
-                }}
-                onPaste={(event) => {
-                  const text = event.clipboardData.getData('text').replace(/[\r\n]+/g, '')
-                  if (text !== event.clipboardData.getData('text')) {
-                    event.preventDefault()
-                    const input = event.currentTarget
-                    const start = input.selectionStart ?? input.value.length
-                    const end = input.selectionEnd ?? start
-                    updateTitle(active.id, `${input.value.slice(0, start)}${text}${input.value.slice(end)}`)
-                  }
-                }}
-                placeholder="Untitled"
-                value={active.title}
-              />
+              <div className="document-title-control">
+                {!active.title ? <span aria-hidden="true" className="untitled-fallback">Untitled</span> : null}
+                <input
+                  aria-describedby={titleError ? 'document-title-error' : undefined}
+                  aria-invalid={titleError ? true : undefined}
+                  aria-label={active.kind === 'csv' ? 'Document title, .csv extension is fixed' : 'Document title'}
+                  className="document-title"
+                  data-testid="document-title"
+                  onChange={(event) => updateTitle(active.id, event.currentTarget.value.replace(/[\r\n]+/g, ''))}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      updateTitle(active.id, active.baselineTitle)
+                    } else if (event.key === 'Enter' || event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      if (active.kind === 'csv') {
+                        document.querySelector<HTMLElement>('[data-csv-row="0"][data-csv-column="0"]')?.focus()
+                      } else active.editor.commands.focus('start')
+                    }
+                  }}
+                  onPaste={(event) => {
+                    const text = event.clipboardData.getData('text').replace(/[\r\n]+/g, '')
+                    if (text !== event.clipboardData.getData('text')) {
+                      event.preventDefault()
+                      const input = event.currentTarget
+                      const start = input.selectionStart ?? input.value.length
+                      const end = input.selectionEnd ?? start
+                      updateTitle(active.id, `${input.value.slice(0, start)}${text}${input.value.slice(end)}`)
+                    }
+                  }}
+                  placeholder="Untitled"
+                  size={active.kind === 'csv' ? Math.max(1, active.title.length) : undefined}
+                  value={active.title}
+                />
+                {active.kind === 'csv' ? <span aria-hidden="true" className="csv-title-extension" data-testid="csv-title-extension">.csv</span> : null}
+              </div>
               {titleError ? (
                 <p className="title-error" data-testid="title-error" id="document-title-error" role="alert">
                   {titleError}
@@ -861,11 +920,21 @@ export function DocumentWorkspace({
                 <p data-testid="preservation-explanation">Rich editing is disabled to prevent data loss.</p>
                 <pre data-testid="preservation-view" tabIndex={0}>{active.preservation.display}</pre>
               </div>
+            ) : active.kind === 'csv' ? (
+              <CsvGrid
+                editor={active.editor}
+                header={active.header}
+                onError={(message) => setIssue({ kind: 'error', message })}
+                onHeaderChange={(header) => setTabs((current) => current.map((tab) => (
+                  tab.id === active.id ? { ...tab, header } : tab
+                )))}
+                onRequestFind={openSearch}
+              />
             ) : (
               <EditorContent data-testid="rich-editor" editor={active.editor} />
             )}
-            {!active.preservation ? <TableActions editor={active.editor} key={`tables-${active.id}`} /> : null}
-            {!active.preservation ? (
+            {!active.preservation && active.kind === 'markdown' ? <TableActions editor={active.editor} key={`tables-${active.id}`} /> : null}
+            {!active.preservation && active.kind === 'markdown' ? (
               <ImageActions
                 editor={active.editor}
                 gateway={gateway}
@@ -875,7 +944,7 @@ export function DocumentWorkspace({
                 tabId={active.id}
               />
             ) : null}
-            {!active.preservation ? (
+            {!active.preservation && active.kind === 'markdown' ? (
               <LinkActions
                 editor={active.editor}
                 key={`links-${active.id}`}
@@ -912,7 +981,7 @@ export function DocumentWorkspace({
       ) : (
         <section aria-label="No open documents" className="empty-document-state">
           <p data-testid="empty-document-message">{workspace ? 'Select a file from the sidebar' : 'No open documents'}</p>
-          <button data-testid="empty-new-file" onClick={addTab} type="button">New file</button>
+          <button data-testid="empty-new-file" onClick={() => addTab()} type="button">New file</button>
         </section>
       )}
 
@@ -997,12 +1066,24 @@ function convertTaskMarkerInput(view: EditorView, cursor: number, text: string):
   return true
 }
 
-function gatewayDocument(tab: WorkspaceTab): GatewayDocument {
+function gatewayDocument(tab: WorkspaceTab, documentDirty = tab.contentDirty): GatewayDocument {
   return {
     ...(tab.diskVersion ? { diskVersion: tab.diskVersion } : {}),
-    document: tab.editor.getJSON() as RichDocument,
+    ...(tab.kind === 'csv'
+      ? {
+        csv: {
+          ...(tab.csv ?? {
+            dialect: { bom: false, delimiter: ',', newline: 'lf', terminalSeparator: false },
+            originalBytes: new Uint8Array(),
+          }),
+          edited: documentDirty || tab.csv?.edited === true,
+          rows: csvRowsFromEditor(tab.editor),
+        },
+      }
+      : { document: tab.editor.getJSON() as RichDocument }),
     ...(tab.fileKey ? { fileKey: tab.fileKey } : {}),
     id: tab.id,
+    kind: tab.kind,
     ...(tab.path ? { path: tab.path } : {}),
     ...(tab.preservation?.bytes ? { preservation: { ...tab.preservation, bytes: tab.preservation.bytes } } : {}),
     ...(tab.secondaryPath ? { secondaryPath: tab.secondaryPath } : {}),
@@ -1013,10 +1094,12 @@ function gatewayDocument(tab: WorkspaceTab): GatewayDocument {
 
 function gatewaySeed(document: GatewayDocument): DocumentSeed {
   return {
+    ...(document.csv ? { csv: document.csv } : {}),
     ...(document.diskVersion ? { diskVersion: document.diskVersion } : {}),
     ...(document.document ? { document: document.document as JSONContent } : {}),
     ...(document.fileKey ? { fileKey: document.fileKey } : {}),
     id: document.id,
+    kind: document.kind ?? (document.csv ? 'csv' : 'markdown'),
     ...(document.path ? { path: document.path } : {}),
     ...(document.preservation ? { preservation: document.preservation } : {}),
     ...(document.secondaryPath ? { secondaryPath: document.secondaryPath } : {}),
@@ -1024,7 +1107,7 @@ function gatewaySeed(document: GatewayDocument): DocumentSeed {
   }
 }
 
-const displaySeedTitle = (name: string): string => name.replace(/\.(md|markdown|txt)$/i, '')
+const displaySeedTitle = (name: string): string => name.replace(/\.(md|markdown|txt|csv)$/i, '')
 const logicalRelativePath = (root: Path, child: Path): string => {
   const prefix = `${String(root).replace(/[\\/]$/, '')}/`
   return String(child).replaceAll('\\', '/').slice(prefix.replaceAll('\\', '/').length)
@@ -1046,6 +1129,7 @@ function adoptGatewayResult(tab: WorkspaceTab, document: GatewayDocument, snapsh
   return {
     ...acceptTabBaseline(tab, document.title),
     contentDirty: !persistentDocumentsEqual(tab.editor.state.doc, snapshot),
+    ...(document.csv ? { csv: document.csv } : {}),
     ...(document.diskVersion ? { diskVersion: document.diskVersion } : {}),
     ...(document.fileKey ? { fileKey: document.fileKey } : {}),
     ...(document.path ? { path: document.path } : {}),
