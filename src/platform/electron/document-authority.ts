@@ -35,7 +35,7 @@ export function validateDocumentRequest(
     : ['generation', 'tabId']
   const keys = external ? [...expected, 'diskVersion'] : closeDecision ? [...expected, 'name'] : expected
   const optionalSaveAs = intent === 'save-as' && 'model' in payload && 'encoding' in payload
-  if (!exactKeys(payload, optionalSaveAs ? [...keys, 'encoding', 'model'] : keys)) return fail('validation')
+  if (!exactKeys(payload, [...keys, ...(optionalSaveAs ? ['encoding', 'model'] : [])])) return fail('validation')
   const identity = validateIdentity(payload)
   if (!identity.ok) return identity
   if (closeDecision) {

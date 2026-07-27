@@ -1,5 +1,6 @@
 import { displayDocumentStem, deriveDocumentFilename, getRecognizedExtension } from './filename'
 import { parseDocumentBytes, serializeRichDocument, type DocumentEncoding, type RichDocument } from './markdown'
+import { csvPreservationMessage, parseCsvBytes, serializeCsvDocument, type CsvDocument } from './csv'
 import { decodeEmbeddedImage, MAX_ACQUIRED_IMAGE_BYTES } from '../assets/image-sources'
 import { validateRaster } from '../assets/raster'
 import { SaveCoordinator } from './save-coordinator'
@@ -20,9 +21,11 @@ export type GatewayDocument = {
   readonly assetsRevoked?: boolean
   readonly diskVersion?: DiskVersion
   readonly document?: RichDocument
+  readonly csv?: CsvDocument
   readonly encoding?: DocumentEncoding
   readonly fileKey?: FileKey
   readonly id: string
+  readonly kind?: 'csv' | 'markdown'
   readonly path?: Path
   readonly preservation?: { readonly bytes: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
   readonly revision?: number
@@ -59,7 +62,7 @@ export interface DocumentGatewayPort {
   commitImage(id: string, candidateId: string): Promise<ImageIntentOutcome>
   loadRemoteImage(id: string, assetId: string, source: string, generation: number): Promise<ImageIntentOutcome>
   completeQuitSaveAll(success: boolean): Promise<void>
-  createTabId(): Promise<string>
+  createTabId(kind?: 'csv' | 'markdown'): Promise<string>
   open(id?: string): Promise<OpenOutcome>
   openWorkspace(input: WorkspaceOpenInput): Promise<OpenOutcome>
   onCommand(listener: (command: import('../platform/contracts').RendererCommand) => void): () => void
@@ -196,7 +199,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async open(id?: string): Promise<OpenOutcome> {
-    const selected = await this.platform.dialog.open({ extensions: ['md', 'markdown', 'txt'], title: 'Open Markdown Document' })
+    const selected = await this.platform.dialog.open({ extensions: ['md', 'markdown', 'txt', 'csv'], title: 'Open Markzen Document' })
     if (!selected.ok) return { kind: 'error' }
     return selected.value ? this.openPath(selected.value, id ?? `file-${Date.now()}`) : { kind: 'cancelled' }
   }
@@ -220,8 +223,8 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async #overwriteExternal(input: SaveInput, diskVersion: DiskVersion): Promise<SaveOutcome> {
-    if (!input.path || !input.document) return { kind: 'error' }
-    const bytes = serializeRichDocument(input.document, input.encoding ?? { bom: false, newline: 'lf' })
+    if (!input.path || (!input.document && !input.csv)) return { kind: 'error' }
+    const bytes = gatewayBytes(input)
     const replaced = await this.platform.fs.atomicReplace(input.path, bytes, diskVersion)
     return replaced.ok ? this.#saved(input, replaced.value) : failure(replaced.error.code)
   }
@@ -251,14 +254,32 @@ export class DocumentGateway implements DocumentGatewayPort {
   async #readPath(path: Path, id: string): Promise<OpenOutcome> {
     const read = await this.platform.fs.read(path)
     if (!read.ok) return { kind: 'error' }
-    const parsed = parseDocumentBytes(read.value.bytes)
     const title = displayDocumentStem(basename(read.value.path))
     const identity = { diskVersion: read.value.diskVersion, fileKey: read.value.fileKey, id, path: read.value.path, title }
+    if (/\.csv$/i.test(String(read.value.path))) {
+      const parsed = parseCsvBytes(read.value.bytes)
+      return parsed.mode === 'editable'
+        ? { document: { ...identity, csv: parsed.document, kind: 'csv' }, kind: 'opened' }
+        : {
+          document: {
+            ...identity,
+            kind: 'csv',
+            preservation: {
+              bytes: parsed.bytes,
+              display: `${csvPreservationMessage(parsed.reason)} Its original bytes are preserved.`,
+              kind: 'text',
+            },
+          },
+          kind: 'opened',
+        }
+    }
+    const parsed = parseDocumentBytes(read.value.bytes)
     const outcome: OpenOutcome = parsed.mode === 'rich' ? {
-      document: { ...identity, document: parsed.document, encoding: parsed.encoding }, kind: 'opened',
+      document: { ...identity, document: parsed.document, encoding: parsed.encoding, kind: 'markdown' }, kind: 'opened',
     } : {
       document: {
         ...identity,
+        kind: 'markdown',
         preservation: {
           bytes: parsed.bytes,
           display: parsed.mode === 'preserve-bytes' ? parsed.escaped : parsed.text,
@@ -278,15 +299,15 @@ export class DocumentGateway implements DocumentGatewayPort {
     if (!input.documentDirty && !input.titleDirty) return { kind: 'unchanged' }
     if (!input.path || !input.diskVersion) return this.#saveAs(input)
     const originalName = basename(input.path)
-    const targetName = deriveDocumentFilename(input.title, getRecognizedExtension(originalName))
+    const targetName = deriveDocumentFilename(input.title, getRecognizedExtension(originalName), input.kind)
     const titleChanged = targetName !== originalName
     if (titleChanged && input.documentDirty) return { kind: 'rename-decision' }
     if (titleChanged) {
       const moved = await this.platform.fs.move(input.path, join(dirname(input.path), targetName), input.diskVersion)
       return moved.ok ? this.#saved(input, moved.value) : failure(moved.error.code)
     }
-    if (!input.document) return { kind: 'unchanged' }
-    const bytes = serializeRichDocument(input.document, input.encoding ?? { bom: false, newline: 'lf' })
+    if (!input.document && !input.csv) return { kind: 'unchanged' }
+    const bytes = gatewayBytes(input)
     const replaced = await this.platform.fs.atomicReplace(input.path, bytes, input.diskVersion)
     return replaced.ok ? this.#saved(input, replaced.value) : failure(replaced.error.code)
   }
@@ -296,13 +317,13 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async #saveAndRename(input: SaveInput): Promise<SaveOutcome> {
-    if (!input.path || !input.diskVersion || !input.document) return { kind: 'error' }
+    if (!input.path || !input.diskVersion || (!input.document && !input.csv)) return { kind: 'error' }
     const latest = await this.platform.fs.read(input.path)
     if (!latest.ok) return failure(latest.error.code)
     if (latest.value.diskVersion !== input.diskVersion) return { kind: 'conflict' }
-    const targetName = deriveDocumentFilename(input.title, getRecognizedExtension(basename(input.path)))
+    const targetName = deriveDocumentFilename(input.title, getRecognizedExtension(basename(input.path)), input.kind)
     const target = join(dirname(input.path), targetName)
-    const bytes = serializeRichDocument(input.document, input.encoding ?? { bom: false, newline: 'lf' })
+    const bytes = gatewayBytes(input)
     const written = await this.platform.fs.atomicReplace(target, bytes, 'missing')
     if (!written.ok) return failure(written.error.code)
     const removed = await this.platform.fs.remove(input.path)
@@ -322,7 +343,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   async #saveAs(input: GatewayDocument): Promise<SaveOutcome> {
     const selected = await this.platform.dialog.save({
       confirmationLabel: 'Save As',
-      defaultName: deriveDocumentFilename(input.title, undefined),
+      defaultName: deriveDocumentFilename(input.title, undefined, input.kind),
       message: 'A new document will be created from the current tab.',
       title: 'Save Current Tab As',
     })
@@ -337,9 +358,7 @@ export class DocumentGateway implements DocumentGatewayPort {
     if (existing.ok) {
       if (input.fileKey === existing.value.fileKey && input.path === existing.value.path) {
         if (!input.diskVersion) return { kind: 'missing' }
-        const samePath = await this.platform.fs.atomicReplace(input.path, savedInput.preservation?.bytes ?? (
-          savedInput.document ? serializeRichDocument(savedInput.document, savedInput.encoding ?? { bom: false, newline: 'lf' }) : new Uint8Array()
-        ), input.diskVersion)
+        const samePath = await this.platform.fs.atomicReplace(input.path, gatewayBytes(savedInput), input.diskVersion)
         return samePath.ok ? this.#saved(savedInput, samePath.value) : failure(samePath.error.code)
       }
       if (input.fileKey === existing.value.fileKey) return { kind: 'collision' }
@@ -351,7 +370,7 @@ export class DocumentGateway implements DocumentGatewayPort {
       if (!confirmed.ok || confirmed.value !== 0) return { kind: 'cancelled' }
       expected = existing.value.diskVersion
     } else if (existing.error.code !== 'not-found') return { kind: 'error' }
-    const bytes = savedInput.preservation?.bytes ?? (savedInput.document ? serializeRichDocument(savedInput.document, savedInput.encoding ?? { bom: false, newline: 'lf' }) : new Uint8Array())
+    const bytes = gatewayBytes(savedInput)
     const replaced = await this.platform.fs.atomicReplace(selected.value, bytes, expected)
     return replaced.ok ? this.#saved(savedInput, replaced.value) : failure(replaced.error.code)
   }
@@ -487,8 +506,8 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
     return result.ok
   }
 
-  async createTabId(): Promise<string> {
-    const result = await this.api.document.createTab()
+  async createTabId(kind: 'csv' | 'markdown' = 'markdown'): Promise<string> {
+    const result = await this.api.document.createTab(kind)
     if (!result.ok) throw new Error('Could not create a document tab')
     return result.value
   }
@@ -529,7 +548,7 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
   }
 
   async overwriteExternal(input: SaveInput, diskVersion: DiskVersion): Promise<SaveOutcome> {
-    const bytes = input.document ? serializeRichDocument(input.document, input.encoding ?? { bom: false, newline: 'lf' }) : input.preservation?.bytes ?? new Uint8Array()
+    const bytes = gatewayBytes(input)
     const result = await this.api.document.overwriteExternal({
       bytes,
       diskVersion,
@@ -548,7 +567,7 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
   }
 
   async save(input: SaveInput): Promise<SaveOutcome> {
-    const bytes = input.preservation?.bytes ?? (input.document ? serializeRichDocument(input.document, input.encoding ?? { bom: false, newline: 'lf' }) : new Uint8Array())
+    const bytes = gatewayBytes(input)
     const result = await this.api.document.save({
       bytes,
       documentDirty: input.documentDirty,
@@ -561,7 +580,7 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
   }
 
   async saveAndRename(input: SaveInput): Promise<SaveOutcome> {
-    const bytes = input.document ? serializeRichDocument(input.document, input.encoding ?? { bom: false, newline: 'lf' }) : new Uint8Array()
+    const bytes = gatewayBytes(input)
     const result = await this.api.document.saveAndRename({
       bytes,
       documentDirty: input.documentDirty,
@@ -574,7 +593,7 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
   }
 
   async saveAs(input: GatewayDocument): Promise<SaveOutcome> {
-    const bytes = input.preservation?.bytes ?? (input.document ? serializeRichDocument(input.document, input.encoding ?? { bom: false, newline: 'lf' }) : new Uint8Array())
+    const bytes = gatewayBytes(input)
     const result = await this.api.document.saveAs({
       bytes,
       documentDirty: true,
@@ -593,7 +612,6 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
 }
 
 function parseRemoteFile(file: import('../platform/contracts').DocumentFilePayload): OpenOutcome {
-  const parsed = parseDocumentBytes(file.bytes)
   const identity = {
     diskVersion: file.diskVersion,
     fileKey: file.fileKey,
@@ -602,8 +620,19 @@ function parseRemoteFile(file: import('../platform/contracts').DocumentFilePaylo
     ...(file.secondaryPath ? { secondaryPath: file.secondaryPath } : {}),
     title: displayDocumentStem(basename(file.path)),
   }
-  if (parsed.mode === 'rich') return { document: { ...identity, document: parsed.document, encoding: parsed.encoding }, kind: 'opened' }
-  return { document: { ...identity, preservation: {
+  const kind = file.kind
+  if (kind === 'csv') {
+    const parsed = parseCsvBytes(file.bytes)
+    if (parsed.mode === 'editable') return { document: { ...identity, csv: parsed.document, kind }, kind: 'opened' }
+    return { document: { ...identity, kind, preservation: {
+      bytes: parsed.bytes,
+      display: `${csvPreservationMessage(parsed.reason)} Its original bytes are preserved.`,
+      kind: 'text',
+    } }, kind: 'opened' }
+  }
+  const parsed = parseDocumentBytes(file.bytes)
+  if (parsed.mode === 'rich') return { document: { ...identity, document: parsed.document, encoding: parsed.encoding, kind }, kind: 'opened' }
+  return { document: { ...identity, kind, preservation: {
     bytes: parsed.bytes,
     display: parsed.mode === 'preserve-bytes' ? parsed.escaped : parsed.text,
     kind: parsed.mode === 'preserve-bytes' ? 'bytes' : 'text',
@@ -625,6 +654,7 @@ function remoteSaveOutcome(
       ...(result.value.file.assetsRevoked ? { assetsRevoked: true } : {}),
       ...(result.value.file.sourceRebases ? { sourceRebases: result.value.file.sourceRebases } : {}),
       ...(result.value.file.secondaryPath ? { secondaryPath: result.value.file.secondaryPath } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
       title: displayDocumentStem(basename(result.value.file.path)),
     }
     return result.value.kind === 'cleanup-warning'
@@ -635,6 +665,14 @@ function remoteSaveOutcome(
 }
 
 const failure = (code: string): SaveOutcome => ({ kind: code === 'conflict' ? 'conflict' : code === 'not-found' ? 'missing' : code === 'already-exists' ? 'collision' : 'error' })
+
+function gatewayBytes(document: GatewayDocument): Uint8Array {
+  if (document.preservation?.bytes) return document.preservation.bytes
+  if (document.csv) return serializeCsvDocument(document.csv)
+  if (document.document) return serializeRichDocument(document.document, document.encoding ?? { bom: false, newline: 'lf' })
+  return new Uint8Array()
+}
+
 const basename = (path: Path): string => String(path).split(/[\\/]/).at(-1) ?? ''
 const dirname = (path: Path): Path => String(path).slice(0, Math.max(String(path).lastIndexOf('/'), String(path).lastIndexOf('\\'))) as Path
 const join = (parent: Path, name: string): Path => `${parent}${String(parent).includes('\\') ? '\\' : '/'}${name}` as Path

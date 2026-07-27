@@ -15,6 +15,7 @@ export function buildApplicationMenuTemplate(
     label: 'File',
     submenu: [
       command('New File', 'CmdOrCtrl+N', 'new', dispatch),
+      command('New CSV', undefined, 'new-csv', dispatch),
       command('Open…', 'CmdOrCtrl+O', 'open', dispatch),
       command('Open Folder…', 'CmdOrCtrl+Shift+O', 'open-folder', dispatch),
       command('Add Folder…', undefined, 'add-folder', dispatch),

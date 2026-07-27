@@ -34,12 +34,19 @@ const roots = (...values: Array<{ path: string; entries: readonly DirectoryEntry
 }))
 
 describe('spec 0003 accessible workspace sidebar', () => {
-  test('AC16 AC19 AC30 AC32: roots retain order, active aliases mark current, unsupported rows stay disabled, and collapse removes descendants', async () => {
+  test('AC16 AC19 outdated AC30 AC32: CSV is recognized while unsupported rows stay disabled and collapse removes descendants', async () => {
     const active = asFileKey('/shared/a.md')
     await renderSidebar({
       activeFileKey: active,
       roots: roots(
-        { path: '/first', entries: [{ ...entry('a.md', 'file', '/first'), fileKey: active }, entry('image.png', 'file', '/first')] },
+        {
+          path: '/first',
+          entries: [
+            { ...entry('a.md', 'file', '/first'), fileKey: active },
+            entry('data.csv', 'file', '/first'),
+            entry('image.png', 'file', '/first'),
+          ],
+        },
         { path: '/second', entries: [{ ...entry('alias.md', 'file', '/second'), fileKey: active }] },
       ),
     })
@@ -47,6 +54,7 @@ describe('spec 0003 accessible workspace sidebar', () => {
     expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(2)
     const unsupported = byLabel<HTMLButtonElement>('image.png')
     expect(unsupported.getAttribute('aria-disabled')).toBe('true')
+    expect(byLabel<HTMLButtonElement>('data.csv').hasAttribute('aria-disabled')).toBe(false)
 
     await userEvent.click(document.querySelectorAll<HTMLButtonElement>('[data-testid="workspace-root-header"]')[0]!)
     expect(byLabelOptional('a.md')).toBeNull()
@@ -65,8 +73,9 @@ describe('spec 0003 accessible workspace sidebar', () => {
     await userEvent.click(byLabel('folder'))
     expect(byLabel('folder').getAttribute('aria-busy')).toBe('true')
     reject(new Error('denied'))
-    await frame()
-    expect(byLabel('folder').getAttribute('aria-describedby')).toContain('workspace-row-error')
+    await vi.waitFor(() => {
+      expect(byLabel('folder').getAttribute('aria-describedby')).toContain('workspace-row-error')
+    })
     expect(byLabel('linked').hasAttribute('aria-expanded')).toBe(false)
     byLabel<HTMLButtonElement>('linked').click()
     expect(onList).toHaveBeenCalledOnce()

@@ -126,4 +126,16 @@ describe('spec 0001 repository verification contract', () => {
     expect(preload).not.toContain('ipcRenderer:')
     expect(preload).not.toContain('confirmed:')
   })
+
+  test('spec 0009 AC62 AC67: CSV uses closed typed intents and local deterministic test boundaries', async () => {
+    const contracts = await readFile('src/platform/contracts.ts', 'utf8')
+    const preload = await readFile('src/platform/electron/preload.ts', 'utf8')
+    const csvTests = await readFile('tests/node/csv.test.ts', 'utf8')
+    expect(contracts).toContain("'new-csv'")
+    expect(contracts).toContain("readonly kind: 'csv'")
+    expect(preload).not.toContain('clipboard:')
+    expect(preload).not.toContain('filesystem:')
+    expect(csvTests).toContain('tests/fixtures/csv')
+    expect(csvTests).not.toContain('fetch(')
+  })
 })

@@ -23,11 +23,14 @@ describe('spec 0002 document state', () => {
     expect(validateDocumentName('Olá 世界')).toEqual({ valid: true })
   })
 
-  test('AC75 AC89-AC92: display and target names preserve or explicitly replace recognized extensions', () => {
+  test('AC75 AC89-AC92 and outdated extension scope: display and target names preserve the active document kind', () => {
     expect(displayDocumentStem('Note.MARKDOWN')).toBe('Note')
+    expect(displayDocumentStem('Data.CSV')).toBe('Data')
     expect(deriveDocumentFilename('Renamed', '.markdown')).toBe('Renamed.markdown')
     expect(deriveDocumentFilename('Renamed.TXT', '.md')).toBe('Renamed.TXT')
     expect(deriveDocumentFilename('Draft', undefined)).toBe('Draft.md')
+    expect(deriveDocumentFilename('Export', '.csv', 'csv')).toBe('Export.csv')
+    expect(deriveDocumentFilename('Export.md', '.csv', 'csv')).toBe('Export.md.csv')
   })
 
   test('AC77 AC81 AC93 AC172: title and document equality independently determine dirty state', () => {
@@ -176,7 +179,7 @@ describe('spec 0002 document state', () => {
       { kind: 'open' },
       { choice: 2, kind: 'confirm' },
     )
-    const openOptions = { extensions: ['md', 'markdown', 'txt'], title: 'Open Markdown Document' } as const
+    const openOptions = { extensions: ['md', 'markdown', 'txt', 'csv'], title: 'Open Markzen Document' } as const
     expect(await platform.dialog.open(openOptions)).toEqual(ok('/one.md'))
     expect(await platform.dialog.open(openOptions)).toEqual(ok(undefined))
     expect(await platform.dialog.confirm({ buttons: ['Save', "Don't Save", 'Cancel'], message: 'Close?', title: 'Close' })).toEqual(ok(2))

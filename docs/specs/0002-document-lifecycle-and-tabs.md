@@ -82,7 +82,10 @@ Canonical output uses one blank line between adjacent block nodes, no trailing s
 - AC38: Given two paths with only a textual prefix in common, when Platform containment and relative-path helpers compare them, then containment is decided by canonical path segments rather than string prefix.
 - AC39: Given a single-file window launched without an explicit file, when it initializes, then it contains one active empty untitled tab.
 - AC40: Given File -> New File, Cmd/Ctrl+N, or the tab-bar add button, when it is invoked, then a distinct active empty untitled tab is created.
-- AC41: Given File -> Open..., when its native dialog is configured, then the selectable extensions are `.md`, `.markdown`, and `.txt`.
+- **Outdated by spec 0009 AC4:** AC41: Given File -> Open..., when its native dialog is configured, then the selectable extensions are `.md`, `.markdown`, and `.txt`.
+  Comment: This Markdown-only chooser contract is retained as historical milestone
+  evidence. The current chooser also accepts `.csv` and identifies the combined
+  set as Markzen documents under spec 0009.
 - AC42: Given an Open dialog, when it is cancelled, then no tab, active selection, or registry entry changes.
 - AC43: Given one pristine empty untitled tab, when a file is opened into its window, then that tab is reused rather than adding another tab.
 - AC44: Given a requested `FileKey` already open in the same window, when Open is invoked for any alias of it, then its existing tab is focused.
@@ -146,7 +149,9 @@ Canonical output uses one blank line between adjacent block nodes, no trailing s
 - AC93: Given an editor transaction that changes persistent document content, when it commits, then the owning tab's document revision advances and dirty state equals whether the current persistent document model or pending title differs from the last opened or successfully committed baseline.
 - AC94: Given a dirty path-backed tab with an unchanged `DiskVersion`, when Save succeeds, then the saved revision's serialized bytes replace that file and the saved revision becomes clean.
 - AC95: Given a pristine path-backed tab without a pending rename, when Save is invoked, then no disk write occurs and no error is shown.
-- AC96: Given Save on an untitled tab or Save As on any active tab, when the native dialog opens, then it uses a default `.md` extension and the explicit title `Save Current Tab As`, confirmation label `Save As`, and platform-supported message or filename label stating that a new document will be created from the current tab.
+- **Outdated by spec 0009 AC8:** AC96: Given Save on an untitled tab or Save As on any active tab, when the native dialog opens, then it uses a default `.md` extension and the explicit title `Save Current Tab As`, confirmation label `Save As`, and platform-supported message or filename label stating that a new document will be created from the current tab.
+  Comment: This default remains current for Markdown tabs. CSV tabs instead use
+  a `.csv` default and CSV filter without converting their document kind.
 - AC97: Given Save As to an unoccupied target, when its commit succeeds, then the source file remains unchanged, the target contains the current tab's captured bytes, and the existing open tab is repointed to and adopts the newly created document identity rather than opening a second tab.
 - AC98: Given a Save As dialog, when it is cancelled, then no file, title, dirty revision, `FileKey`, or image source changes.
 - AC99: Given same-path Save fails before atomic replacement, when the coordinator reports failure, then the original file remains byte-for-byte unchanged and the tab remains dirty.

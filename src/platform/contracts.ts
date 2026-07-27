@@ -83,8 +83,8 @@ export interface FileSystemPort {
 }
 
 export type OpenDialogOptions = {
-  readonly extensions: readonly ['md', 'markdown', 'txt']
-  readonly title: 'Open Markdown Document'
+  readonly extensions: readonly ['md', 'markdown', 'txt', 'csv']
+  readonly title: 'Open Markzen Document'
 }
 
 export type SaveDialogOptions = {
@@ -164,6 +164,7 @@ export const MARKZEN_API_VERSION = 1 as const
 
 export type BootstrapPayload = {
   readonly kind: WindowKind
+  readonly initialDocumentKind?: 'csv' | 'markdown'
   readonly appearance: EffectiveTheme
   readonly platformName: PlatformName
   readonly roots: readonly WorkspaceRootPayload[]
@@ -197,7 +198,8 @@ export type WorkspaceRootOutcome =
   | { readonly kind: 'cancelled' | 'error' }
 
 export type SourceRebase = { readonly assetId?: string; readonly from: string; readonly to: string }
-export type DocumentFilePayload = FileRead & {
+export type DocumentKind = { readonly kind: 'csv' } | { readonly kind: 'markdown' }
+export type DocumentFilePayload = FileRead & DocumentKind & {
   readonly assetsRevoked?: boolean
   readonly rebasedDocument?: unknown
   readonly secondaryPath?: string
@@ -216,10 +218,10 @@ export type DocumentWriteRequest = {
   readonly tabId: TabId
   readonly title: string
   readonly titleDirty: boolean
-  readonly encoding?: { readonly bom: boolean; readonly newline: 'lf' | 'crlf' }
+  readonly encoding?: { readonly bom: boolean; readonly newline: 'crlf' | 'lf' }
   readonly model?: unknown
 }
-export type DocumentCommand = 'close-tab' | 'close-window' | 'new' | 'open' | 'save' | 'save-all' | 'save-all-for-quit' | 'save-as'
+export type DocumentCommand = 'close-tab' | 'close-window' | 'new' | 'new-csv' | 'open' | 'save' | 'save-all' | 'save-all-for-quit' | 'save-as'
 export type RendererCommand = DocumentCommand | 'find' | 'settings'
 export type ApplicationCommand = RendererCommand | 'add-folder' | 'open-folder'
 export type ExternalOpenResult = { readonly kind: 'cancelled' | 'error' | 'opened' | 'unsupported' }
@@ -269,7 +271,7 @@ export interface MarkzenDocumentCapability {
   confirmClose(tabId: TabId, generation: number, name: string): Promise<PlatformResult<'cancel' | 'discard' | 'save'>>
   confirmWindowClose(dirtyNames: readonly string[]): Promise<PlatformResult<'cancel' | 'discard' | 'save-all'>>
   completeQuitSaveAll(success: boolean): Promise<PlatformResult<void>>
-  createTab(): Promise<PlatformResult<TabId>>
+  createTab(kind: 'csv' | 'markdown'): Promise<PlatformResult<TabId>>
   open(tabId: TabId, generation: number): Promise<PlatformResult<DocumentIntentOutcome>>
   onCommand(listener: (command: RendererCommand) => void): () => void
   onExternalChange(listener: (event: DocumentExternalEvent) => void): () => void

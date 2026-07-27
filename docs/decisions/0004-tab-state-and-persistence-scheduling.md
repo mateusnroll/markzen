@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md)
+**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md)
 
 ## Context
 
@@ -12,7 +12,7 @@ Each tab needs independent ProseMirror state, history, selection, scroll, title,
 
 ### Editor and tab ownership
 
-- A renderer-side `DocumentController` owns ordered tab records keyed by main-assigned `TabId`. Each editable tab owns one TipTap `Editor`/ProseMirror state for its lifetime; React renders metadata and the active editor but never stores document content.
+- A renderer-side `DocumentController` owns ordered tab records keyed by main-assigned `TabId`. Each editable tab has a closed `markdown` or `csv` kind and owns one TipTap `Editor`/ProseMirror state for its lifetime; React renders metadata and the active editor but never stores document content.
 - Tab metadata contains display path, baseline title/model fingerprint, revision, saved revision, mode, load generation, persistence generation, scroll, errors, and conflict state.
 - Persistent transactions monotonically advance revision. Dirty state is semantic equality of current persistent JSON plus pending title against the adopted baseline, not merely `revision !== savedRevision`, so undo/reversion can become clean.
 
@@ -21,6 +21,11 @@ Each tab needs independent ProseMirror state, history, selection, scroll, title,
 - Activation captures the originating tab selection and scroll synchronously and restores the destination state. Generation tokens guard any async measurement.
 - Tab-list activation leaves focus on the selected tab; switching initiated while the editor owns focus restores editor focus.
 - Composition start records the originating tab. Save, switch, and close requested during composition are deferred until one composition-end commit, then resume against the captured owner. They never retarget the subsequently active tab.
+- CSV cell editing keeps one transient textarea draft only while edit mode is
+  active. Escape cancels it; every other action that leaves the cell commits it
+  once as one ProseMirror history event before switching focus or capturing a
+  save/close revision. A tab switch restores CSV selection and scroll in grid
+  navigation mode rather than retaining a second unsaved draft owner.
 
 ### Persistence coordinator
 
