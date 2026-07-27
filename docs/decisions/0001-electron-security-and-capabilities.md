@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md)
+**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md)
 
 ## Context
 
@@ -28,6 +28,10 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - Validate the sender before the payload: it must be the registered main frame at `markzen://app` for a live `BrowserWindow`. A renderer-provided `WindowId` or other owner identifier never establishes authority.
 - Route results and events through the sender-derived `WindowId`. Window registrations and subscriptions have idempotent disposers, and pending operations carry owner plus generation tokens.
 - Document capabilities are individual application intents for opening, saving, renaming, closing, conflict resolution, and observing owned tabs. The preload has no generic invoke/send method and exposes no filesystem method accepting a renderer-selected path.
+- `new` and `new-csv` are separate closed commands. Main owns the registered
+  tab's `markdown` or `csv` kind and validates every document intent against
+  that kind; renderer-supplied kind, delimiter, matrix, path, FileKey, or
+  generation remains correlation data and cannot select filesystem authority.
 - The main process allocates every `TabId`, derives `WindowId` from the sender, and resolves `TabId`, `FileKey`, reservation, path, and generation against main-owned registrations before filesystem or window work. Renderer copies of those values are correlation data only.
 - Document request schemas reject unknown keys, wrong primitive/container types, oversized byte payloads, and stale generations. Sender validation runs before these schemas so malformed payloads cannot be used to probe owner state.
 - Open and Save As paths originate in main-owned native dialogs. Renderer-provided display paths never select a read or write destination. Results and watcher events are delivered only through the registered owning frame.

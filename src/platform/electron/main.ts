@@ -90,6 +90,7 @@ import { MAX_ACQUIRED_IMAGE_BYTES } from '../../assets/image-sources'
 type WindowRecord = {
   closeApproved: boolean
   readonly id: WindowId
+  readonly initialDocumentKind?: 'csv' | 'markdown'
   readonly kind: WindowKind
   readonly window: BrowserWindow
 }
@@ -101,6 +102,7 @@ type MainDocumentRecord = {
   displayPath?: Path
   fileKey?: FileKey
   readonly generation: number
+  kind: 'csv' | 'markdown'
   path?: Path
   secondaryPath?: string
   title?: string
@@ -136,6 +138,7 @@ const documentWatchState = new DocumentWatchState()
 const documentWatchTokens = new Map<TabId, WatchToken>()
 const menuStates = new Map<WindowId, DocumentMenuState>()
 const quitSaveResolvers = new Map<WindowId, (success: boolean) => void>()
+const MAX_DOCUMENT_TRANSFER_BYTES = 32 * 1_048_576
 const workspaceRoots = new RootRegistry()
 const workspaceSnapshots = new Map<string, readonly DirectoryEntry[]>()
 const workspaceGenerations = new Map<string, number>()
@@ -200,11 +203,21 @@ function syncNativeChrome(window: BrowserWindow, theme: ThemePreference): void {
   window.setTitleBarOverlay({ color: palette.background, height: 40, symbolColor: palette.foreground })
 }
 
-export async function createMarkzenWindow(kind: WindowKind = 'single-file', initialFolder?: Path): Promise<WindowId> {
+export async function createMarkzenWindow(
+  kind: WindowKind = 'single-file',
+  initialFolder?: Path,
+  initialDocumentKind?: 'csv' | 'markdown',
+): Promise<WindowId> {
   if (!app.isReady()) await app.whenReady()
   const window = new BrowserWindow(getWindowOptionsForPlatform(process.platform, settingsService?.snapshot().theme ?? 'system'))
   const id = asWindowId(randomUUID())
-  const record: WindowRecord = { closeApproved: false, id, kind, window }
+  const record: WindowRecord = {
+    closeApproved: false,
+    id,
+    ...(initialDocumentKind ? { initialDocumentKind } : {}),
+    kind,
+    window,
+  }
   windowsByContents.set(window.webContents.id, record)
   owners.open(id)
   secureWebContents(window.webContents, developmentRendererOrigin ?? APP_ORIGIN)
@@ -314,8 +327,10 @@ function dispatchApplicationCommand(command: ApplicationCommand): void {
     record.window.webContents.send(channels.documentCommand, command)
     return
   }
-  if (command === 'new' || command === 'open') {
-    void createMarkzenWindow().then((id) => {
+  if (command === 'new' || command === 'new-csv' || command === 'open') {
+    const initialDocumentKind = command === 'new-csv' ? 'csv' : 'markdown'
+    void createMarkzenWindow('single-file', undefined, initialDocumentKind).then((id) => {
+      if (command !== 'open') return
       const created = [...windowsByContents.values()].find((candidate) => candidate.id === id)
       created?.window.webContents.send(channels.documentCommand, command)
     })
@@ -360,6 +375,33 @@ function getApplicationMenuSnapshot(platform: PlatformName): unknown {
     ...(item.type ? { type: item.type } : {}),
   }))
   return strip(buildApplicationMenuTemplate(platform))
+}
+
+function getDocumentDialogSnapshot(kind: 'csv' | 'markdown'): unknown {
+  return {
+    open: {
+      filters: [{ extensions: ['md', 'markdown', 'txt', 'csv'], name: 'Markzen documents' }],
+      title: 'Open Markzen Document',
+    },
+    save: kind === 'csv'
+      ? { filters: [{ extensions: ['csv'], name: 'CSV document' }], suffix: '.csv' }
+      : { filters: [{ extensions: ['md'], name: 'Markdown document' }], suffix: '.md' },
+  }
+}
+
+function validateDocumentTransferForShellTest(byteLength: number): PlatformResult<void, 'validation'> {
+  return Number.isSafeInteger(byteLength) && byteLength >= 0 && byteLength <= MAX_DOCUMENT_TRANSFER_BYTES
+    ? ok(undefined)
+    : fail('validation')
+}
+
+function forgeCsvIntentForShellTest(): PlatformResult<void, 'ownership'> {
+  return authorizeDocumentRequest(
+    { generation: 0, tabId: asTabId('owned-csv'), windowId: asWindowId('owner-window') },
+    asWindowId('forged-window'),
+    asTabId('owned-csv'),
+    0,
+  )
 }
 
 const getDocumentWatcherCount = (): number => documentWatchers.size
@@ -453,6 +495,7 @@ function registerIpcHandlers(): void {
   }))
   ipcMain.handle(channels.bootstrap, (event, payload) => withWindow(event, payload, (record) => ok<BootstrapPayload>({
     appearance: effectiveAppearance(),
+    ...(record.initialDocumentKind ? { initialDocumentKind: record.initialDocumentKind } : {}),
     kind: record.kind,
     platformName: normalizePlatform(process.platform),
     roots: workspaceRoots.values(record.id).map((root) => ({
@@ -500,9 +543,12 @@ function registerIpcHandlers(): void {
       externalRequests.finish(record.id, token)
     }
   }))
-  ipcMain.handle(channels.documentCreateTab, (event, payload) => withWindow(event, payload, (record) => {
+  ipcMain.handle(channels.documentCreateTab, (event, payload) => withAuthorizedWindow(event, (record) => {
+    if (!isRecord(payload) || Object.keys(payload).join(',') !== 'kind' || (payload.kind !== 'csv' && payload.kind !== 'markdown')) {
+      return fail('validation')
+    }
     const tabId = asTabId(randomUUID())
-    documents.set(tabId, { generation: 0, tabId, windowId: record.id })
+    documents.set(tabId, { generation: 0, kind: payload.kind, tabId, windowId: record.id })
     return ok(tabId)
   }))
   ipcMain.handle(channels.settingsPatch, (event, payload) => withAuthorizedWindow(event, () => {
@@ -553,6 +599,7 @@ function registerIpcHandlers(): void {
       releaseRecordIdentity(document)
       return fail(read.ok ? 'stale' : read.error.code)
     }
+    if (read.value.bytes.byteLength > MAX_DOCUMENT_TRANSFER_BYTES) return ok<DocumentIntentOutcome>({ kind: 'error' })
     if (window.window.isDestroyed() || documents.get(request.value.tabId) !== document) return fail('ownership')
     const owner = ownerOf(document)
     const transition = document.fileKey
@@ -564,6 +611,7 @@ function registerIpcHandlers(): void {
       return ok<DocumentIntentOutcome>({ kind: 'collision' })
     }
     adoptRecord(document, read.value)
+    document.kind = /\.csv$/i.test(String(resolved.value.logical)) ? 'csv' : 'markdown'
     document.displayPath = resolved.value.logical
     watchDocument(document)
     return ok<DocumentIntentOutcome>({
@@ -583,19 +631,21 @@ function registerIpcHandlers(): void {
   }))
   ipcMain.handle(channels.documentOpen, (event, payload) => withDocument(event, 'open', payload, async (record, window) => {
     const selected = await dialog.showOpenDialog(window.window, {
-      filters: [{ extensions: ['md', 'markdown', 'txt'], name: 'Markdown documents' }],
+      filters: [{ extensions: ['md', 'markdown', 'txt', 'csv'], name: 'Markzen documents' }],
       properties: ['openFile'],
-      title: 'Open Markdown Document',
+      title: 'Open Markzen Document',
     })
     const selectedPath = selected.filePaths[0]
     if (selected.canceled || !selectedPath) return ok<DocumentIntentOutcome>({ kind: 'cancelled' })
     const read = await new RealFileSystem().read(asPath(selectedPath))
     if (!read.ok) return ok<DocumentIntentOutcome>({ kind: 'error' })
+    if (read.value.bytes.byteLength > MAX_DOCUMENT_TRANSFER_BYTES) return ok<DocumentIntentOutcome>({ kind: 'error' })
     const owner = ownerOf(record)
     const claimed = documentRegistry.claim(read.value.fileKey, owner)
     if (!claimed.ok) return ok<DocumentIntentOutcome>({ kind: 'collision' })
     if (record.fileKey && record.fileKey !== read.value.fileKey) releaseRecordIdentity(record)
     adoptRecord(record, read.value)
+    record.kind = /\.csv$/i.test(selectedPath) ? 'csv' : 'markdown'
     watchDocument(record)
     return ok<DocumentIntentOutcome>({ file: filePayload(record, read.value), kind: 'opened' })
   }))
@@ -1075,7 +1125,7 @@ async function saveDocument(
   if (forceSaveAs || !record.path || !record.diskVersion) return saveDocumentAs(record, window, request)
   if (!request.documentDirty && !request.titleDirty) return ok({ kind: 'unchanged' })
   const currentName = nodePath.basename(record.path)
-  const targetName = deriveDocumentFilename(request.title, getRecognizedExtension(currentName))
+  const targetName = deriveDocumentFilename(request.title, getRecognizedExtension(currentName), record.kind)
   const titleChanged = targetName !== currentName
   if (titleChanged && request.documentDirty) return ok({ kind: 'rename-decision' })
   const fs = new RealFileSystem()
@@ -1111,8 +1161,10 @@ async function saveDocumentAs(
 ): Promise<{ readonly ok: true; readonly value: DocumentIntentOutcome }> {
   const selected = await dialog.showSaveDialog(window.window, {
     buttonLabel: 'Save As',
-    defaultPath: deriveDocumentFilename(request.title, undefined),
-    filters: [{ extensions: ['md'], name: 'Markdown document' }],
+    defaultPath: deriveDocumentFilename(request.title, undefined, record.kind),
+    filters: record.kind === 'csv'
+      ? [{ extensions: ['csv'], name: 'CSV document' }]
+      : [{ extensions: ['md'], name: 'Markdown document' }],
     message: 'A new document will be created from the current tab.',
     title: 'Save Current Tab As',
   })
@@ -1173,11 +1225,12 @@ function prepareSaveAsPayload(
   newPath: Path,
 ): { readonly bytes: Uint8Array; readonly payload: Pick<DocumentFilePayload, 'rebasedDocument' | 'sourceRebases'> } | undefined {
   if (!request.model || !request.encoding) return { bytes: request.bytes, payload: {} }
+  const encoding = { bom: request.encoding.bom, newline: request.encoding.newline }
   if (!richDocument(request.model)) return undefined
   try {
     const rebased = rebaseDocumentImages(request.model, oldPath, newPath)
     return {
-      bytes: serializeRichDocument(rebased.document, request.encoding),
+      bytes: serializeRichDocument(rebased.document, encoding),
       payload: { rebasedDocument: rebased.document, sourceRebases: rebased.sourceRebases },
     }
   } catch {
@@ -1432,6 +1485,7 @@ function filePayload(
 ): DocumentFilePayload {
   return {
     ...file,
+    kind: record.kind,
     path: record.displayPath ?? file.path,
     ...(record.secondaryPath ? { secondaryPath: record.secondaryPath } : {}),
     tabId: record.tabId,
@@ -1708,7 +1762,7 @@ app.on('will-quit', () => nativeTheme.removeListener('updated', broadcastAppeara
 Object.defineProperty(app, 'markzenShellHarness', {
   configurable: false,
   enumerable: false,
-  value: Object.freeze({ createMarkzenWindow, dispatchApplicationCommandForShellTest, emitWindowStateForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentWatcherCount, getRemoteRequestCountForShellTest, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, issueEmbeddedAssetForShellTest, openFolderForShellTest, revokeAssetForShellTest, runRealFsRoundTrip }),
+  value: Object.freeze({ createMarkzenWindow, dispatchApplicationCommandForShellTest, emitWindowStateForShellTest, forgeCsvIntentForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentDialogSnapshot, getDocumentWatcherCount, getRemoteRequestCountForShellTest, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, issueEmbeddedAssetForShellTest, openFolderForShellTest, revokeAssetForShellTest, runRealFsRoundTrip, validateDocumentTransferForShellTest }),
   writable: false,
 })
 

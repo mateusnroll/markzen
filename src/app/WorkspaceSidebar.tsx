@@ -425,7 +425,7 @@ const replaceDirectory = (value: ReadonlyMap<Path, DirectoryState>, path: Path, 
   return next
 }
 
-const recognized = (name: string): boolean => /\.(md|markdown|txt)$/i.test(name)
+const recognized = (name: string): boolean => /\.(md|markdown|txt|csv)$/i.test(name)
 const clampStored = (value: number): number => Math.round(Math.min(480, Math.max(160, value)))
 const safeId = (path: Path): string => String(path).replace(/[^A-Za-z0-9_-]/g, '-')
 const icon = (kind: DirectoryEntry['kind'], expanded?: boolean): string =>

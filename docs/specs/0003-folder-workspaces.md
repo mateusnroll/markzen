@@ -75,7 +75,9 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC27: Given a directory read fails because it is unreadable, then its loading indicator clears and its row exposes an accessible error without affecting sibling directories.
 - AC28: Given a directory previously failed to load, when the user activates Retry after access is restored, then a new generation loads its children.
 - AC29: Given a `.md`, `.markdown`, or `.txt` entry matched case-insensitively, when activated, then it opens through the workspace preview policy.
-- AC30: Given another file type, then its row is visibly subdued, exposes `aria-disabled="true"`, and activation performs no open operation.
+- **Outdated by spec 0009 AC5:** AC30: Given another file type, then its row is visibly subdued, exposes `aria-disabled="true"`, and activation performs no open operation.
+  Comment: This remains current for unsupported file types, but `.csv` is now a
+  recognized Markzen document and opens through the existing preview/pin policy.
 - AC31: Given a workspace has no open tab, then the editor pane shows “Select a file from the sidebar” and no stale document content.
 - AC32: Given a root header is collapsed, then all of that RootId's descendant rows are removed from the visible tree without discarding their valid cached snapshots.
 - AC33: Given an accepted root becomes unreadable, missing, or no longer a directory, then its header remains in place and exposes an unavailable state without changing other roots.

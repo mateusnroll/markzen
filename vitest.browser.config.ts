@@ -10,6 +10,7 @@ export default defineConfig({
       '@tiptap/extension-task-item',
       '@tiptap/extension-task-list',
       '@tiptap/markdown',
+      '@tiptap/pm/history',
       '@tiptap/pm/state',
       '@tiptap/pm/view',
       '@tiptap/react',
