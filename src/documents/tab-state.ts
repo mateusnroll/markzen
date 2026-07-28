@@ -28,3 +28,13 @@ export function acceptTabBaseline<State extends TabBaselineState>(state: State, 
 export function isTabDirty(state: TabBaselineState): boolean {
   return state.contentDirty || state.title !== state.baselineTitle
 }
+
+export function isDocumentCompletionCurrent(
+  captured: { readonly generation: number; readonly kind: 'csv' | 'json' | 'markdown'; readonly owner: string; readonly revision: number },
+  current: { readonly generation: number; readonly kind: 'csv' | 'json' | 'markdown'; readonly owner: string; readonly revision: number },
+): boolean {
+  return captured.owner === current.owner
+    && captured.kind === current.kind
+    && captured.generation === current.generation
+    && captured.revision === current.revision
+}

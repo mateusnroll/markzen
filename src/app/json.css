@@ -1,0 +1,123 @@
+.json-surface {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+}
+
+.json-toolbar {
+  align-items: center;
+  border-block: 1px solid var(--mz-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 40px;
+  padding: 4px 12px;
+  position: relative;
+}
+
+.json-toolbar button {
+  min-height: 28px;
+}
+
+.json-tree {
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.json-tree-canvas {
+  min-width: max-content;
+  position: relative;
+}
+
+.json-row {
+  align-items: center;
+  box-sizing: border-box;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 18px minmax(120px, 240px) 72px minmax(180px, 1fr);
+  inset-inline: 0;
+  outline: none;
+  padding-inline-end: 16px;
+  position: absolute;
+  white-space: nowrap;
+}
+
+.json-row:hover,
+.json-row:focus-visible,
+.json-row-active {
+  background: color-mix(in srgb, var(--mz-accent) 12%, transparent);
+}
+
+.json-row:focus-visible {
+  outline: 2px solid var(--mz-focus);
+  outline-offset: -2px;
+}
+
+.json-disclosure {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0;
+}
+
+.json-disclosure-placeholder {
+  inline-size: 18px;
+}
+
+.json-row-name,
+.json-row-preview,
+.json-row-type {
+  direction: ltr;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  unicode-bidi: plaintext;
+}
+
+.json-row-name {
+  font-weight: 600;
+}
+
+.json-row-type {
+  color: var(--mz-text-muted);
+  font-size: 12px;
+}
+
+.json-inline-shell {
+  align-items: start;
+  background: var(--mz-surface);
+  border: 1px solid var(--mz-focus);
+  display: flex;
+  gap: 6px;
+  inset: 1px 8px 1px 18px;
+  position: absolute;
+  z-index: 4;
+}
+
+.json-inline-shell input,
+.json-inline-shell textarea {
+  flex: 1;
+  min-width: 180px;
+}
+
+.json-inline-shell textarea {
+  max-height: 160px;
+  min-height: 28px;
+  resize: vertical;
+}
+
+.json-inline-shell [role='alert'] {
+  color: var(--mz-error);
+  font-size: 12px;
+}
+
+@media (forced-colors: active) {
+  .json-row-active,
+  .json-row:focus-visible {
+    border: 1px solid Highlight;
+  }
+}

@@ -1,0 +1,8 @@
+{
+    "name": "Markzen",
+    "duplicate": 1e3,
+    "duplicate": -0,
+    "unicode": "\uD834\uDD1E",
+    "lone": "\uDEAD",
+    "items": [true, null, "line\nbreak"]
+}

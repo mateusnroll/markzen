@@ -1,0 +1,11 @@
+{
+  "format": {
+    "bom": false,
+    "indent": "    ",
+    "newline": "lf",
+    "terminalSeparator": true
+  },
+  "rootType": "object",
+  "propertyNames": ["name", "duplicate", "duplicate", "unicode", "lone", "items"],
+  "numberLexemes": ["1e3", "-0"]
+}

@@ -179,7 +179,7 @@ describe('spec 0002 document state', () => {
       { kind: 'open' },
       { choice: 2, kind: 'confirm' },
     )
-    const openOptions = { extensions: ['md', 'markdown', 'txt', 'csv'], title: 'Open Markzen Document' } as const
+    const openOptions = { extensions: ['md', 'markdown', 'txt', 'csv', 'json'], title: 'Open Markzen Document' } as const
     expect(await platform.dialog.open(openOptions)).toEqual(ok('/one.md'))
     expect(await platform.dialog.open(openOptions)).toEqual(ok(undefined))
     expect(await platform.dialog.confirm({ buttons: ['Save', "Don't Save", 'Cancel'], message: 'Close?', title: 'Close' })).toEqual(ok(2))

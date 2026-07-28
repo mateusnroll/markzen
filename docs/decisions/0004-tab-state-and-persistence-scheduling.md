@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md)
+**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md), [0010 — First-Class JSON Documents](../specs/0010-first-class-json-documents.md)
 
 ## Context
 
@@ -12,7 +12,7 @@ Each tab needs independent ProseMirror state, history, selection, scroll, title,
 
 ### Editor and tab ownership
 
-- A renderer-side `DocumentController` owns ordered tab records keyed by main-assigned `TabId`. Each editable tab has a closed `markdown` or `csv` kind and owns one TipTap `Editor`/ProseMirror state for its lifetime; React renders metadata and the active editor but never stores document content.
+- A renderer-side `DocumentController` owns ordered tab records keyed by main-assigned `TabId`. Each editable tab has a closed `markdown`, `csv`, or `json` kind and owns one TipTap `Editor`/ProseMirror state for its lifetime; React renders metadata and the active editor but never stores document content.
 - Tab metadata contains display path, baseline title/model fingerprint, revision, saved revision, mode, load generation, persistence generation, scroll, errors, and conflict state.
 - Persistent transactions monotonically advance revision. Dirty state is semantic equality of current persistent JSON plus pending title against the adopted baseline, not merely `revision !== savedRevision`, so undo/reversion can become clean.
 
@@ -26,6 +26,12 @@ Each tab needs independent ProseMirror state, history, selection, scroll, title,
   once as one ProseMirror history event before switching focus or capturing a
   save/close revision. A tab switch restores CSV selection and scroll in grid
   navigation mode rather than retaining a second unsaved draft owner.
+- JSON inline editing uses the same single-draft ownership. Escape or Cancel
+  cancels; another focus-leaving action commits one valid changed draft before
+  ownership changes. Invalid number grammar retains the originating editor and
+  blocks the requested switch, save, close, or quit. JSON expansion, active row,
+  and scroll restore per tab; transient node IDs map surviving rows without
+  becoming serialized content.
 
 ### Persistence coordinator
 
