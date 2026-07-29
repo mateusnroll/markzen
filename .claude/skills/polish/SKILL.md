@@ -10,8 +10,10 @@ Iterate with the user against the running app. Treat every pre-spec edit as a di
 ## Start the session
 
 1. Read `CLAUDE.md` and `docs/specs/README.md`, including the Polish prototype exception.
-2. Inspect `git status`, the current branch, and `origin/main`. Fetch before a new session. If the worktree is clean, update it without discarding work and create `codex/polish-<short-slug>` unless already on a dedicated polish branch. If unrelated changes exist, stop and ask how to isolate them.
-3. Keep `HEAD` unchanged for the whole prototype phase. Do not commit or push. It is the baseline used to prove the eventual AC tests fail without the prototype.
+2. Inspect `git status`, the current branch, and `origin/main`. Fetch before a new session, then choose one baseline:
+   - If the current non-default branch contains the intended, just-completed `$implement` work, stay on it. Confirm the worktree contains only that implementation unit. If it is dirty, stage everything, inspect the staged diff and `git diff --cached --check`, then commit the complete implementation before starting the prototype. Do not create a second polish branch or push merely to start the session.
+   - Otherwise require a clean worktree, update it without discarding work, and create `codex/polish-<short-slug>` unless already on a dedicated polish branch. If changes are unrelated or their ownership is ambiguous, stop and ask how to isolate them.
+3. Record the resulting commit as the prototype baseline and keep `HEAD` unchanged for the whole prototype phase. Do not commit or push prototype work. The baseline is used to prove the eventual AC tests fail without the prototype.
 4. Select one preview mode:
    - Prefer **browser** for renderer styling, layout, component markup, copy, animation, and existing interactions.
    - Select **Electron** for native chrome, macOS traffic lights, menus, window geometry, preload behavior, or any Electron-only difference.
@@ -55,3 +57,4 @@ Only begin this gate when the user explicitly says the polish session is finishe
 5. After approval, add AC-named tests. In a disposable worktree at the unchanged prototype baseline `HEAD`, apply only the new tests and prove they fail without the prototype. A compile failure caused solely by a deliberately introduced public interface is acceptable evidence; unrelated setup failures are not.
 6. Use `$implement` to retain only prototype code required by the Approved ACs, make all mapped tests pass, run `npm run verify` and any required `npm run verify:shell`, then run and disposition the implementation simplicity review.
 7. Reinspect the final browser surface and Electron surface when native chrome is affected. Mark the spec Implemented only after all required verification is green. Do not commit or publish unless the user separately requests it.
+8. When publication is requested, preserve the session's branch ownership. If the prototype started from an implementation branch, commit the approved polish result there and update that branch's existing PR; never open a second PR to `main` that republishes the same implementation commits. Publish a dedicated polish branch only when the session started on one.
