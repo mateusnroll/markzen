@@ -29,7 +29,7 @@ import { getEditorSearch, type TextMatch } from '../search/search'
 
 import './json.css'
 
-const ROW_HEIGHT = 32
+const ROW_HEIGHT = 26
 const OVERSCAN = 8
 const MAX_ROWS = 500
 const MAX_PREVIEW = 160
@@ -49,7 +49,7 @@ type JsonRow = {
 }
 type Draft = {
   readonly initial: string
-  readonly kind: 'name' | 'number' | 'string'
+  readonly kind: 'boolean' | 'name' | 'number' | 'string' | 'type'
   readonly row: JsonRow
   readonly value: string
 }
@@ -121,6 +121,19 @@ export function JsonTree({
   }, [editor])
 
   useEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    const measure = () => {
+      const height = scroll.clientHeight || 320
+      setViewport((current) => current.height === height ? current : { ...current, height })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(scroll)
+    return () => observer.disconnect()
+  }, [editor])
+
+  useEffect(() => {
     if (!locatedMatch) return
     const path = pathToRow(root, locatedMatch.rowId)
     if (path.length > 0) setExpanded((current) => new Set([...current, ...path]))
@@ -146,22 +159,30 @@ export function JsonTree({
   }, [editor])
 
   const beginDraft = useCallback((row: JsonRow, kind?: Draft['kind']) => {
-    const selectedKind = kind ?? (row.property ? 'name' : row.value.type === 'number' ? 'number' : 'string')
+    const selectedKind = kind ?? (row.property ? 'name' : valueDraftKind(row.value) ?? 'string')
     const value = selectedKind === 'name'
       ? row.name ?? ''
-      : row.value.type === 'number'
-        ? row.value.lexeme
-        : row.value.type === 'string'
-          ? row.value.value
-          : ''
+      : selectedKind === 'type'
+        ? row.value.type
+        : selectedKind === 'number' && row.value.type === 'number'
+          ? row.value.lexeme
+          : selectedKind === 'boolean' && row.value.type === 'boolean'
+            ? String(row.value.value)
+            : selectedKind === 'string' && row.value.type === 'string'
+              ? row.value.value
+              : ''
     cancelling.current = false
     committedDraft.current = undefined
     setActiveId(row.id)
     setDraft({ initial: value, kind: selectedKind, row, value })
     requestAnimationFrame(() => {
-      const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>('[data-testid="json-inline-editor"]')
+      const input = document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+        '[data-testid="json-inline-editor"]',
+      )
       input?.focus()
-      input?.setSelectionRange(value.length, value.length)
+      if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+        input.setSelectionRange(value.length, value.length)
+      }
     })
   }, [])
 
@@ -169,17 +190,29 @@ export function JsonTree({
     if (!draft) return true
     if (committedDraft.current === draft) return true
     if (draft.kind === 'number' && !isValidJsonNumber(draft.value)) return false
+    if (draft.kind === 'boolean' && draft.value !== 'true' && draft.value !== 'false') return false
     committedDraft.current = draft
     setDraft(undefined)
-    if (draft.value === draft.initial) {
+    const changesType = draft.kind === 'type'
+      ? draft.row.value.type !== draft.value
+      : draft.kind !== 'name' && draft.row.value.type !== draft.kind
+    if (draft.value === draft.initial && !changesType) {
       focusRow(draft.row.id)
       return true
     }
     const validation = draft.kind === 'name'
       ? renameJsonProperty(editor, draft.row.id, draft.value)
-      : replaceJsonValue(editor, draft.row.value.id, draft.kind === 'number'
-        ? { ...draft.row.value, lexeme: draft.value, type: 'number' }
-        : { ...draft.row.value, type: 'string', value: draft.value })
+      : draft.kind === 'type'
+        ? replaceJsonValue(
+            editor,
+            draft.row.value.id,
+            emptyValue(draft.value as JsonValue['type'], draft.row.value.id),
+          )
+        : replaceJsonValue(editor, draft.row.value.id, draft.kind === 'number'
+          ? { id: draft.row.value.id, lexeme: draft.value, type: 'number' }
+          : draft.kind === 'boolean'
+            ? { id: draft.row.value.id, type: 'boolean', value: draft.value === 'true' }
+            : { id: draft.row.value.id, type: 'string', value: draft.value })
     const accepted = report(validation)
     if (!accepted) {
       committedDraft.current = undefined
@@ -226,9 +259,25 @@ export function JsonTree({
 
   const handleKey = useCallback((event: KeyboardEvent<HTMLElement>, row: JsonRow) => {
     const primary = event.metaKey || event.ctrlKey
+    const valueKind = valueDraftKind(row.value)
     if (primary && event.key.toLowerCase() === 'f') {
       event.preventDefault()
       onRequestFind?.()
+      return
+    }
+    if (event.key === 'Enter' && event.shiftKey && !row.container) {
+      event.preventDefault()
+      beginDraft(row, 'type')
+      return
+    }
+    if (event.key === 'F2' && event.shiftKey && row.property) {
+      event.preventDefault()
+      beginDraft(row, 'name')
+      return
+    }
+    if (event.key === 'Enter' && row.property && row.name === '') {
+      event.preventDefault()
+      beginDraft(row, 'name')
       return
     }
     if ((event.key === 'Enter' || event.key === ' ') && row.container) {
@@ -236,9 +285,9 @@ export function JsonTree({
       toggle(row)
       return
     }
-    if ((event.key === 'Enter' || event.key === 'F2') && (row.value.type === 'string' || row.value.type === 'number')) {
+    if ((event.key === 'Enter' || event.key === 'F2') && valueKind) {
       event.preventDefault()
-      beginDraft(row, row.value.type)
+      beginDraft(row, valueKind)
       return
     }
     if (event.key === 'Delete' && row.parentId) {
@@ -276,78 +325,40 @@ export function JsonTree({
     <section className="json-surface">
       <div aria-label="JSON actions" className="json-toolbar" data-testid="json-toolbar" role="toolbar">
         <button
-          aria-label="Rename property"
-          data-testid="json-rename"
-          disabled={!active?.property}
-          onClick={() => { if (active) beginDraft(active, 'name') }}
-          type="button"
-        >Rename</button>
-        <button
-          aria-label="Edit value"
-          data-testid="json-edit"
-          disabled={!active || !['string', 'number'].includes(active.value.type)}
-          onClick={() => { if (active) beginDraft(active, active.value.type === 'number' ? 'number' : 'string') }}
-          type="button"
-        >Edit</button>
-        <button
-          aria-label="Toggle boolean"
-          data-testid="json-toggle"
-          disabled={active?.value.type !== 'boolean'}
-          onClick={() => {
-            const value = active?.value
-            if (value?.type === 'boolean') mutate(() => replaceJsonValue(editor, value.id, { ...value, value: !value.value }))
-          }}
-          type="button"
-        >Toggle</button>
-        <select
-          aria-label="Replace type"
-          data-testid="json-replace-type"
-          onChange={(event) => {
-            if (!active || !event.currentTarget.value) return
-            const type = event.currentTarget.value as JsonValue['type']
-            mutate(() => replaceJsonValue(editor, active.value.id, emptyValue(type, active.value.id)))
-            event.currentTarget.value = ''
-          }}
-          value=""
-        >
-          <option value="">Type</option>
-          {replaceTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-        </select>
-        <button
           aria-label="Add property"
           data-testid="json-add-property"
           disabled={active?.value.type !== 'object'}
           onClick={() => { if (active?.value.type === 'object') mutate(() => addJsonProperty(editor, active.value.id)) }}
           type="button"
-        >+ Property</button>
+        ><JsonActionIcon name="property" /></button>
         <button
           aria-label="Add item"
           data-testid="json-add-item"
           disabled={active?.value.type !== 'array'}
           onClick={() => { if (active?.value.type === 'array') mutate(() => addJsonItem(editor, active.value.id)) }}
           type="button"
-        >+ Item</button>
+        ><JsonActionIcon name="item" /></button>
         <button
           aria-label="Insert before"
           data-testid="json-insert-before"
           disabled={!active?.arrayItem}
           onClick={() => { if (active) mutate(() => insertJsonItem(editor, active.value.id, false)) }}
           type="button"
-        >Before</button>
+        ><JsonActionIcon name="before" /></button>
         <button
           aria-label="Insert after"
           data-testid="json-insert-after"
           disabled={!active?.arrayItem}
           onClick={() => { if (active) mutate(() => insertJsonItem(editor, active.value.id, true)) }}
           type="button"
-        >After</button>
+        ><JsonActionIcon name="after" /></button>
         <button
           aria-label="Delete"
           data-testid="json-delete"
           disabled={!active?.parentId}
           onClick={() => { if (active) mutate(() => deleteJsonNode(editor, active.id)) }}
           type="button"
-        >Delete</button>
+        ><JsonActionIcon name="delete" /></button>
       </div>
       <div
         aria-label="JSON structure"
@@ -366,9 +377,122 @@ export function JsonTree({
           {visible.map((row) => {
             const selected = row.id === active?.id
             const match = locatedMatch?.rowId === row.id ? locatedMatch : undefined
+            const rowDraft = draft?.row.id === row.id ? draft : undefined
+            const rowValueKind = valueDraftKind(row.value)
+            const emptyName = Boolean(row.property && row.name === '')
+            const draftError = rowDraft?.kind === 'number' && !isValidJsonNumber(rowDraft.value)
+              ? 'Enter a complete JSON number.'
+              : rowDraft?.kind === 'boolean' && rowDraft.value !== 'true' && rowDraft.value !== 'false'
+                ? 'Enter true or false.'
+                : undefined
+            const inlineEditor = rowDraft ? (
+              <span
+                className="json-inline-shell"
+                data-testid="json-inline-shell"
+                onDoubleClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                {rowDraft.kind === 'type' ? (
+                  <select
+                    aria-label="Change JSON type"
+                    data-testid="json-inline-editor"
+                    onBlur={() => { if (!cancelling.current) commitDraft() }}
+                    onChange={(event) => {
+                      const type = event.currentTarget.value as JsonValue['type']
+                      mutate(() => replaceJsonValue(editor, row.value.id, emptyValue(type, row.value.id)))
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        cancelling.current = true
+                        setDraft(undefined)
+                        focusRow(row.id)
+                      }
+                    }}
+                    value={rowDraft.value}
+                  >
+                    {replaceTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                ) : rowDraft.kind === 'string' ? (
+                  <textarea
+                    aria-label="Edit JSON string"
+                    data-testid="json-inline-editor"
+                    onBlur={() => { if (!cancelling.current) commitDraft() }}
+                    onChange={(event) => setDraft({ ...rowDraft, value: event.currentTarget.value })}
+                    onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing) return
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        cancelling.current = true
+                        setDraft(undefined)
+                        focusRow(row.id)
+                      } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                        event.preventDefault()
+                        commitDraft()
+                      }
+                    }}
+                    placeholder={rowDraft.row.value.type === 'null' ? 'Empty value' : undefined}
+                    value={rowDraft.value}
+                  />
+                ) : (
+                  <input
+                    aria-invalid={Boolean(draftError)}
+                    aria-label={
+                      rowDraft.kind === 'name'
+                        ? 'Rename JSON property'
+                        : rowDraft.kind === 'boolean'
+                          ? 'Edit JSON boolean'
+                          : 'Edit JSON number'
+                    }
+                    data-testid="json-inline-editor"
+                    onBlur={() => { if (!cancelling.current) commitDraft() }}
+                    onChange={(event) => setDraft({ ...rowDraft, value: event.currentTarget.value })}
+                    onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing) return
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        cancelling.current = true
+                        setDraft(undefined)
+                        focusRow(row.id)
+                      } else if (event.key === 'Enter') {
+                        event.preventDefault()
+                        commitDraft()
+                      }
+                    }}
+                    value={rowDraft.value}
+                  />
+                )}
+                {draftError ? (
+                  <span data-testid="json-inline-error" role="alert">{draftError}</span>
+                ) : null}
+                {rowDraft.kind === 'type' ? null : (
+                  <>
+                    <button
+                      aria-label="Apply"
+                      data-testid="json-apply"
+                      disabled={Boolean(draftError)}
+                      onClick={commitDraft}
+                      type="button"
+                    ><span aria-hidden="true">✓</span></button>
+                    <button
+                      aria-label="Cancel"
+                      data-testid="json-cancel"
+                      onMouseDown={() => { cancelling.current = true }}
+                      onClick={() => { setDraft(undefined); focusRow(row.id) }}
+                      type="button"
+                    ><span aria-hidden="true">×</span></button>
+                  </>
+                )}
+              </span>
+            ) : null
             return (
               <div
                 aria-expanded={row.container ? expanded.has(row.id) : undefined}
+                aria-keyshortcuts={row.container
+                  ? 'Enter Space'
+                  : row.property
+                    ? 'Enter F2 Shift+Enter Shift+F2'
+                    : 'Enter F2 Shift+Enter'}
                 aria-level={row.level}
                 aria-posinset={row.position}
                 aria-selected={selected}
@@ -377,13 +501,10 @@ export function JsonTree({
                 data-json-row-id={row.id}
                 data-testid="json-row"
                 key={row.id}
-                onDoubleClick={() => {
-                  if (row.value.type === 'string' || row.value.type === 'number') beginDraft(row, row.value.type)
-                }}
                 onKeyDown={(event) => handleKey(event, row)}
                 onMouseDown={(event) => handleRowPointer(event, () => activate(row))}
                 role="treeitem"
-                style={{ height: ROW_HEIGHT, paddingInlineStart: (row.level - 1) * 18, top: allRows.indexOf(row) * ROW_HEIGHT }}
+                style={{ height: ROW_HEIGHT, paddingInlineStart: (row.level - 1) * 14, top: allRows.indexOf(row) * ROW_HEIGHT }}
                 tabIndex={selected ? 0 : -1}
               >
                 {row.container ? (
@@ -396,65 +517,60 @@ export function JsonTree({
                     type="button"
                   >{expanded.has(row.id) ? '▾' : '▸'}</button>
                 ) : <span aria-hidden="true" className="json-disclosure-placeholder" />}
-                <span className="json-row-name">{rowLabel(row)}</span>
-                <span className="json-row-type">{row.value.type}</span>
-                <span className="json-row-preview" dir="auto">{renderPreview(row, match)}</span>
-                {draft?.row.id === row.id ? (
-                  <span className="json-inline-shell">
-                    {draft.kind === 'string' ? (
-                      <textarea
-                        aria-label="Edit JSON string"
-                        data-testid="json-inline-editor"
-                        onBlur={() => { if (!cancelling.current) commitDraft() }}
-                        onChange={(event) => setDraft({ ...draft, value: event.currentTarget.value })}
-                        onKeyDown={(event) => {
-                          if (event.nativeEvent.isComposing) return
-                          if (event.key === 'Escape') {
-                            event.preventDefault()
-                            cancelling.current = true
-                            setDraft(undefined)
-                            focusRow(row.id)
-                          } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                            event.preventDefault()
-                            commitDraft()
-                          }
-                        }}
-                        value={draft.value}
-                      />
-                    ) : (
-                      <input
-                        aria-invalid={draft.kind === 'number' && !isValidJsonNumber(draft.value)}
-                        aria-label={draft.kind === 'name' ? 'Rename JSON property' : 'Edit JSON number'}
-                        data-testid="json-inline-editor"
-                        onBlur={() => { if (!cancelling.current) commitDraft() }}
-                        onChange={(event) => setDraft({ ...draft, value: event.currentTarget.value })}
-                        onKeyDown={(event) => {
-                          if (event.nativeEvent.isComposing) return
-                          if (event.key === 'Escape') {
-                            event.preventDefault()
-                            cancelling.current = true
-                            setDraft(undefined)
-                            focusRow(row.id)
-                          } else if (event.key === 'Enter') {
-                            event.preventDefault()
-                            commitDraft()
-                          }
-                        }}
-                        value={draft.value}
-                      />
-                    )}
-                    {draft.kind === 'number' && !isValidJsonNumber(draft.value) ? (
-                      <span data-testid="json-inline-error" role="alert">Enter a complete JSON number.</span>
-                    ) : null}
-                    <button data-testid="json-apply" disabled={draft.kind === 'number' && !isValidJsonNumber(draft.value)} onClick={commitDraft} type="button">Apply</button>
-                    <button
-                      data-testid="json-cancel"
-                      onMouseDown={() => { cancelling.current = true }}
-                      onClick={() => { setDraft(undefined); focusRow(row.id) }}
-                      type="button"
-                    >Cancel</button>
+                <span
+                  className="json-row-name"
+                  data-json-editable={Boolean(row.property)}
+                  data-testid="json-row-name"
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    if (row.property) beginDraft(row, 'name')
+                  }}
+                  data-json-editing={rowDraft?.kind === 'name'}
+                  data-json-placeholder={emptyName}
+                >{rowDraft?.kind === 'name' ? inlineEditor : rowLabel(row)}</span>
+                {row.container ? (
+                  <span className="json-row-container-meta" data-testid="json-row-container-meta">
+                    <span aria-hidden="true" className="json-row-container-marker">
+                      {row.value.type === 'object' ? '{ }' : '[ ]'}
+                    </span>
+                    <span>{renderPreview(row, match)}</span>
                   </span>
-                ) : null}
+                ) : (
+                  <>
+                    <span
+                      className="json-row-type"
+                      data-json-editable="true"
+                      data-json-editing={rowDraft?.kind === 'type'}
+                      data-testid="json-row-type"
+                      onDoubleClick={(event) => {
+                        event.stopPropagation()
+                        beginDraft(row, 'type')
+                      }}
+                    >
+                      {rowDraft?.kind === 'type'
+                        ? inlineEditor
+                        : rowDraft?.kind === 'string' && row.value.type === 'null'
+                          ? 'string'
+                          : row.value.type}
+                    </span>
+                    <span
+                      className="json-row-preview"
+                      data-json-editable={Boolean(rowValueKind)}
+                      data-json-editing={Boolean(rowDraft && rowDraft.kind !== 'name' && rowDraft.kind !== 'type')}
+                      data-json-placeholder={row.value.type === 'null'}
+                      data-testid="json-row-preview"
+                      dir="auto"
+                      onDoubleClick={(event) => {
+                        event.stopPropagation()
+                        if (rowValueKind) beginDraft(row, rowValueKind)
+                      }}
+                    >
+                      {rowDraft && rowDraft.kind !== 'name' && rowDraft.kind !== 'type'
+                        ? inlineEditor
+                        : renderPreview(row, match)}
+                    </span>
+                  </>
+                )}
               </div>
             )
           })}
@@ -462,6 +578,26 @@ export function JsonTree({
       </div>
     </section>
   )
+}
+
+type JsonActionIconName = 'after' | 'before' | 'delete' | 'item' | 'property'
+
+function JsonActionIcon({ name }: { readonly name: JsonActionIconName }) {
+  return (
+    <svg aria-hidden="true" className="toolbar-icon json-action-icon" data-testid="json-action-icon" viewBox="0 0 24 24">
+      {name === 'property' ? <path d="M8 3c-2 0-3 1-3 3v3c0 2-1 3-3 3 2 0 3 1 3 3v3c0 2 1 3 3 3M16 3c2 0 3 1 3 3v3c0 2 1 3 3 3-2 0-3 1-3 3v3c0 2-1 3-3 3M9 12h6M12 9v6" /> : null}
+      {name === 'item' ? <path d="M8 4H5v16h3M16 4h3v16h-3M9 12h6M12 9v6" /> : null}
+      {name === 'before' ? <path d="M15 4v16M5 12h7M8.5 8.5 5 12l3.5 3.5" /> : null}
+      {name === 'after' ? <path d="M9 4v16M19 12h-7m3.5-3.5L19 12l-3.5 3.5" /> : null}
+      {name === 'delete' ? <path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /> : null}
+    </svg>
+  )
+}
+
+function valueDraftKind(value: JsonValue): Exclude<Draft['kind'], 'name' | 'type'> | undefined {
+  if (value.type === 'boolean' || value.type === 'number' || value.type === 'string') return value.type
+  if (value.type === 'null') return 'string'
+  return undefined
 }
 
 function flattenJson(root: JsonValue, expanded: ReadonlySet<string>): JsonRow[] {
@@ -604,7 +740,7 @@ function emptyValue(type: JsonValue['type'], id: string): JsonValue {
 }
 
 function handleRowPointer(event: MouseEvent<HTMLElement>, activate: () => void): void {
-  if (event.button !== 0 || event.target instanceof Element && event.target.closest('button, input, textarea')) return
+  if (event.button !== 0 || event.target instanceof Element && event.target.closest('button, input, select, textarea')) return
   event.preventDefault()
   activate()
 }

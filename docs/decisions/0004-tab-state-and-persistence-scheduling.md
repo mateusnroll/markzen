@@ -28,10 +28,10 @@ Each tab needs independent ProseMirror state, history, selection, scroll, title,
   navigation mode rather than retaining a second unsaved draft owner.
 - JSON inline editing uses the same single-draft ownership. Escape or Cancel
   cancels; another focus-leaving action commits one valid changed draft before
-  ownership changes. Invalid number grammar retains the originating editor and
-  blocks the requested switch, save, close, or quit. JSON expansion, active row,
-  and scroll restore per tab; transient node IDs map surviving rows without
-  becoming serialized content.
+  ownership changes. Invalid number grammar or boolean text retains the
+  originating editor and blocks the requested switch, save, close, or quit.
+  JSON expansion, active row, and scroll restore per tab; transient node IDs
+  map surviving rows without becoming serialized content.
 
 ### Persistence coordinator
 

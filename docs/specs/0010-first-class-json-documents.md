@@ -13,7 +13,11 @@ commit-on-leave ownership, added atomic mutation limits and exact-copy coverage,
 and split parser, preservation, stale-work, and sender-authority proof layers.
 The user explicitly approved those cuts plus deterministic formatting,
 bounded previews, transient node identity, and a closed discriminated kind
-union before implementation.
+union before implementation. A 2026-07 collaborative polish prototype is
+design research for the compact title row, structural-action toolbar,
+cell-targeted inline editing, container metadata, and viewport measurement
+specified below; it is not implementation until this revision is approved and
+the finish gate completes. The user approved this revision on 2026-07-28.
 
 ## Problem
 
@@ -62,11 +66,11 @@ changing duplicate properties, number spellings, or malformed source.
 - Every property, array item, and root has a transient ID retained by surviving
   nodes across transactions. IDs coordinate expansion, active row, Find, and
   focus but never enter JSON bytes or semantic equality.
-- Structured controls are the only JSON editing surface. Property-name and
-  string editors expose decoded text; number editors expose a JSON-number
-  lexeme; boolean, null, container, insertion, replacement, and deletion
-  controls issue structural ProseMirror transactions. Authored JSON is never
-  placed in executable DOM or interpreted as markup, a URL, or code.
+- Structured controls are the only JSON editing surface. Property-name,
+  string, number, boolean, null-to-string, and scalar-type editors operate
+  inline in their displayed cells; container, insertion, replacement, and
+  deletion controls issue structural ProseMirror transactions. Authored JSON
+  is never placed in executable DOM or interpreted as markup, a URL, or code.
 - The empty value for a newly selected type is `{}` for object, `[]` for
   array, `""` for string, `0` for number, `false` for boolean, and `null` for
   null. Add Property and Add Item use one ordinary `null` insertion value.
@@ -229,14 +233,19 @@ changing duplicate properties, number spellings, or malformed source.
 
 - AC35: Given editable JSON, then it renders one named row-first interactive
   tree with one active and selected treeitem, one visible row per root,
-  property, or array item, accurate hierarchy state, and one JSON toolbar
-  targeting only the active row; Markdown, CSV, table, link, image, and generic
-  toolbars are absent.
-- AC36: Given a visible row, then property names, duplicate occurrence where
-  needed, one-based array indexes, type, and child counts or scalar previews
-  are exposed in a fixed-height single line; previews are bounded to 160 Unicode
-  code points, render CR/LF/tab/control characters visibly, and isolate
-  bidirectional text while inline editors expose complete decoded text.
+  property, or array item, accurate hierarchy state, a compact filename at the
+  top left, and only named icon structural actions at the top right; each icon
+  exposes its name as a tooltip on hover and keyboard focus, while Markdown,
+  CSV, table, link, image, generic, rename, value-edit, boolean-toggle, and
+  toolbar type-replacement controls are absent.
+- AC36: Given a visible row, then its fixed 26px single line uses compact
+  indentation and columns: property names or one-based array indexes,
+  scalar type, and scalar preview remain aligned, while object and array rows
+  omit the editable type column and instead show a subtle non-interactive
+  `{ }` or `[ ]` marker immediately beside the child count. Previews are
+  bounded to 160 Unicode code points, render CR/LF/tab/control characters
+  visibly, and isolate bidirectional text while inline editors expose complete
+  decoded text.
 - AC37: Given a container row, when its disclosure control, Enter, Space,
   ArrowRight, or ArrowLeft expansion action runs, then only tab-scoped view
   state changes and semantic content, history, preview, dirty state, and bytes
@@ -249,23 +258,39 @@ changing duplicate properties, number spellings, or malformed source.
   to the first/last visible row, Page Up/Down move one viewport, Ctrl/Cmd+
   Home/End move to the first/last tree row, and one roving tab stop follows the
   active selected row.
-- AC40: Given an object property row, when the named Rename Property action is
-  invoked, then a labeled decoded-text editor owns the complete name, empty and
-  duplicate names are allowed, and Apply commits one transaction.
-- AC41: Given a string scalar row, when Enter, F2, double-click, or Edit Value is
-  invoked, then a labeled multiline decoded-text editor owns the complete value;
-  ordinary Enter inserts LF and Apply or Cmd/Ctrl+Enter commits.
-- AC42: Given a number row, when Enter, F2, double-click, or Edit Value is
-  invoked, then a labeled editor exposes the exact lexeme and invalid or
-  incomplete number grammar disables commit with an inline explanation.
-- AC43: Given a boolean row, then one named keyboard-operable action toggles its
-  value in one transaction; null remains literal until Replace Type.
-- AC44: Given any value row, when Replace Type chooses a JSON type, then its
-  value becomes that type's documented empty value in one undoable transaction;
-  replacing a non-empty container removes descendants without confirmation.
+- AC40: Given an object property row, when its displayed name is double-clicked
+  or its focused row receives Shift+F2, then a labeled decoded-text editor
+  replaces only the name cell; empty and duplicate names are allowed, Apply or
+  Enter commits one transaction, and double-clicking or selecting inside the
+  editor cannot switch to value edit. Given an empty property name, Enter on
+  its focused row opens this name editor before any value action, while display
+  mode uses muted, non-bold placeholder typography for `(empty name)`.
+- AC41: Given a string or null scalar row, when its displayed value is
+  double-clicked or the focused row receives Enter or F2, then a labeled inline
+  decoded-text editor replaces only the value cell. String edit retains
+  ordinary LF input and commits with Apply or Cmd/Ctrl+Enter; null is always
+  rendered as a muted empty-state value, begins as a blank `Empty value` string
+  draft, commits even when blank to replace null with `""`, and remains null
+  when cancelled.
+- AC42: Given a number row, when its displayed value is double-clicked or the
+  focused row receives Enter or F2, then a labeled inline editor exposes the
+  exact lexeme and invalid or incomplete number grammar disables commit with an
+  inline explanation.
+- AC43: Given a boolean row, when its displayed value is double-clicked or the
+  focused row receives Enter or F2, then a labeled inline editor accepts only
+  lowercase `true` or `false`; another value disables commit with an inline
+  explanation, and a valid commit replaces the boolean in one transaction.
+- AC44: Given a non-container scalar row, when its displayed type is
+  double-clicked or the focused row receives Shift+Enter, then a focused inline
+  native select replaces only the type cell, remains openable by pointer
+  without row activation closing it, Escape leaves the type unchanged, and a
+  selection immediately replaces the value with that type's documented empty
+  value in one undoable transaction. Object and array rows expose only AC36's
+  marker and count and cannot be type-replaced.
 - AC45: Given an object row, when Add Property is invoked, then an empty-name,
   null-valued property appends in one transaction, the parent expands, the new
-  row activates, and Rename Property begins.
+  row activates, and its empty name receives AC40's placeholder treatment until
+  name editing begins.
 - AC46: Given any array row, when Add Item is invoked, then one `null` item
   appends in one transaction, the array expands, and the new row activates.
 - AC47: Given an existing array item, when Insert Before or Insert After is
@@ -274,20 +299,25 @@ changing duplicate properties, number spellings, or malformed source.
 - AC48: Given a non-root property or item, when Delete or the navigation-mode
   Delete key is invoked, then that node is removed in one transaction and focus
   moves to next sibling, previous sibling, or parent; the root cannot be deleted.
-- AC49: Given an inline draft, then Escape or Cancel is the only cancellation
-  path; another focus-leaving action commits a valid changed draft exactly once,
-  a no-op creates no transaction, and an invalid number draft blocks navigation,
-  Save, Save All, tab/window close, and quit while retaining focus and explaining
-  the error.
+- AC49: Given an inline name, string, number, or boolean draft, then only its
+  edited cell receives a subtle non-color-only edit surface, entered text uses
+  normal value typography even when the prior display was a placeholder,
+  pointer and double-click events inside the editor do not bubble to row
+  activation, and Escape or Cancel is the only cancellation path. Another
+  focus-leaving action commits one valid changed draft exactly once, a no-op
+  creates no transaction, and an invalid number or boolean draft blocks
+  navigation, Save, Save All, tab/window close, and quit while retaining focus
+  and explaining the error.
 - AC50: Given any inline or structural mutation would cross the canonical
   10 MiB, depth, unit, or token bound, then it is rejected before transaction;
   content, focus, active row, revision, history, dirty state, and preview remain
   unchanged and an accessible explanation identifies the limit.
 - AC51: Given the JSON surface at 480×320, 200% zoom, forced colors, reduced
   motion, deep nesting, long/control-containing text, or bidirectional Unicode,
-  then title, toolbar, hierarchy, warning, active row, inline editor, both scroll
-  axes, and focus remain reachable and distinguishable without color,
-  indentation, direction, or animation alone.
+  then the full-width content surface, compact title row, icon tooltips,
+  disclosure markers, container metadata, hierarchy, warning, active row,
+  inline editor, both scroll axes, and focus remain reachable and
+  distinguishable without color, indentation, direction, or animation alone.
 
 ### Find in JSON
 
@@ -357,7 +387,9 @@ changing duplicate properties, number spellings, or malformed source.
 - AC69: Given tree windowing, then at most 500 treeitems mount, complete visible
   row count and each mounted row's level/position/set-size/expanded/selected
   state remain accurate, the active or editing row stays mounted, and one
-  roving tab stop survives virtualization.
+  roving tab stop survives virtualization. On initial mount, tab return, or
+  viewport resize, the tree measures its current client height and mounts the
+  complete visible window plus overscan without requiring a scroll event.
 - AC70: Given a controlled fixture at the 100,000 counted-unit limit, when CI
   opens it, expands representative branches, scrolls 10,000 visible rows,
   searches 5,000 matches, edits a deep scalar, adds and deletes one node, and

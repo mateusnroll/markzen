@@ -29,12 +29,29 @@ describe('spec 0010 row-first JSON tree', () => {
   test('AC2 AC6-AC10 AC20 AC35-AC39 AC51 AC69 AC73: JSON tabs render one accessible virtual tree without Markdown or CSV controls', async () => {
     await renderWorkspace(seed('{"name":"Markzen","nested":{"value":1},"items":[true,null]}'))
     await expect.element(page.getByTestId('document-title')).toHaveValue('data')
+    await expect.element(page.getByTestId('json-title-extension')).toHaveTextContent('.json')
     expect(document.querySelector('[data-testid="formatting-toolbar"]')).toBeNull()
     expect(document.querySelector('[data-testid="csv-toolbar"]')).toBeNull()
+    const toolbar = byTestId('json-toolbar')
+    expect([...toolbar.querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Add property',
+      'Add item',
+      'Insert before',
+      'Insert after',
+      'Delete',
+    ])
+    expect(toolbar.querySelectorAll('[data-testid="json-action-icon"]')).toHaveLength(5)
+    expect(toolbar.querySelector('select')).toBeNull()
+    expect(toolbar.textContent).toBe('')
     const tree = page.getByTestId('json-tree')
     await expect.element(tree).toHaveAttribute('role', 'tree')
     expect(document.querySelectorAll('[role="treeitem"]').length).toBeLessThanOrEqual(500)
     expect(document.querySelectorAll('[role="treeitem"][aria-selected="true"]')).toHaveLength(1)
+    const rootRow = rowElement('Root')
+    expect(getComputedStyle(rootRow).height).toBe('26px')
+    expect(rootRow.querySelector('[data-testid="json-row-type"]')).toBeNull()
+    expect(rootRow.querySelector('[data-testid="json-row-container-meta"]')?.textContent).toContain('{ }')
+    expect(rootRow.querySelector('[data-testid="json-row-container-meta"]')?.textContent).toContain('3 properties')
     await userEvent.keyboard('{ArrowDown}{ArrowRight}{ArrowLeft}{End}{Home}')
     expect(document.querySelectorAll('[role="treeitem"][tabindex="0"]')).toHaveLength(1)
     expect((await axe.run(document.body)).violations.filter((violation) => ['serious', 'critical'].includes(violation.impact ?? ''))).toEqual([])
@@ -50,11 +67,19 @@ describe('spec 0010 row-first JSON tree', () => {
     expect(document.body.textContent).toContain('malformed')
   })
 
-  test('AC40-AC50 AC58: active-row rename, scalar editing, type replacement, insertion, deletion, bounds, and undo are atomic', async () => {
+  test('AC40 AC45-AC48 AC50 AC58: cell-targeted rename, insertion, deletion, bounds, and undo are atomic', async () => {
     const onChange = vi.fn()
     await renderTree('{"name":"old","empty":[]}', onChange)
-    await userEvent.click(rowByText('name'))
-    await userEvent.click(page.getByRole('button', { name: 'Rename property' }))
+    const nameRow = rowElement('name')
+    nameRow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await wait(20)
+    expect(document.querySelector('[data-testid="json-inline-editor"]')).toBeNull()
+
+    nameRow.focus()
+    await userEvent.keyboard('{Shift>}{F2}{/Shift}')
+    await expect.element(page.getByTestId('json-inline-editor')).toHaveAttribute('aria-label', 'Rename JSON property')
+    await userEvent.dblClick(byTestId('json-inline-editor'))
+    await expect.element(page.getByTestId('json-inline-editor')).toHaveAttribute('aria-label', 'Rename JSON property')
     await userEvent.fill(page.getByTestId('json-inline-editor'), 'renamed')
     await userEvent.click(page.getByRole('button', { name: 'Apply' }))
     expect(onChange).toHaveBeenCalledOnce()
@@ -62,17 +87,32 @@ describe('spec 0010 row-first JSON tree', () => {
 
     await userEvent.click(rowByText('empty'))
     await userEvent.click(page.getByRole('button', { name: 'Add item' }))
-    expect(document.body.textContent).toContain('null')
-    await userEvent.selectOptions(page.getByTestId('json-replace-type'), 'string')
-    expect(onChange.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(rowElementByName('1').textContent).toContain('null')
+    expect(onChange).toHaveBeenCalledTimes(2)
+    await userEvent.click(rowElementByName('1'))
+    await userEvent.click(page.getByRole('button', { name: 'Delete' }))
+    expect(onChange).toHaveBeenCalledTimes(3)
     editors.at(-1)!.commands.undo()
-    expect((jsonRootFromEditor(editors.at(-1)!) as JsonObject).properties).toHaveLength(2)
+    expect(((jsonRootFromEditor(editors.at(-1)!) as JsonObject).properties[1]?.value as { readonly items: readonly unknown[] }).items).toHaveLength(1)
   })
 
-  test('AC41-AC42 AC49: valid drafts commit on leave, Escape cancels, no-ops stay clean, and invalid numbers block commit', async () => {
+  test('AC40-AC44 AC49: names, scalar values, null, booleans, and types edit only in their inline cells', async () => {
     const onChange = vi.fn()
-    await renderTree('{"value":"old","number":1e3}', onChange)
-    await userEvent.dblClick(rowByText('old'))
+    await renderTree('{"":"blank name","value":"old","number":1e3,"flag":true,"nothing":null,"object":{},"array":[]}', onChange)
+
+    const emptyName = rowElement('(empty name)').querySelector<HTMLElement>('[data-testid="json-row-name"]')!
+    expect(getComputedStyle(emptyName).fontStyle).toBe('italic')
+    expect(getComputedStyle(emptyName).fontWeight).toBe('400')
+    rowElement('(empty name)').focus()
+    await userEvent.keyboard('{Enter}')
+    await expect.element(page.getByTestId('json-inline-editor')).toHaveAttribute('aria-label', 'Rename JSON property')
+    await userEvent.keyboard('{Escape}')
+
+    await userEvent.dblClick(rowCell('value', 'json-row-name'))
+    await expect.element(page.getByTestId('json-inline-editor')).toHaveAttribute('aria-label', 'Rename JSON property')
+    await userEvent.keyboard('{Escape}')
+    await userEvent.dblClick(rowCell('value', 'json-row-preview'))
+    await expect.element(page.getByTestId('json-inline-editor')).toHaveAttribute('aria-label', 'Edit JSON string')
     await userEvent.fill(page.getByTestId('json-inline-editor'), 'changed')
     await userEvent.click(rowByText('number'))
     expect(onChange).toHaveBeenCalledOnce()
@@ -83,6 +123,41 @@ describe('spec 0010 row-first JSON tree', () => {
     await expect.element(page.getByRole('button', { name: 'Apply' })).toBeDisabled()
     await userEvent.keyboard('{Escape}')
     expect(document.body.textContent).toContain('1e3')
+
+    const nullPreview = rowCell('nothing', 'json-row-preview')
+    expect(nullPreview.textContent).toBe('null')
+    expect(getComputedStyle(nullPreview).fontStyle).toBe('italic')
+    await userEvent.dblClick(nullPreview)
+    const nullEditor = byTestId<HTMLTextAreaElement>('json-inline-editor')
+    expect(nullEditor.value).toBe('')
+    expect(nullEditor.placeholder).toBe('Empty value')
+    expect(getComputedStyle(nullEditor).fontStyle).toBe('normal')
+    await userEvent.click(page.getByRole('button', { name: 'Apply' }))
+    expect(propertyValue('nothing').type).toBe('string')
+
+    await userEvent.dblClick(rowCell('flag', 'json-row-preview'))
+    await userEvent.fill(page.getByTestId('json-inline-editor'), 'TRUE')
+    await expect.element(page.getByTestId('json-inline-error')).toHaveTextContent('Enter true or false.')
+    await expect.element(page.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    await userEvent.fill(page.getByTestId('json-inline-editor'), 'false')
+    await userEvent.click(page.getByRole('button', { name: 'Apply' }))
+    expect(propertyValue('flag')).toMatchObject({ type: 'boolean', value: false })
+
+    expect(rowElement('object').querySelector('[data-testid="json-row-type"]')).toBeNull()
+    expect(rowElement('array').querySelector('[data-testid="json-row-type"]')).toBeNull()
+    await userEvent.dblClick(rowCell('value', 'json-row-type'))
+    const typeEditor = byTestId<HTMLSelectElement>('json-inline-editor')
+    expect(typeEditor).toBe(document.activeElement)
+    await userEvent.click(typeEditor)
+    expect(document.querySelector('[data-testid="json-inline-editor"]')).toBe(typeEditor)
+    await userEvent.selectOptions(typeEditor, 'number')
+    expect(propertyValue('value')).toMatchObject({ lexeme: '0', type: 'number' })
+  })
+
+  test('AC69: initial measurement mounts the complete visible window without a scroll event', async () => {
+    await renderTree(JSON.stringify(Array.from({ length: 100 }, (_, index) => `row ${index}`)), vi.fn(), 780)
+    expect(byTestId('json-tree').scrollTop).toBe(0)
+    expect(document.querySelectorAll('[role="treeitem"]').length).toBeGreaterThan(21)
   })
 
   test('AC52-AC57 AC65: Find searches literal JSON labels, expands matches, and authored content stays inert', async () => {
@@ -117,7 +192,11 @@ async function renderWorkspace(document: DocumentSeed): Promise<void> {
   await wait(20)
 }
 
-async function renderTree(source: string, onChange: (document: JsonDocument) => void): Promise<void> {
+async function renderTree(
+  source: string,
+  onChange: (document: JsonDocument) => void,
+  height = 720,
+): Promise<void> {
   const parsed = parseJsonBytes(new TextEncoder().encode(source))
   if (parsed.mode !== 'editable') throw new Error(parsed.reason)
   const editor = createJsonEditor(parsed.document, (updated) => onChange({
@@ -127,11 +206,23 @@ async function renderTree(source: string, onChange: (document: JsonDocument) => 
   }))
   editors.push(editor)
   root = createRoot(testContainer())
-  root.render(<JsonTree editor={editor} onError={() => undefined} />)
+  root.render(
+    <div style={{ display: 'flex', height }}>
+      <JsonTree editor={editor} onError={() => undefined} />
+    </div>,
+  )
   await wait(20)
 }
 
 const rowByText = (text: string) => page.getByTestId('json-row').filter({ hasText: text }).first()
+const rowElement = (text: string): HTMLElement => [...document.querySelectorAll<HTMLElement>('[data-testid="json-row"]')]
+  .find((row) => row.textContent?.includes(text))!
+const rowElementByName = (name: string): HTMLElement => [...document.querySelectorAll<HTMLElement>('[data-testid="json-row"]')]
+  .find((row) => row.querySelector('[data-testid="json-row-name"]')?.textContent === name)!
+const rowCell = (rowText: string, testId: string): HTMLElement =>
+  rowElement(rowText).querySelector<HTMLElement>(`[data-testid="${testId}"]`)!
+const propertyValue = (name: string) => (jsonRootFromEditor(editors.at(-1)!) as JsonObject).properties
+  .find((property) => property.name === name)!.value
 const byTestId = <Element extends HTMLElement = HTMLElement>(id: string): Element =>
   document.querySelector<Element>(`[data-testid="${id}"]`)!
 const wait = (milliseconds: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, milliseconds))

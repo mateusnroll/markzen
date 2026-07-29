@@ -43,13 +43,18 @@ document or storing semantic content in React.
 ### Tree and accessibility
 
 - Render one row-first ARIA tree with fixed-height rows, bounded isolated
-  previews, overscan, and an active-row toolbar. Always mount the active or
-  editing row and at most 500 treeitems.
+  previews, measured viewport overscan, and one compact toolbar containing only
+  structural actions. Always mount the active or editing row and at most 500
+  treeitems.
+- Keep scalar name, value, and type editing in the corresponding displayed
+  cell. Container rows expose non-interactive type markers and counts instead
+  of type replacement. Native text controls own string, number, boolean, and
+  null-to-string drafts; a native select owns scalar type replacement.
 - Escape visibly presented controls without changing decoded editor values.
   Search current-result excerpts are bounded around the exact match.
 - Escape or Cancel is the only inline-draft cancellation. Any other focus leave
-  commits one valid changed draft before the action; an invalid number draft
-  retains focus and blocks the action.
+  commits one valid changed draft before the action; an invalid number or
+  boolean draft retains focus and blocks the action.
 
 ### Persistence and authority
 
@@ -73,7 +78,7 @@ document or storing semantic content in React.
 
 - Node tests prove parser models, exact limits, canonical goldens, preservation,
   equality, and stale completion policy.
-- Browser Mode proves row navigation, toolbar editing, atomic limits, Find,
+- Browser Mode proves row navigation, cell-targeted editing, atomic limits, Find,
   windowing, literal rendering, and accessibility.
 - Playwright-vs-Vite proves mixed-kind lifecycle, stale interaction, watchers,
   conflicts, and save ownership through `MemoryPlatform`.
