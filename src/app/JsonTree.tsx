@@ -155,7 +155,7 @@ export function JsonTree({
   }, [])
 
   useEffect(() => {
-    focusRow(activeId)
+    document.querySelector<HTMLElement>(rowSelector(activeId))?.focus()
   }, [editor])
 
   const beginDraft = useCallback((row: JsonRow, kind?: Draft['kind']) => {

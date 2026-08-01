@@ -26,6 +26,7 @@ export async function launchMarkzen(): Promise<ElectronApplication> {
         await quitMarkzen(electronApp)
         throw new Error(`Electron used unexpected user-data directory: ${actualProfile}`)
       }
+      await electronApp.firstWindow()
       return electronApp
     } catch (error) {
       lastError = error
