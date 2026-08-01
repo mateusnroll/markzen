@@ -90,7 +90,7 @@ import { MAX_ACQUIRED_IMAGE_BYTES } from '../../assets/image-sources'
 type WindowRecord = {
   closeApproved: boolean
   readonly id: WindowId
-  readonly initialDocumentKind?: 'csv' | 'markdown'
+  readonly initialDocumentKind?: 'csv' | 'json' | 'markdown'
   readonly kind: WindowKind
   readonly window: BrowserWindow
 }
@@ -102,7 +102,7 @@ type MainDocumentRecord = {
   displayPath?: Path
   fileKey?: FileKey
   readonly generation: number
-  kind: 'csv' | 'markdown'
+  kind: 'csv' | 'json' | 'markdown'
   path?: Path
   secondaryPath?: string
   title?: string
@@ -206,7 +206,7 @@ function syncNativeChrome(window: BrowserWindow, theme: ThemePreference): void {
 export async function createMarkzenWindow(
   kind: WindowKind = 'single-file',
   initialFolder?: Path,
-  initialDocumentKind?: 'csv' | 'markdown',
+  initialDocumentKind?: 'csv' | 'json' | 'markdown',
 ): Promise<WindowId> {
   if (!app.isReady()) await app.whenReady()
   const window = new BrowserWindow(getWindowOptionsForPlatform(process.platform, settingsService?.snapshot().theme ?? 'system'))
@@ -327,8 +327,8 @@ function dispatchApplicationCommand(command: ApplicationCommand): void {
     record.window.webContents.send(channels.documentCommand, command)
     return
   }
-  if (command === 'new' || command === 'new-csv' || command === 'open') {
-    const initialDocumentKind = command === 'new-csv' ? 'csv' : 'markdown'
+  if (command === 'new' || command === 'new-csv' || command === 'new-json' || command === 'open') {
+    const initialDocumentKind = command === 'new-csv' ? 'csv' : command === 'new-json' ? 'json' : 'markdown'
     void createMarkzenWindow('single-file', undefined, initialDocumentKind).then((id) => {
       if (command !== 'open') return
       const created = [...windowsByContents.values()].find((candidate) => candidate.id === id)
@@ -377,15 +377,17 @@ function getApplicationMenuSnapshot(platform: PlatformName): unknown {
   return strip(buildApplicationMenuTemplate(platform))
 }
 
-function getDocumentDialogSnapshot(kind: 'csv' | 'markdown'): unknown {
+function getDocumentDialogSnapshot(kind: 'csv' | 'json' | 'markdown'): unknown {
   return {
     open: {
-      filters: [{ extensions: ['md', 'markdown', 'txt', 'csv'], name: 'Markzen documents' }],
+      filters: [{ extensions: ['md', 'markdown', 'txt', 'csv', 'json'], name: 'Markzen documents' }],
       title: 'Open Markzen Document',
     },
     save: kind === 'csv'
       ? { filters: [{ extensions: ['csv'], name: 'CSV document' }], suffix: '.csv' }
-      : { filters: [{ extensions: ['md'], name: 'Markdown document' }], suffix: '.md' },
+      : kind === 'json'
+        ? { filters: [{ extensions: ['json'], name: 'JSON document' }], suffix: '.json' }
+        : { filters: [{ extensions: ['md'], name: 'Markdown document' }], suffix: '.md' },
   }
 }
 
@@ -395,11 +397,11 @@ function validateDocumentTransferForShellTest(byteLength: number): PlatformResul
     : fail('validation')
 }
 
-function forgeCsvIntentForShellTest(): PlatformResult<void, 'ownership'> {
+function forgeDocumentIntentForShellTest(): PlatformResult<void, 'ownership'> {
   return authorizeDocumentRequest(
-    { generation: 0, tabId: asTabId('owned-csv'), windowId: asWindowId('owner-window') },
+    { generation: 0, tabId: asTabId('owned-document'), windowId: asWindowId('owner-window') },
     asWindowId('forged-window'),
-    asTabId('owned-csv'),
+    asTabId('owned-document'),
     0,
   )
 }
@@ -544,7 +546,8 @@ function registerIpcHandlers(): void {
     }
   }))
   ipcMain.handle(channels.documentCreateTab, (event, payload) => withAuthorizedWindow(event, (record) => {
-    if (!isRecord(payload) || Object.keys(payload).join(',') !== 'kind' || (payload.kind !== 'csv' && payload.kind !== 'markdown')) {
+    if (!isRecord(payload) || Object.keys(payload).join(',') !== 'kind'
+      || (payload.kind !== 'csv' && payload.kind !== 'json' && payload.kind !== 'markdown')) {
       return fail('validation')
     }
     const tabId = asTabId(randomUUID())
@@ -611,7 +614,7 @@ function registerIpcHandlers(): void {
       return ok<DocumentIntentOutcome>({ kind: 'collision' })
     }
     adoptRecord(document, read.value)
-    document.kind = /\.csv$/i.test(String(resolved.value.logical)) ? 'csv' : 'markdown'
+    document.kind = documentKindFromPath(String(resolved.value.logical))
     document.displayPath = resolved.value.logical
     watchDocument(document)
     return ok<DocumentIntentOutcome>({
@@ -631,7 +634,7 @@ function registerIpcHandlers(): void {
   }))
   ipcMain.handle(channels.documentOpen, (event, payload) => withDocument(event, 'open', payload, async (record, window) => {
     const selected = await dialog.showOpenDialog(window.window, {
-      filters: [{ extensions: ['md', 'markdown', 'txt', 'csv'], name: 'Markzen documents' }],
+      filters: [{ extensions: ['md', 'markdown', 'txt', 'csv', 'json'], name: 'Markzen documents' }],
       properties: ['openFile'],
       title: 'Open Markzen Document',
     })
@@ -645,7 +648,7 @@ function registerIpcHandlers(): void {
     if (!claimed.ok) return ok<DocumentIntentOutcome>({ kind: 'collision' })
     if (record.fileKey && record.fileKey !== read.value.fileKey) releaseRecordIdentity(record)
     adoptRecord(record, read.value)
-    record.kind = /\.csv$/i.test(selectedPath) ? 'csv' : 'markdown'
+    record.kind = documentKindFromPath(selectedPath)
     watchDocument(record)
     return ok<DocumentIntentOutcome>({ file: filePayload(record, read.value), kind: 'opened' })
   }))
@@ -1164,7 +1167,9 @@ async function saveDocumentAs(
     defaultPath: deriveDocumentFilename(request.title, undefined, record.kind),
     filters: record.kind === 'csv'
       ? [{ extensions: ['csv'], name: 'CSV document' }]
-      : [{ extensions: ['md'], name: 'Markdown document' }],
+      : record.kind === 'json'
+        ? [{ extensions: ['json'], name: 'JSON document' }]
+        : [{ extensions: ['md'], name: 'Markdown document' }],
     message: 'A new document will be created from the current tab.',
     title: 'Save Current Tab As',
   })
@@ -1741,6 +1746,12 @@ function normalizePlatform(value: string): PlatformName {
   return 'linux'
 }
 
+function documentKindFromPath(path: string): MainDocumentRecord['kind'] {
+  if (/\.csv$/i.test(path)) return 'csv'
+  if (/\.json$/i.test(path)) return 'json'
+  return 'markdown'
+}
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
@@ -1762,7 +1773,7 @@ app.on('will-quit', () => nativeTheme.removeListener('updated', broadcastAppeara
 Object.defineProperty(app, 'markzenShellHarness', {
   configurable: false,
   enumerable: false,
-  value: Object.freeze({ createMarkzenWindow, dispatchApplicationCommandForShellTest, emitWindowStateForShellTest, forgeCsvIntentForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentDialogSnapshot, getDocumentWatcherCount, getRemoteRequestCountForShellTest, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, issueEmbeddedAssetForShellTest, openFolderForShellTest, revokeAssetForShellTest, runRealFsRoundTrip, validateDocumentTransferForShellTest }),
+  value: Object.freeze({ createMarkzenWindow, dispatchApplicationCommandForShellTest, emitWindowStateForShellTest, forgeDocumentIntentForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentDialogSnapshot, getDocumentWatcherCount, getRemoteRequestCountForShellTest, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, issueEmbeddedAssetForShellTest, openFolderForShellTest, revokeAssetForShellTest, runRealFsRoundTrip, validateDocumentTransferForShellTest }),
   writable: false,
 })
 

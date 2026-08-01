@@ -4,7 +4,6 @@ import { describe, expect, test } from 'vitest'
 
 import {
   CSV_LIMITS,
-  isCsvCompletionCurrent,
   parseClipboardText,
   parseCsvBytes,
   serializeClipboardMatrix,
@@ -12,6 +11,7 @@ import {
   validateCsvMatrix,
   type CsvDocument,
 } from '../../src/documents/csv'
+import { isDocumentCompletionCurrent } from '../../src/documents/tab-state'
 
 const encode = (value: string): Uint8Array => new TextEncoder().encode(value)
 const decode = (value: Uint8Array): string => new TextDecoder().decode(value)
@@ -123,12 +123,12 @@ describe('spec 0009 bounded CSV codec', () => {
 
   test('AC60 AC72: stale completion policy requires owner, kind, generation, and revision equality', () => {
     const current = { generation: 4, kind: 'csv' as const, owner: 'tab-a', revision: 9 }
-    expect(isCsvCompletionCurrent(current, current)).toBe(true)
+    expect(isDocumentCompletionCurrent(current, current)).toBe(true)
     for (const stale of [
       { ...current, generation: 3 },
       { ...current, kind: 'markdown' as const },
       { ...current, owner: 'tab-b' },
       { ...current, revision: 8 },
-    ]) expect(isCsvCompletionCurrent(stale, current)).toBe(false)
+    ]) expect(isDocumentCompletionCurrent(stale, current)).toBe(false)
   })
 })

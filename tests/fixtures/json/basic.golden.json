@@ -1,0 +1,12 @@
+{
+    "name": "Markzen",
+    "duplicate": 1e3,
+    "duplicate": -0,
+    "unicode": "𝄞",
+    "lone": "\udead",
+    "items": [
+        true,
+        null,
+        "changed"
+    ]
+}

@@ -52,7 +52,7 @@ const api: MarkzenApi = deepFreeze({
     confirmWindowClose: (dirtyNames: readonly string[]) =>
       invoke<'cancel' | 'discard' | 'save-all'>(channels.documentConfirmWindowClose, { dirtyNames }),
     completeQuitSaveAll: (success: boolean) => invoke<void>(channels.documentQuitSaveAllComplete, { success }),
-    createTab: (kind: 'csv' | 'markdown') => invoke<TabId>(channels.documentCreateTab, { kind }),
+    createTab: (kind: 'csv' | 'json' | 'markdown') => invoke<TabId>(channels.documentCreateTab, { kind }),
     open: (tabId: TabId, generation: number) => invoke<DocumentIntentOutcome>(channels.documentOpen, { generation, tabId }),
     onCommand(listener: (command: RendererCommand) => void) {
       const wrapped = (_event: Electron.IpcRendererEvent, command: RendererCommand) => listener(command)

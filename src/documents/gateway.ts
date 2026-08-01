@@ -1,6 +1,7 @@
 import { displayDocumentStem, deriveDocumentFilename, getRecognizedExtension } from './filename'
 import { parseDocumentBytes, serializeRichDocument, type DocumentEncoding, type RichDocument } from './markdown'
 import { csvPreservationMessage, parseCsvBytes, serializeCsvDocument, type CsvDocument } from './csv'
+import { jsonPreservationMessage, parseJsonBytes, serializeJsonDocument, type JsonDocument } from './json'
 import { decodeEmbeddedImage, MAX_ACQUIRED_IMAGE_BYTES } from '../assets/image-sources'
 import { validateRaster } from '../assets/raster'
 import { SaveCoordinator } from './save-coordinator'
@@ -22,10 +23,11 @@ export type GatewayDocument = {
   readonly diskVersion?: DiskVersion
   readonly document?: RichDocument
   readonly csv?: CsvDocument
+  readonly json?: JsonDocument
   readonly encoding?: DocumentEncoding
   readonly fileKey?: FileKey
   readonly id: string
-  readonly kind?: 'csv' | 'markdown'
+  readonly kind?: 'csv' | 'json' | 'markdown'
   readonly path?: Path
   readonly preservation?: { readonly bytes: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
   readonly revision?: number
@@ -62,7 +64,7 @@ export interface DocumentGatewayPort {
   commitImage(id: string, candidateId: string): Promise<ImageIntentOutcome>
   loadRemoteImage(id: string, assetId: string, source: string, generation: number): Promise<ImageIntentOutcome>
   completeQuitSaveAll(success: boolean): Promise<void>
-  createTabId(kind?: 'csv' | 'markdown'): Promise<string>
+  createTabId(kind?: 'csv' | 'json' | 'markdown'): Promise<string>
   open(id?: string): Promise<OpenOutcome>
   openWorkspace(input: WorkspaceOpenInput): Promise<OpenOutcome>
   onCommand(listener: (command: import('../platform/contracts').RendererCommand) => void): () => void
@@ -199,7 +201,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async open(id?: string): Promise<OpenOutcome> {
-    const selected = await this.platform.dialog.open({ extensions: ['md', 'markdown', 'txt', 'csv'], title: 'Open Markzen Document' })
+    const selected = await this.platform.dialog.open({ extensions: ['md', 'markdown', 'txt', 'csv', 'json'], title: 'Open Markzen Document' })
     if (!selected.ok) return { kind: 'error' }
     return selected.value ? this.openPath(selected.value, id ?? `file-${Date.now()}`) : { kind: 'cancelled' }
   }
@@ -223,7 +225,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async #overwriteExternal(input: SaveInput, diskVersion: DiskVersion): Promise<SaveOutcome> {
-    if (!input.path || (!input.document && !input.csv)) return { kind: 'error' }
+    if (!input.path || (!input.document && !input.csv && !input.json)) return { kind: 'error' }
     const bytes = gatewayBytes(input)
     const replaced = await this.platform.fs.atomicReplace(input.path, bytes, diskVersion)
     return replaced.ok ? this.#saved(input, replaced.value) : failure(replaced.error.code)
@@ -273,6 +275,23 @@ export class DocumentGateway implements DocumentGatewayPort {
           kind: 'opened',
         }
     }
+    if (/\.json$/i.test(String(read.value.path))) {
+      const parsed = parseJsonBytes(read.value.bytes)
+      return parsed.mode === 'editable'
+        ? { document: { ...identity, json: parsed.document, kind: 'json' }, kind: 'opened' }
+        : {
+          document: {
+            ...identity,
+            kind: 'json',
+            preservation: {
+              bytes: parsed.bytes,
+              display: `${jsonPreservationMessage(parsed.reason, parsed.location)} Its original bytes are preserved.`,
+              kind: 'text',
+            },
+          },
+          kind: 'opened',
+        }
+    }
     const parsed = parseDocumentBytes(read.value.bytes)
     const outcome: OpenOutcome = parsed.mode === 'rich' ? {
       document: { ...identity, document: parsed.document, encoding: parsed.encoding, kind: 'markdown' }, kind: 'opened',
@@ -306,7 +325,7 @@ export class DocumentGateway implements DocumentGatewayPort {
       const moved = await this.platform.fs.move(input.path, join(dirname(input.path), targetName), input.diskVersion)
       return moved.ok ? this.#saved(input, moved.value) : failure(moved.error.code)
     }
-    if (!input.document && !input.csv) return { kind: 'unchanged' }
+    if (!input.document && !input.csv && !input.json) return { kind: 'unchanged' }
     const bytes = gatewayBytes(input)
     const replaced = await this.platform.fs.atomicReplace(input.path, bytes, input.diskVersion)
     return replaced.ok ? this.#saved(input, replaced.value) : failure(replaced.error.code)
@@ -317,7 +336,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async #saveAndRename(input: SaveInput): Promise<SaveOutcome> {
-    if (!input.path || !input.diskVersion || (!input.document && !input.csv)) return { kind: 'error' }
+    if (!input.path || !input.diskVersion || (!input.document && !input.csv && !input.json)) return { kind: 'error' }
     const latest = await this.platform.fs.read(input.path)
     if (!latest.ok) return failure(latest.error.code)
     if (latest.value.diskVersion !== input.diskVersion) return { kind: 'conflict' }
@@ -506,7 +525,7 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
     return result.ok
   }
 
-  async createTabId(kind: 'csv' | 'markdown' = 'markdown'): Promise<string> {
+  async createTabId(kind: 'csv' | 'json' | 'markdown' = 'markdown'): Promise<string> {
     const result = await this.api.document.createTab(kind)
     if (!result.ok) throw new Error('Could not create a document tab')
     return result.value
@@ -630,6 +649,15 @@ function parseRemoteFile(file: import('../platform/contracts').DocumentFilePaylo
       kind: 'text',
     } }, kind: 'opened' }
   }
+  if (kind === 'json') {
+    const parsed = parseJsonBytes(file.bytes)
+    if (parsed.mode === 'editable') return { document: { ...identity, json: parsed.document, kind }, kind: 'opened' }
+    return { document: { ...identity, kind, preservation: {
+      bytes: parsed.bytes,
+      display: `${jsonPreservationMessage(parsed.reason, parsed.location)} Its original bytes are preserved.`,
+      kind: 'text',
+    } }, kind: 'opened' }
+  }
   const parsed = parseDocumentBytes(file.bytes)
   if (parsed.mode === 'rich') return { document: { ...identity, document: parsed.document, encoding: parsed.encoding, kind }, kind: 'opened' }
   return { document: { ...identity, kind, preservation: {
@@ -669,6 +697,7 @@ const failure = (code: string): SaveOutcome => ({ kind: code === 'conflict' ? 'c
 function gatewayBytes(document: GatewayDocument): Uint8Array {
   if (document.preservation?.bytes) return document.preservation.bytes
   if (document.csv) return serializeCsvDocument(document.csv)
+  if (document.json) return serializeJsonDocument(document.json)
   if (document.document) return serializeRichDocument(document.document, document.encoding ?? { bom: false, newline: 'lf' })
   return new Uint8Array()
 }

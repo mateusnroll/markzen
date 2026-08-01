@@ -247,16 +247,6 @@ export function csvPreservationMessage(reason: CsvPreservationReason): string {
   return messages[reason]
 }
 
-export function isCsvCompletionCurrent(
-  captured: { readonly generation: number; readonly kind: 'csv' | 'markdown'; readonly owner: string; readonly revision: number },
-  current: { readonly generation: number; readonly kind: 'csv' | 'markdown'; readonly owner: string; readonly revision: number },
-): boolean {
-  return captured.owner === current.owner
-    && captured.kind === current.kind
-    && captured.generation === current.generation
-    && captured.revision === current.revision
-}
-
 export function csvColumnLabel(index: number): string {
   let value = index + 1
   let label = ''

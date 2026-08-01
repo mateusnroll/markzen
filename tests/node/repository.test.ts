@@ -132,6 +132,7 @@ describe('spec 0001 repository verification contract', () => {
     const preload = await readFile('src/platform/electron/preload.ts', 'utf8')
     const csvTests = await readFile('tests/node/csv.test.ts', 'utf8')
     expect(contracts).toContain("'new-csv'")
+    expect(contracts).toContain("'new-json'")
     expect(contracts).toContain("readonly kind: 'csv'")
     expect(preload).not.toContain('clipboard:')
     expect(preload).not.toContain('filesystem:')

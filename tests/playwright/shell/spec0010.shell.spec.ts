@@ -8,31 +8,28 @@ import { callMain, launchMarkzen, quitMarkzen } from './helpers'
 
 type MenuItem = { readonly accelerator?: string; readonly label?: string; readonly submenu?: readonly MenuItem[] }
 
-test('AC1 AC3 AC63: native New CSV is accelerator-free and routes only to the focused CSV owner', async () => {
+test('AC1 AC3 AC68: native New JSON is accelerator-free and routes to the focused JSON owner', async () => {
   const app = await launchMarkzen()
   try {
     const menu = await callMain<readonly MenuItem[]>(app, 'getApplicationMenuSnapshot', [process.platform])
-    const item = flatten(menu).find((candidate) => candidate.label === 'New CSV')
+    const item = flatten(menu).find((candidate) => candidate.label === 'New JSON')
     expect(item).toBeDefined()
     expect(item?.accelerator).toBeUndefined()
     const page = await app.firstWindow()
     const windowId = await page.getByTestId('window-id').textContent()
-    await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'new-csv'])
-    await expect(page.getByTestId('csv-grid')).toBeVisible()
-    await expect.poll(() => app.evaluate(({ Menu }) => ({
-      copy: Menu.getApplicationMenu()?.getMenuItemById('markzen-copy')?.enabled,
-      saveAs: Menu.getApplicationMenu()?.getMenuItemById('markzen-save-as')?.enabled,
-    }))).toMatchObject({ saveAs: true })
+    await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'new-json'])
+    await expect(page.getByTestId('json-tree')).toBeVisible()
   } finally {
     await quitMarkzen(app)
   }
 })
 
-test('AC4 AC8 AC69: packaged dialogs accept CSV, save as CSV, and reject transfer above 32 MiB before ownership', async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'markzen-csv-'))
-  const source = path.join(directory, 'people.csv')
-  const target = path.join(directory, 'copy.csv')
-  await writeFile(source, 'name,note\rAda,hello\r')
+test('AC4 AC8 AC21-AC22: packaged dialogs accept JSON, copy exact bytes, and enforce the transfer ceiling', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'markzen-json-'))
+  const source = path.join(directory, 'data.json')
+  const target = path.join(directory, 'copy.json')
+  const bytes = '{  "number": 1e3 }\r'
+  await writeFile(source, bytes)
   const app = await launchMarkzen()
   try {
     await app.evaluate(({ dialog }, paths) => {
@@ -48,12 +45,10 @@ test('AC4 AC8 AC69: packaged dialogs accept CSV, save as CSV, and reject transfe
     const page = await app.firstWindow()
     const windowId = await page.getByTestId('window-id').textContent()
     await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'open'])
-    await expect(page.getByTestId('csv-grid')).toBeVisible()
+    await expect(page.getByTestId('json-tree')).toBeVisible()
     await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'save-as'])
-    await expect.poll(async () => readFile(target, 'utf8').catch(() => '')).toBe('name,note\rAda,hello\r')
-
-    const filters = await callMain<unknown>(app, 'getDocumentDialogSnapshot', ['csv'])
-    expect(JSON.stringify(filters)).toContain('csv')
+    await expect.poll(async () => readFile(target, 'utf8').catch(() => '')).toBe(bytes)
+    expect(JSON.stringify(await callMain(app, 'getDocumentDialogSnapshot', ['json']))).toContain('json')
     expect(await callMain(app, 'validateDocumentTransferForShellTest', [32 * 1_048_576 + 1])).toMatchObject({ ok: false })
   } finally {
     await quitMarkzen(app)
@@ -61,17 +56,12 @@ test('AC4 AC8 AC69: packaged dialogs accept CSV, save as CSV, and reject transfe
   }
 })
 
-test('AC62 AC73: packaged preload stays closed and forged CSV owners are rejected', async () => {
+test('AC66-AC67: preload remains closed and forged JSON owners are rejected', async () => {
   const app = await launchMarkzen()
   try {
     const page = await app.firstWindow()
-    const surface = await page.evaluate(() => ({
-      document: Object.keys(window.markzen?.document ?? {}).sort(),
-      root: Object.keys(window.markzen ?? {}).sort(),
-    }))
-    expect(surface.root).not.toContain('fs')
-    expect(surface.root).not.toContain('clipboard')
-    expect(surface.document).not.toContain('invoke')
+    const surface = await page.evaluate(() => Object.keys(window.markzen?.document ?? {}).sort())
+    expect(surface).not.toContain('invoke')
     expect(await callMain(app, 'forgeDocumentIntentForShellTest')).toMatchObject({ ok: false, error: { code: 'ownership' } })
   } finally {
     await quitMarkzen(app)

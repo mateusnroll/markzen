@@ -202,6 +202,36 @@ const fixtures: Readonly<Record<string, Fixture>> = {
       title: 'CSV performance',
     }],
   },
+  'json-basic': {
+    directories: [],
+    files: [{
+      bytes: '{\n  "name": "Needle",\n  "nested": {\n    "value": 1\n  },\n  "items": [true, null]\n}\n',
+      path: '/notes/data.json',
+    }],
+    workspaceRoots: ['/notes'],
+  },
+  'json-performance': {
+    files: [],
+    initialDocuments: [{
+      id: 'json-performance',
+      json: {
+        edited: false,
+        format: { bom: false, indent: '  ', newline: 'lf', terminalSeparator: false },
+        originalBytes: new TextEncoder().encode('[]'),
+        root: {
+          id: 'json-performance-root',
+          items: Array.from({ length: 20_000 }, (_, index) => ({
+            id: `json-performance-${index}`,
+            type: 'string' as const,
+            value: `row ${index}`,
+          })),
+          type: 'array',
+        },
+      },
+      kind: 'json',
+      title: 'JSON performance',
+    }],
+  },
   'workspace-performance-10k': {
     files: [],
     generatedWorkspace: { entriesPerRoot: 10_000, roots: 1 },
@@ -326,6 +356,7 @@ function isRendererCommand(value: unknown): value is RendererCommand {
     'find',
     'new',
     'new-csv',
+    'new-json',
     'open',
     'save',
     'save-all',

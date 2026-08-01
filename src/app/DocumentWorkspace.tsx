@@ -8,6 +8,12 @@ import type { SelectionBookmark } from '@tiptap/pm/state'
 import { validateDocumentName } from '../documents/filename'
 import type { DocumentGatewayPort, ExternalGatewayEvent, GatewayDocument, SaveOutcome } from '../documents/gateway'
 import { createCsvEditor, csvRowsFromEditor, type CsvDocument } from '../documents/csv'
+import {
+  createEmptyJsonDocument,
+  createJsonEditor,
+  jsonRootFromEditor,
+  type JsonDocument,
+} from '../documents/json'
 import { createDocumentExtensions, type RichDocument } from '../documents/markdown'
 import { acceptTabBaseline, createTabBaseline, editTabDocument, editTabTitle, isTabDirty } from '../documents/tab-state'
 import {
@@ -29,16 +35,18 @@ import { WritingToolbar } from './WritingToolbar'
 import { TableActions } from './TableActions'
 import { useOverlaySurface } from './overlays'
 import { CsvGrid } from './CsvGrid'
+import { commitJsonDraft, JsonTree } from './JsonTree'
 
 import './document.css'
 
 export type DocumentSeed = {
   readonly csv?: CsvDocument
   readonly document?: JSONContent
+  readonly json?: JsonDocument
   readonly diskVersion?: DiskVersion
   readonly fileKey?: FileKey
   readonly id: string
-  readonly kind?: 'csv' | 'markdown'
+  readonly kind?: 'csv' | 'json' | 'markdown'
   readonly path?: Path
   readonly preservation?: { readonly bytes?: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
   readonly preview?: boolean
@@ -64,7 +72,8 @@ type WorkspaceTab = {
   readonly diskVersion?: DiskVersion
   readonly fileKey?: FileKey
   readonly id: string
-  readonly kind: 'csv' | 'markdown'
+  readonly json?: JsonDocument
+  readonly kind: 'csv' | 'json' | 'markdown'
   readonly header: boolean
   readonly path?: Path
   readonly preservation?: { readonly bytes?: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
@@ -140,6 +149,27 @@ export function DocumentWorkspace({
           header: true,
           id: seed.id,
           kind: 'csv',
+          ...(seed.path ? { path: seed.path } : {}),
+          ...(seed.preservation ? { preservation: seed.preservation } : {}),
+          preview: seed.preview ?? false,
+          ...(seed.secondaryPath ? { secondaryPath: seed.secondaryPath } : {}),
+          title: seed.title,
+        }
+      }
+      if (seed.kind === 'json') {
+        const json = seed.json ?? createEmptyJsonDocument()
+        const editor = createJsonEditor(json, (updated) => updateDocument(seed.id, updated))
+        editors.current.add(editor)
+        baselineDocuments.current.set(seed.id, editor.state.doc)
+        return {
+          ...createTabBaseline(seed.title),
+          editor,
+          ...(seed.diskVersion ? { diskVersion: seed.diskVersion } : {}),
+          ...(seed.fileKey ? { fileKey: seed.fileKey } : {}),
+          header: false,
+          id: seed.id,
+          json,
+          kind: 'json',
           ...(seed.path ? { path: seed.path } : {}),
           ...(seed.preservation ? { preservation: seed.preservation } : {}),
           preview: seed.preview ?? false,
@@ -239,6 +269,11 @@ export function DocumentWorkspace({
   const closeSearch = useCallback(() => {
     setSearchOpen(false)
     if (!active || !searchBookmark.current) return
+    if (active.kind === 'json') {
+      focusJsonTree()
+      searchBookmark.current = undefined
+      return
+    }
     try {
       const selection = searchBookmark.current.resolve(active.editor.state.doc)
       active.editor.chain().setTextSelection({ from: selection.from, to: selection.to }).focus().run()
@@ -275,6 +310,7 @@ export function DocumentWorkspace({
     (id: string) => {
       const tab = tabs.find((candidate) => candidate.id === id)
       if (!tab) return
+      if (!commitStructuredDraft(tab)) return
       if (!dirty(tab)) {
         closeTab(id)
         return
@@ -307,28 +343,30 @@ export function DocumentWorkspace({
     [closeTab, contentDirty, dirty, gateway, tabs],
   )
 
-  const addTab = useCallback((kind: 'csv' | 'markdown' = 'markdown') => {
+  const addTab = useCallback((kind: 'csv' | 'json' | 'markdown' = 'markdown') => {
+    if (active && !commitStructuredDraft(active)) return
     activationIntent.current += 1
     const append = (id: string) => {
       const tab = makeTab({ id, kind, title: '' })
       setTabs((current) => [...insertPinnedBeforePreview(current, tab)])
       setActiveId(tab.id)
       setRovingId(tab.id)
-      requestAnimationFrame(() => tab.editor.commands.focus('start'))
+      requestAnimationFrame(() => focusTabEditor(tab, 'start'))
     }
     void gateway.createTabId(kind).then(append)
-  }, [gateway, makeTab])
+  }, [active, gateway, makeTab])
 
   const activateFromEditor = useCallback(
     (offset: number) => {
       if (tabs.length < 2 || activeIndex < 0) return
+      if (active && !commitStructuredDraft(active)) return
       const next = tabs[(activeIndex + offset + tabs.length) % tabs.length]
       if (!next) return
       setActiveId(next.id)
       setRovingId(next.id)
-      requestAnimationFrame(() => next.editor.commands.focus())
+      requestAnimationFrame(() => focusTabEditor(next))
     },
-    [activeIndex, tabs],
+    [active, activeIndex, tabs],
   )
 
   const handleWorkspaceKeyDown = useCallback(
@@ -400,7 +438,7 @@ export function DocumentWorkspace({
   }, [])
 
   const save = useCallback(() => {
-    if (!active || !titleValidation.valid) return
+    if (!active || !titleValidation.valid || !commitStructuredDraft(active)) return
     pinTab(active.id)
     const generation = (generations.current.get(active.id) ?? 0) + 1
     const snapshot = active.editor.state.doc
@@ -413,7 +451,7 @@ export function DocumentWorkspace({
   }, [active, commitGatewaySave, contentDirty, gateway, pinTab, titleValidation.valid])
 
   const saveAs = useCallback(() => {
-    if (!active || !titleValidation.valid) return
+    if (!active || !titleValidation.valid || !commitStructuredDraft(active)) return
     pinTab(active.id)
     const generation = (generations.current.get(active.id) ?? 0) + 1
     const snapshot = active.editor.state.doc
@@ -422,6 +460,7 @@ export function DocumentWorkspace({
   }, [active, commitGatewaySave, contentDirty, gateway, pinTab, titleValidation.valid])
 
   const openDocument = useCallback(() => {
+    if (active && !commitStructuredDraft(active)) return
     const reusable = Boolean(active && tabs.length === 1 && active.baselineTitle === '' && !dirty(active))
     void (async () => {
       const targetId = reusable ? active!.id : await gateway.createTabId()
@@ -451,6 +490,8 @@ export function DocumentWorkspace({
   }, [active, dirty, gateway, makeTab, tabs])
 
   const openWorkspaceEntry = useCallback((entry: DirectoryEntry, pinned: boolean, rootId: RootId) => {
+    const current = tabsRef.current.find((tab) => tab.id === activeId)
+    if (current && !commitStructuredDraft(current)) return
     const activation = ++activationIntent.current
     void (async () => {
       setWorkspaceRetry(undefined)
@@ -556,6 +597,10 @@ export function DocumentWorkspace({
 
   const saveTabsSequentially = useCallback(async (dirtyTabs: readonly WorkspaceTab[]): Promise<boolean> => {
     for (const tab of dirtyTabs) {
+      if (!commitStructuredDraft(tab)) {
+        setIssue({ kind: 'error', message: `Save All stopped at ${tab.title || 'Untitled'} because a JSON number is incomplete.` })
+        return false
+      }
       const snapshot = tab.editor.state.doc
       const result = await gateway.save({
         ...gatewayDocument(tab, contentDirty(tab)),
@@ -608,6 +653,7 @@ export function DocumentWorkspace({
     if (active?.kind === 'csv') document.querySelector<HTMLTextAreaElement>('[data-testid="csv-cell-editor"]')?.blur()
     if (command === 'new') addTab('markdown')
     if (command === 'new-csv') addTab('csv')
+    if (command === 'new-json') addTab('json')
     if (command === 'open') openDocument()
     if (command === 'save') save()
     if (command === 'save-all') void saveTabsSequentially(tabs.filter(dirty))
@@ -670,7 +716,7 @@ export function DocumentWorkspace({
     setPendingExternal(undefined)
     setIssue(undefined)
     setAnnouncement('Document reloaded from disk.')
-    requestAnimationFrame(() => replacement.editor.commands.focus())
+    requestAnimationFrame(() => focusTabEditor(replacement))
   }, [active, gateway, makeTab, pendingExternal])
 
   const overwriteExternal = useCallback(() => {
@@ -767,6 +813,7 @@ export function DocumentWorkspace({
                   data-testid="document-tab"
                   key={tab.id}
                   onClick={() => {
+                    if (active && !commitStructuredDraft(active)) return
                     setActiveId(tab.id)
                     setRovingId(tab.id)
                   }}
@@ -780,11 +827,12 @@ export function DocumentWorkspace({
                       navigateTabFocus(tab.id, event.key)
                     } else if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
+                      if (active && !commitStructuredDraft(active)) return
                       setActiveId(tab.id)
                       setRovingId(tab.id)
                     } else if (event.key === 'Tab' && !event.shiftKey && selected) {
                       event.preventDefault()
-                      tab.editor.commands.focus()
+                      focusTabEditor(tab)
                     }
                   }}
                   role="tab"
@@ -840,10 +888,10 @@ export function DocumentWorkspace({
       {active ? (
         <section
           aria-label={active.title || 'Untitled document'}
-          className={`document-surface${active.kind === 'csv' ? ' document-surface-csv' : ''}`}
+          className={`document-surface${active.kind === 'csv' ? ' document-surface-csv' : active.kind === 'json' ? ' document-surface-json' : ''}`}
           id="active-document-panel"
           onMouseDown={(event) => {
-            if (active.preservation || active.kind === 'csv' || event.button !== 0 || !(event.target instanceof Element)) return
+            if (active.preservation || active.kind !== 'markdown' || event.button !== 0 || !(event.target instanceof Element)) return
             const surface = event.currentTarget
             if (event.clientX >= surface.getBoundingClientRect().left + surface.clientWidth) return
             if (event.target.closest('button, input, textarea, select, a, dialog, [role="menu"], [role="toolbar"], .document-issue, .preservation-panel')) return
@@ -864,7 +912,7 @@ export function DocumentWorkspace({
           role="tabpanel"
         >
           <div
-            className={`document-page${active.kind === 'csv' ? ' document-page-csv' : ''}`}
+            className={`document-page${active.kind === 'csv' ? ' document-page-csv' : active.kind === 'json' ? ' document-page-json' : ''}`}
             data-testid="document-page"
           >
             <div className="document-title-gutter">
@@ -873,7 +921,11 @@ export function DocumentWorkspace({
                 <input
                   aria-describedby={titleError ? 'document-title-error' : undefined}
                   aria-invalid={titleError ? true : undefined}
-                  aria-label={active.kind === 'csv' ? 'Document title, .csv extension is fixed' : 'Document title'}
+                  aria-label={active.kind === 'csv'
+                    ? 'Document title, .csv extension is fixed'
+                    : active.kind === 'json'
+                      ? 'Document title, .json extension is fixed'
+                      : 'Document title'}
                   className="document-title"
                   data-testid="document-title"
                   onChange={(event) => updateTitle(active.id, event.currentTarget.value.replace(/[\r\n]+/g, ''))}
@@ -885,7 +937,8 @@ export function DocumentWorkspace({
                       event.preventDefault()
                       if (active.kind === 'csv') {
                         document.querySelector<HTMLElement>('[data-csv-row="0"][data-csv-column="0"]')?.focus()
-                      } else active.editor.commands.focus('start')
+                      } else if (active.kind === 'json') focusJsonTree()
+                      else active.editor.commands.focus('start')
                     }
                   }}
                   onPaste={(event) => {
@@ -899,10 +952,11 @@ export function DocumentWorkspace({
                     }
                   }}
                   placeholder="Untitled"
-                  size={active.kind === 'csv' ? Math.max(1, active.title.length) : undefined}
+                  size={active.kind === 'csv' || active.kind === 'json' ? Math.max(1, active.title.length) : undefined}
                   value={active.title}
                 />
                 {active.kind === 'csv' ? <span aria-hidden="true" className="csv-title-extension" data-testid="csv-title-extension">.csv</span> : null}
+                {active.kind === 'json' ? <span aria-hidden="true" className="csv-title-extension" data-testid="json-title-extension">.json</span> : null}
               </div>
               {titleError ? (
                 <p className="title-error" data-testid="title-error" id="document-title-error" role="alert">
@@ -928,6 +982,13 @@ export function DocumentWorkspace({
                 onHeaderChange={(header) => setTabs((current) => current.map((tab) => (
                   tab.id === active.id ? { ...tab, header } : tab
                 )))}
+                onRequestFind={openSearch}
+              />
+            ) : active.kind === 'json' ? (
+              <JsonTree
+                editor={active.editor}
+                key={`json-${active.id}`}
+                onError={(message) => setIssue({ kind: 'error', message })}
                 onRequestFind={openSearch}
               />
             ) : (
@@ -1080,7 +1141,15 @@ function gatewayDocument(tab: WorkspaceTab, documentDirty = tab.contentDirty): G
           rows: csvRowsFromEditor(tab.editor),
         },
       }
-      : { document: tab.editor.getJSON() as RichDocument }),
+      : tab.kind === 'json'
+        ? {
+          json: {
+            ...(tab.json ?? createEmptyJsonDocument()),
+            edited: documentDirty || tab.json?.edited === true,
+            root: jsonRootFromEditor(tab.editor),
+          },
+        }
+        : { document: tab.editor.getJSON() as RichDocument }),
     ...(tab.fileKey ? { fileKey: tab.fileKey } : {}),
     id: tab.id,
     kind: tab.kind,
@@ -1097,9 +1166,10 @@ function gatewaySeed(document: GatewayDocument): DocumentSeed {
     ...(document.csv ? { csv: document.csv } : {}),
     ...(document.diskVersion ? { diskVersion: document.diskVersion } : {}),
     ...(document.document ? { document: document.document as JSONContent } : {}),
+    ...(document.json ? { json: document.json } : {}),
     ...(document.fileKey ? { fileKey: document.fileKey } : {}),
     id: document.id,
-    kind: document.kind ?? (document.csv ? 'csv' : 'markdown'),
+    kind: document.kind ?? (document.csv ? 'csv' : document.json ? 'json' : 'markdown'),
     ...(document.path ? { path: document.path } : {}),
     ...(document.preservation ? { preservation: document.preservation } : {}),
     ...(document.secondaryPath ? { secondaryPath: document.secondaryPath } : {}),
@@ -1107,7 +1177,7 @@ function gatewaySeed(document: GatewayDocument): DocumentSeed {
   }
 }
 
-const displaySeedTitle = (name: string): string => name.replace(/\.(md|markdown|txt|csv)$/i, '')
+const displaySeedTitle = (name: string): string => name.replace(/\.(md|markdown|txt|csv|json)$/i, '')
 const logicalRelativePath = (root: Path, child: Path): string => {
   const prefix = `${String(root).replace(/[\\/]$/, '')}/`
   return String(child).replaceAll('\\', '/').slice(prefix.replaceAll('\\', '/').length)
@@ -1130,6 +1200,7 @@ function adoptGatewayResult(tab: WorkspaceTab, document: GatewayDocument, snapsh
     ...acceptTabBaseline(tab, document.title),
     contentDirty: !persistentDocumentsEqual(tab.editor.state.doc, snapshot),
     ...(document.csv ? { csv: document.csv } : {}),
+    ...(document.json ? { json: document.json } : {}),
     ...(document.diskVersion ? { diskVersion: document.diskVersion } : {}),
     ...(document.fileKey ? { fileKey: document.fileKey } : {}),
     ...(document.path ? { path: document.path } : {}),
@@ -1159,15 +1230,30 @@ function persistentDocumentsEqual(left: ProseMirrorNode, right: ProseMirrorNode)
   delete leftAttrs.loadState
   delete leftAttrs.origin
   delete leftAttrs.sourceKind
+  delete leftAttrs.id
   delete rightAttrs.assetUrl
   delete rightAttrs.assetId
   delete rightAttrs.loadState
   delete rightAttrs.origin
   delete rightAttrs.sourceKind
+  delete rightAttrs.id
   if (JSON.stringify(leftAttrs) !== JSON.stringify(rightAttrs)) return false
   for (let index = 0; index < left.marks.length; index += 1) if (!left.marks[index]?.eq(right.marks[index]!)) return false
   for (let index = 0; index < left.childCount; index += 1) if (!persistentDocumentsEqual(left.child(index), right.child(index))) return false
   return true
+}
+
+function commitStructuredDraft(tab: WorkspaceTab): boolean {
+  return tab.kind !== 'json' || commitJsonDraft(tab.editor)
+}
+
+function focusJsonTree(): void {
+  document.querySelector<HTMLElement>('[data-testid="json-tree"] [role="treeitem"][tabindex="0"]')?.focus()
+}
+
+function focusTabEditor(tab: WorkspaceTab, position?: 'start'): void {
+  if (tab.kind === 'json') focusJsonTree()
+  else tab.editor.commands.focus(position)
 }
 
 function withImageIds(document: JSONContent): JSONContent {

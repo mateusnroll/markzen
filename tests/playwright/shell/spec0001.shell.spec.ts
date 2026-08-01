@@ -10,9 +10,8 @@ import { callMain, findPackagedExecutable, launchMarkzen, quitMarkzen } from './
 test('AC1: cold launch creates exactly one opaque-identified Markzen window', async () => {
   const app = await launchMarkzen()
   try {
+    const first = await app.firstWindow()
     const windows = app.windows()
-    const first = windows[0]
-    if (!first) throw new Error('Expected one Markzen window')
     await expect(first.getByTestId('app-shell')).toBeVisible()
     expect(windows).toHaveLength(1)
     await expect(first.getByTestId('window-id')).not.toHaveText('')

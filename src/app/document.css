@@ -145,6 +145,12 @@
   overflow: hidden;
 }
 
+.document-surface-json {
+  cursor: default;
+  overflow: hidden;
+  padding: 0;
+}
+
 .document-surface::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -186,7 +192,17 @@
   padding: 0;
 }
 
-.document-page-csv .document-title-gutter {
+.document-page-json {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: none;
+  min-height: 0;
+  padding: 0;
+}
+
+.document-page-csv .document-title-gutter,
+.document-page-json .document-title-gutter {
   align-items: center;
   display: flex;
   width: 100%;
@@ -217,7 +233,8 @@
   font-weight: 700;
 }
 
-.document-page-csv .document-title-control {
+.document-page-csv .document-title-control,
+.document-page-json .document-title-control {
   align-items: baseline;
   display: flex;
   width: auto;
@@ -226,7 +243,8 @@
   z-index: 7;
 }
 
-.document-page-csv .document-title {
+.document-page-csv .document-title,
+.document-page-json .document-title {
   width: auto;
   max-width: 100%;
   min-width: 1ch;
