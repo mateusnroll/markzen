@@ -19,7 +19,7 @@ Produce a decision-complete feature spec that doubles as the test plan. `/implem
 
 4. **Route every scenario.** Observable in-scope behavior becomes a numbered AC; exclusions become Non-goals; unresolved decisions become Open questions; architecture goes to a Constraint or ADR; later work goes to BACKLOG.md. Never leave normative behavior in an unnumbered “edge case” bullet.
 
-5. **Draft precisely.** Split ACs when outcomes can fail independently or require different test layers. Map each AC to one lowest primary layer and list optional integration coverage separately. Status is Draft, date is `YYYY-MM`, and Open questions is honest.
+5. **Draft precisely.** Split ACs when outcomes can fail independently or require different test layers. Map each AC to one lowest primary layer and list optional integration coverage separately. Status is Draft, date is `YYYY-MM`, and Open questions is honest. Keep each prose paragraph, list item, constraint, and AC on one physical Markdown source line; do not hard-wrap prose to a column width. Never use trailing spaces or a backslash to force a Markdown line break. Use blank lines only for intentional paragraph or block separation.
 
 6. **Sweep ripples.** Update affected specs, cross-references, workflow docs, and backlog entries in the same change. During the five rewrite milestones, preserve their linear order; afterward take the next free number and never renumber existing specs.
 

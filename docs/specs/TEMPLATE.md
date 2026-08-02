@@ -3,6 +3,8 @@
 **Status:** Draft | Approved | Implemented   **Date:** YYYY-MM
 **Origin:** <optional: earlier spec, old-repo behavior, ADR, or prior art>
 
+<!-- Formatting: keep each prose paragraph, list item, constraint, and AC on one physical source line. Do not hard-wrap prose or use trailing spaces/backslashes to force line breaks. Use blank lines only between intentional paragraphs or blocks. -->
+
 ## Problem
 
 2–3 sentences: what the user can't do today and why it matters.
