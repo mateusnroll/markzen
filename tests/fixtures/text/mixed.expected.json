@@ -1,0 +1,7 @@
+{
+  "text": "alpha\nbeta\ngamma\rtail\n",
+  "encoding": {
+    "bom": true,
+    "newline": "crlf"
+  }
+}

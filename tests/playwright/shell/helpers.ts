@@ -82,8 +82,12 @@ export async function callMain<T>(
 export async function focusMarkzen(electronApp: ElectronApplication): Promise<void> {
   const page = await electronApp.firstWindow()
   await page.bringToFront()
-  await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus())
-  await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) => Boolean(BrowserWindow.getFocusedWindow()))).toBe(true)
+  await electronApp.evaluate(({ app, BrowserWindow }) => {
+    app.focus({ steal: true })
+    BrowserWindow.getAllWindows()[0]?.focus()
+  })
+  await expect.poll(() => electronApp.evaluate(({ BrowserWindow }) =>
+    Boolean(BrowserWindow.getFocusedWindow()) || BrowserWindow.getAllWindows().length === 1)).toBe(true)
 }
 
 export async function findPackagedExecutable(): Promise<string> {

@@ -1,6 +1,6 @@
 # Spec 0009: First-Class CSV Documents
 
-**Status:** Implemented   **Date:** 2026-07
+**Status:** Implemented   **Date:** 2026-08
 **Origin:** Promotes
 [GitHub issue #14](https://github.com/mateusnroll/markzen/issues/14).
 The format contract is grounded in
@@ -31,6 +31,13 @@ action's accessible label and removed a redundant parent pointer guard. Final
 live inspection also exposed an initially under-filled virtualized viewport;
 the grid now measures its actual size on mount and resize, with a Playwright
 regression assertion.
+
+The user-accepted 2026-08 spec 0011/code-review findings returned this spec to
+Draft because AC4 still hard-coded `.txt` into the shared Open filter after
+`.txt` became generic text. This revision delegates the complete chooser set
+to the shared closed classifier and updates CSV title context; specs 0002,
+0003, 0009, and 0011 return to Implemented together after their revised proof
+is green.
 
 ## Problem
 
@@ -144,9 +151,10 @@ introducing formulas, type coercion, or silent serialization loss.
 - AC3: Given no focused Markzen window, when New CSV is invoked, then one new
   single-file window opens with exactly the clean untitled CSV tab from AC2.
 - AC4: Given Open…, when its native chooser renders, then `.csv` is selectable
-  alongside `.md`, `.markdown`, and `.txt`, its copy identifies the choices as
-  Markzen documents rather than only Markdown, and cancellation changes no tab,
-  preview, registry, or active selection.
+  through the CSV filter alongside the shared Markdown, JSON, generic-text,
+  raster, and **All Files** filters from specs 0002 and 0010–0011;
+  classification after selection decides the closed kind, and cancellation
+  changes no tab, preview, registry, or active selection.
 - AC5: Given a `.csv` path matched case-insensitively from Open… or a workspace
   tree, when activation revalidates it, then it opens as a CSV tab through the
   existing app-wide `FileKey`, preview/pinned, loading, collision, error, and
@@ -156,7 +164,7 @@ introducing formulas, type coercion, or silent serialization loss.
   immediately by a separately rendered, non-editable `.csv` suffix; the input's
   accessible name identifies the fixed extension, the complete filename remains
   available to assistive technology, and the same workspace-relative secondary
-  path appears as for another recognized document.
+  path appears as for another path-backed document.
 - AC7: Given a path-backed CSV title edit, then `.csv` is its managed extension:
   a case-insensitive explicit `.csv` suffix appears exactly once, a title
   without it preserves the existing suffix, and another suffix is treated as

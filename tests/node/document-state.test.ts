@@ -27,10 +27,11 @@ describe('spec 0002 document state', () => {
     expect(displayDocumentStem('Note.MARKDOWN')).toBe('Note')
     expect(displayDocumentStem('Data.CSV')).toBe('Data')
     expect(deriveDocumentFilename('Renamed', '.markdown')).toBe('Renamed.markdown')
-    expect(deriveDocumentFilename('Renamed.TXT', '.md')).toBe('Renamed.TXT')
+    expect(deriveDocumentFilename('Renamed.TXT', '.md')).toBe('Renamed.TXT.md')
     expect(deriveDocumentFilename('Draft', undefined)).toBe('Draft.md')
     expect(deriveDocumentFilename('Export', '.csv', 'csv')).toBe('Export.csv')
     expect(deriveDocumentFilename('Export.md', '.csv', 'csv')).toBe('Export.md.csv')
+    expect(deriveDocumentFilename('Script', '.TS', 'text')).toBe('Script.TS')
   })
 
   test('AC77 AC81 AC93 AC172: title and document equality independently determine dirty state', () => {

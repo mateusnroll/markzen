@@ -1,7 +1,7 @@
 # Spec 0003: Folder Workspaces
 
-**Status:** Implemented   **Date:** 2026-07
-**Origin:** Consolidates draft specs 0005–0007 and selected behavior from drafts 0011 and 0014. Old-repo sources: `folderOperations.ts`, `fileSystemStore.ts`, `Sidebar.tsx`, `FileTree*.tsx`, `fileOperations.ts`, `tabsStore.ts`, `useFileWatcher.ts`, Rust `fs_watcher.rs`, `settingsStore.ts`, and `settingsPersistence.ts`; commits `0ee3d66`, `121b2ce`, `bb046bd`, `99daa2d`, `73ddd75`, `e89d987`, `c8a5326`, `68d2387`, and `8883f89`; old ADRs 0006, 0010, and 0013. Multi-root workspaces, canonical identities, main-process settings authority, and the async race policy are new in the rewrite.
+**Status:** Implemented   **Date:** 2026-08
+**Origin:** Consolidates draft specs 0005–0007 and selected behavior from drafts 0011 and 0014. Old-repo sources: `folderOperations.ts`, `fileSystemStore.ts`, `Sidebar.tsx`, `FileTree*.tsx`, `fileOperations.ts`, `tabsStore.ts`, `useFileWatcher.ts`, Rust `fs_watcher.rs`, `settingsStore.ts`, and `settingsPersistence.ts`; commits `0ee3d66`, `121b2ce`, `bb046bd`, `99daa2d`, `73ddd75`, `e89d987`, `c8a5326`, `68d2387`, and `8883f89`; old ADRs 0006, 0010, and 0013. Multi-root workspaces, canonical identities, main-process settings authority, and the async race policy are new in the rewrite. Returned to Draft in 2026-08 after the user accepted spec 0011/code-review findings that made every visible regular file actionable through a classified editable, raster, or external preview and revised tree-row, file-symlink, title-context, and preview contracts; specs 0002, 0003, 0009, and 0011 return to Implemented together after their revised proof is green.
 
 ## Problem
 
@@ -17,7 +17,8 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - Converting a non-pristine single-file window into a workspace window; Open Folder creates a new window.
 - Naming or saving root sets as reusable workspace files.
 - Redefining milestone 0002's open-document reload and explicit external-conflict decisions; this milestone adds directory-tree invalidation and reuses the existing document watcher/coordinator behavior.
-- Previewing file types other than the recognized `.md`, `.markdown`, and `.txt` document extensions.
+- Defining the content semantics of Markdown, CSV, JSON, generic-text, raster,
+  or external documents; specs 0002, 0009, 0010, and 0011 own those kinds.
 - More than one preview tab in a workspace.
 - Changes to milestone 0002's filename editing or on-disk rename behavior; this milestone adds only workspace-relative secondary path context to the existing editable title.
 - Theme, toolbar, font, auto-save, spell-check, or general Settings UI; this milestone defines a closed version-1 settings service containing only `sidebarWidth`, and later approved specs extend that typed schema directly.
@@ -74,23 +75,31 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC26: Given a directory read is pending, when a newer collapse, invalidation, or re-expansion supersedes it, then the stale result cannot replace the newer tree state.
 - AC27: Given a directory read fails because it is unreadable, then its loading indicator clears and its row exposes an accessible error without affecting sibling directories.
 - AC28: Given a directory previously failed to load, when the user activates Retry after access is restored, then a new generation loads its children.
-- AC29: Given a `.md`, `.markdown`, or `.txt` entry matched case-insensitively, when activated, then it opens through the workspace preview policy.
-- **Outdated by spec 0009 AC5:** AC30: Given another file type, then its row is visibly subdued, exposes `aria-disabled="true"`, and activation performs no open operation.
-  Comment: This remains current for unsupported file types, but `.csv` is now a
-  recognized Markzen document and opens through the existing preview/pin policy.
+- AC29: Given a visible regular-file or file-symlink entry, when activated,
+  then it is classified under specs 0002 and 0009–0011 and opens through the
+  workspace preview policy.
+- AC30: Given a visible regular-file or file-symlink row, then it is enabled
+  regardless of extension; directories retain their expansion behavior and
+  terminal directory symlinks remain non-opening under AC37–AC38.
 - AC31: Given a workspace has no open tab, then the editor pane shows “Select a file from the sidebar” and no stale document content.
 - AC32: Given a root header is collapsed, then all of that RootId's descendant rows are removed from the visible tree without discarding their valid cached snapshots.
 - AC33: Given an accepted root becomes unreadable, missing, or no longer a directory, then its header remains in place and exposes an unavailable state without changing other roots.
 - AC34: Given an unavailable root becomes readable again, when the native watcher reports recovery or the user retries successfully, then the root snapshot is invalidated and the expanded root reloads.
-- AC35: Given a deeply nested recognized document file, when each ancestor is expanded and the file is activated, then the correct FileKey opens.
+- AC35: Given a deeply nested visible regular file, when each ancestor is
+  expanded and the file is activated, then the correct FileKey opens in its
+  classified document kind.
 - AC36: Given root and entry paths containing spaces or non-ASCII characters, when they pass through dialog, main process, watcher, and renderer boundaries, then their logical labels and FileKeys remain correct.
 - AC37: Given any directory symlink in a root snapshot, then it is rendered as a terminal linked-folder row whose accessible description says that its target must be added as a root; it has no expansion state and starts no child read.
 - AC38: Given a directory symlink is circular, aliases an in-root directory, or resolves outside the canonical root, then it creates no recursive traversal or watcher authority and discloses no canonical target path.
-- AC39: Given two logical entries resolve through symlinks to the same existing recognized document file, then both entries receive the same FileKey.
+- AC39: Given two logical entries resolve through symlinks to the same existing
+  regular file, then both entries receive the same FileKey.
 
 ### Document title context
 
-- AC40: Given an open `.md`, `.markdown`, or `.txt` file, then the existing editable document title continues to show its filename without the recognized extension, matched case-insensitively.
+- AC40: Given any open path-backed document, then its primary and secondary
+  title context uses the kind-specific editable or view-only filename contract
+  from specs 0002 and 0009–0011 without changing this spec's root-relative
+  path selection.
 - AC41: Given an open file contained by several overlapping roots, then the title's secondary path is computed against the deepest canonical containing root.
 - AC42: Given two containing roots are equally deep, then the root added earliest supplies the title's secondary path.
 - AC43: Given an open file is outside every root in its workspace, then the title shows no secondary relative path.
@@ -99,7 +108,11 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 
 ### Preview and pinned tabs
 
-- AC46: Given a workspace tree, when a recognized document file is single-clicked or activated with the preview command, then the sole preview tab is selected immediately in a target-specific loading state unless revalidation finds an application-wide owner, in which case that owner is focused.
+- AC46: Given a workspace tree, when a visible regular-file or file-symlink row
+  is single-clicked or activated with the preview command, then the sole
+  preview tab is selected immediately in a target-specific classified loading
+  state unless revalidation finds an application-wide owner, in which case
+  that owner is focused.
 - AC47: Given a preview tab, then it is right-most and is distinguished from pinned tabs by an icon and accessible “Preview” description in addition to italic styling.
 - AC48: Given an existing clean preview A, when file B is previewed and its current identity and containment revalidate successfully, then the same tab identity is reused and the registry transition from A to B follows AC126.
 - AC49: Given a preview unexpectedly has a dirty editor state, when another preview is requested, then the dirty preview is pinned before the new preview is created or reused.
@@ -125,8 +138,10 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC66: Given focus within a root tree, then exactly one visible tree item participates in the tab order and ArrowUp, ArrowDown, Home, and End move that roving focus without opening a file.
 - AC67: Given tree focus on a directory, then ArrowRight expands or enters it and ArrowLeft collapses it or moves focus to its parent.
 - AC68: Given printable-key input in a focused tree, then typeahead moves focus to the next visible sibling whose label has that case-insensitive prefix.
-- AC69: Given a focused recognized document tree item, when Enter or Space is pressed, then it opens through preview semantics.
-- AC70: Given a focused recognized document tree item, when Cmd/Ctrl+Enter is pressed, then it opens or promotes a pinned tab.
+- AC69: Given a focused visible regular-file or file-symlink tree item, when
+  Enter or Space is pressed, then it opens through preview semantics.
+- AC70: Given a focused visible regular-file or file-symlink tree item, when
+  Cmd/Ctrl+Enter is pressed, then it opens or promotes a pinned tab.
 - AC71: Given the active FileKey has several visible aliases, then each alias exposes `aria-current="page"` while keyboard focus remains singular.
 - AC72: Given tree loading, read failure, watcher failure, or root recovery, then the affected root or row exposes `aria-busy`/`aria-describedby` as applicable and a polite live region announces the state change once.
 - AC73: Given the sidebar splitter, then it has keyboard focus, `role="separator"`, vertical orientation, and accurate `aria-valuemin`, `aria-valuemax`, and `aria-valuenow` values.
@@ -220,7 +235,12 @@ This milestone owns the folder-window lifecycle, multi-root tree, preview tabs, 
 - AC143: Given preview B is selected and loading, when the user activates another tab before B settles, then B remains the preview target but success, failure, or Retry cannot reactivate it or steal focus.
 - AC144: Given preview replacement of A by B succeeds and B is unowned, then the main registry reserves B and releases A atomically with the tab's adopted B state; no observer can claim both or see the tab own neither during the successful transition.
 - AC145: Given preview replacement targets B and revalidation finds B already owned, then its existing owner is focused and the preview retains A's identity, content, registry ownership, and clean state.
-- AC146: Given a recognized file symlink is activated, when its current canonical target is revalidated inside the owning root, then that target opens under normal preview/pin and FileKey rules; if it resolves outside, is circular, missing, or changes during revalidation, then no read or registry transition occurs and the row exposes an accessible error without disclosing the target path.
+- AC146: Given a visible file symlink is activated, when its current canonical
+  regular-file target is revalidated inside the owning root, then that target
+  opens in its classified kind under normal preview/pin and FileKey rules; if
+  it resolves outside, is circular, missing, not a regular file, or changes
+  during revalidation, then no content read or registry transition occurs and
+  the row exposes an accessible error without disclosing the target path.
 - AC147: Given a workspace at the 480×320 minimum window size or 200% renderer zoom, then the sidebar uses a responsive effective width that may shrink below the stored 160px preference only as needed to keep the tree, splitter, tab controls, editor, and errors reachable; the stored preference is unchanged and restored when space returns.
 - AC148: Given responsive sidebar clamping or virtual scrolling changes the rendered viewport, then separator values describe the effective width, the focused tree item remains mounted or focus moves deterministically to the nearest visible owner, and keyboard navigation resumes without a lost or duplicate tab stop.
 - AC149: Given pointer resize loses capture, is cancelled, the window blurs, or the workspace disposes before pointer-up, then drag listeners and transient selection/cursor state are removed and the latest accepted clamped width remains authoritative.

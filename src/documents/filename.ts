@@ -23,11 +23,14 @@ export function displayDocumentStem(filename: string): string {
 export function deriveDocumentFilename(
   title: string,
   existingExtension: string | undefined,
-  kind: 'csv' | 'json' | 'markdown' = 'markdown',
+  kind: 'csv' | 'external' | 'json' | 'markdown' | 'raster' | 'text' = 'markdown',
 ): string {
-  const explicit = kind === 'csv' ? /\.csv$/i : kind === 'json' ? /\.json$/i : /\.(md|markdown|txt)$/i
+  const explicit = kind === 'csv' ? /\.csv$/i
+    : kind === 'json' ? /\.json$/i
+      : kind === 'text' && existingExtension ? new RegExp(`${escapeRegex(existingExtension)}$`, 'i')
+        : /\.(md|markdown)$/i
   if (explicit.test(title)) return title
-  return `${title}${existingExtension ?? (kind === 'csv' ? '.csv' : kind === 'json' ? '.json' : '.md')}`
+  return `${title}${existingExtension ?? (kind === 'csv' ? '.csv' : kind === 'json' ? '.json' : kind === 'text' ? '' : '.md')}`
 }
 
 export function getRecognizedExtension(filename: string): string | undefined {
@@ -35,3 +38,4 @@ export function getRecognizedExtension(filename: string): string | undefined {
 }
 
 const invalid = (reason: string): FilenameValidation => ({ reason, valid: false })
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

@@ -83,7 +83,7 @@ export interface FileSystemPort {
 }
 
 export type OpenDialogOptions = {
-  readonly extensions: readonly ['md', 'markdown', 'txt', 'csv', 'json']
+  readonly extensions: readonly string[]
   readonly title: 'Open Markzen Document'
 }
 
@@ -198,14 +198,19 @@ export type WorkspaceRootOutcome =
   | { readonly kind: 'cancelled' | 'error' }
 
 export type SourceRebase = { readonly assetId?: string; readonly from: string; readonly to: string }
-export type DocumentKind = { readonly kind: 'csv' } | { readonly kind: 'json' } | { readonly kind: 'markdown' }
-export type DocumentFilePayload = FileRead & DocumentKind & {
+export type EditorDocumentKind = 'csv' | 'json' | 'markdown' | 'text'
+export type DocumentKind = EditorDocumentKind | 'raster' | 'external'
+type DocumentPayloadBase = CanonicalPath & {
   readonly assetsRevoked?: boolean
   readonly rebasedDocument?: unknown
   readonly secondaryPath?: string
   readonly sourceRebases?: readonly SourceRebase[]
   readonly tabId: TabId
 }
+export type DocumentFilePayload =
+  | (DocumentPayloadBase & { readonly bytes: Uint8Array; readonly diskVersion: DiskVersion; readonly kind: EditorDocumentKind; readonly language?: string; readonly managedExtension?: string })
+  | (DocumentPayloadBase & { readonly diskVersion: DiskVersion; readonly kind: 'raster'; readonly raster: { readonly animated: boolean; readonly format: 'GIF' | 'JPEG' | 'PNG' | 'WebP'; readonly height: number; readonly url: string; readonly width: number } })
+  | (DocumentPayloadBase & { readonly kind: 'external'; readonly limitation: string })
 export type DocumentIntentOutcome =
   | { readonly file: DocumentFilePayload; readonly kind: 'opened' | 'saved' }
   | { readonly file: DocumentFilePayload; readonly kind: 'cleanup-warning'; readonly oldPath: Path }
@@ -273,6 +278,7 @@ export interface MarkzenDocumentCapability {
   completeQuitSaveAll(success: boolean): Promise<PlatformResult<void>>
   createTab(kind: 'csv' | 'json' | 'markdown'): Promise<PlatformResult<TabId>>
   open(tabId: TabId, generation: number): Promise<PlatformResult<DocumentIntentOutcome>>
+  openInDefaultApp(tabId: TabId, generation: number): Promise<PlatformResult<ExternalOpenResult>>
   onCommand(listener: (command: RendererCommand) => void): () => void
   onExternalChange(listener: (event: DocumentExternalEvent) => void): () => void
   overwriteExternal(request: DocumentWriteRequest & { readonly diskVersion: DiskVersion }): Promise<PlatformResult<DocumentIntentOutcome>>

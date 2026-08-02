@@ -1,7 +1,7 @@
 # Spec 0002: Document Lifecycle & Tabs
 
-**Status:** Implemented   **Date:** 2026-07
-**Origin:** Consolidates old specs 0002 (Rich Markdown Editing Core), 0003 (File Operations & Native Menu), 0004 (Tab System), and most of 0011 (Filename Field & Rename); old repo `RichEditor.tsx`, `fileOperations.ts`, `setupMenu.ts`, `tabsStore.ts`, `tabSwitch.ts`, `FilenameField.tsx`, `renameFile.ts`, `FilenameNavigation`, Markdown fixtures and link/table/image extensions; commits `31848ad`, `ca3347c`, `20f0fbe`, `28d1115`, `68d2387`, `0850d7b`, `23b21c7`, `093e3ab`, `5e81b15`, `54e8aee`, `0c858e8`, `f3e8b16`, `8a58532`.
+**Status:** Implemented   **Date:** 2026-08
+**Origin:** Consolidates old specs 0002 (Rich Markdown Editing Core), 0003 (File Operations & Native Menu), 0004 (Tab System), and most of 0011 (Filename Field & Rename); old repo `RichEditor.tsx`, `fileOperations.ts`, `setupMenu.ts`, `tabsStore.ts`, `tabSwitch.ts`, `FilenameField.tsx`, `renameFile.ts`, `FilenameNavigation`, Markdown fixtures and link/table/image extensions; commits `31848ad`, `ca3347c`, `20f0fbe`, `28d1115`, `68d2387`, `0850d7b`, `23b21c7`, `093e3ab`, `5e81b15`, `54e8aee`, `0c858e8`, `f3e8b16`, `8a58532`. Returned to Draft in 2026-08 after the user accepted spec 0011/code-review findings that reclassified `.txt` as generic text and revised shared Open filters, invalid-byte scope, title/extension behavior, Save As defaults, and view-only command eligibility; specs 0002, 0003, 0009, and 0011 return to Implemented together after their revised proof is green.
 
 ## Problem
 
@@ -82,19 +82,27 @@ Canonical output uses one blank line between adjacent block nodes, no trailing s
 - AC38: Given two paths with only a textual prefix in common, when Platform containment and relative-path helpers compare them, then containment is decided by canonical path segments rather than string prefix.
 - AC39: Given a single-file window launched without an explicit file, when it initializes, then it contains one active empty untitled tab.
 - AC40: Given File -> New File, Cmd/Ctrl+N, or the tab-bar add button, when it is invoked, then a distinct active empty untitled tab is created.
-- **Outdated by spec 0009 AC4:** AC41: Given File -> Open..., when its native dialog is configured, then the selectable extensions are `.md`, `.markdown`, and `.txt`.
-  Comment: This Markdown-only chooser contract is retained as historical milestone
-  evidence. The current chooser also accepts `.csv` and identifies the combined
-  set as Markzen documents under spec 0009.
+- AC41: Given File -> Open..., when its native dialog is configured, then it
+  offers filters for Markdown, CSV, JSON, generic text, raster images, and
+  **All Files**; classification after selection, not the chosen filter, decides
+  the closed document kind under specs 0009–0011.
 - AC42: Given an Open dialog, when it is cancelled, then no tab, active selection, or registry entry changes.
 - AC43: Given one pristine empty untitled tab, when a file is opened into its window, then that tab is reused rather than adding another tab.
 - AC44: Given a requested `FileKey` already open in the same window, when Open is invoked for any alias of it, then its existing tab is focused.
 - AC45: Given a requested `FileKey` already open in another window, when Open is invoked for any alias of it, then the owning window and tab are focused and no duplicate tab is created.
 - AC46: Given two windows concurrently request aliases of the same file, when the app-wide registry resolves both requests, then exactly one live path-backed tab owns its `FileKey` and the other request focuses it; if the winning load fails before ownership commits, its reservation is released and no request focuses a dead or unregistered tab.
 - AC47: Given a file that disappears between dialog selection and read, when Open completes, then a visible tab-local error is shown and no path-backed tab is registered.
-- AC48: Given bytes that are not valid UTF-8, when the file is opened, then the tab enters a read-only byte-preservation view that displays each non-printable or invalid byte as `\xNN`, retains the exact original bytes, permits only exact-byte rename or Save As, and never introduces replacement characters.
+- AC48: Given a `.md` or `.markdown` file whose bytes are not valid UTF-8, when
+  it is opened as Markdown, then the tab enters a read-only byte-preservation
+  view that displays each non-printable or invalid byte as `\xNN`, retains the
+  exact original bytes, permits only exact-byte rename or Save As, and never
+  introduces replacement characters; generic-text preservation is owned by
+  spec 0011 and never renders a lossy literal model.
 - AC49: Given the controlled 10MB UTF-8 Markdown fixture in CI, when it is opened in the performance journey, then total open time and the maximum renderer-heartbeat gap are recorded in the job summary and downloadable performance artifact without their values affecting the build result.
-- AC50: Given a valid path containing spaces or non-ASCII characters, when it is opened, then its bytes, display path, and `FileKey` survive dialog, IPC, and tab registration unchanged.
+- AC50: Given a valid path containing spaces or non-ASCII characters, when it
+  is opened, then its display path and `FileKey`, plus its bytes only for a
+  byte-backed document kind, survive dialog, IPC, and tab registration
+  unchanged; an external kind receives no bytes.
 - AC51: Given a file read in flight, when its target tab closes, is repointed, or advances its load generation, then that stale completion cannot change visible content, dirty state, title, or the active tab.
 
 ### Tab state, IME, and accessibility
@@ -125,7 +133,9 @@ Canonical output uses one blank line between adjacent block nodes, no trailing s
 
 ### Filename field and pending rename
 
-- AC75: Given a path-backed `.md`, `.markdown`, or `.txt` tab, when its title renders, then it is editable and shows the basename without that recognized extension.
+- AC75: Given a path-backed `.md` or `.markdown` Markdown tab, when its title
+  renders, then it is editable and shows the basename without that managed
+  extension; other document kinds own their title contracts in their specs.
 - AC76: Given an untitled tab, when its title renders empty, then the input retains the stable accessible name `Document title` and exposes `Untitled` as its placeholder and visible fallback label.
 - AC77: Given a path-backed or untitled title edited to a different valid name, when input changes, then the tab becomes dirty with a pending title; a path-backed tab has a pending rename, and no disk path changes yet.
 - AC78: Given a half-edited valid title, when the title field blurs, then its pending rename and dirty state remain without touching disk.
@@ -139,8 +149,14 @@ Canonical output uses one blank line between adjacent block nodes, no trailing s
 - AC86: Given an invalid pending name, when it is entered, then the title edit remains dirty and an inline error attached to the title field immediately identifies the validation problem; Save and Save As are blocked until the name is corrected or reverted.
 - AC87: Given a pending name whose target is a different existing file, when Save is invoked, then saving is aborted and an inline collision error is attached to the title field.
 - AC88: Given a pending pure-case change of the same `FileKey` on a case-insensitive filesystem, when Save succeeds, then the displayed spelling and disk entry adopt the requested case.
-- AC89: Given a path-backed tab whose current recognized extension is not replaced in the title input, when rename succeeds, then `.md`, `.markdown`, or `.txt` is preserved respectively.
-- AC90: Given a title ending in `.md`, `.markdown`, or `.txt` matched case-insensitively, when its target filename is derived, then that explicit suffix replaces the hidden managed extension and appears exactly once; otherwise the edited value is the stem and the existing recognized suffix is preserved.
+- AC89: Given a path-backed Markdown tab whose current managed extension is not
+  replaced in the title input, when rename succeeds, then `.md` or `.markdown`
+  is preserved respectively.
+- AC90: Given a Markdown title ending in `.md` or `.markdown` matched
+  case-insensitively, when its target filename is derived, then that explicit
+  suffix replaces the hidden managed extension and appears exactly once;
+  otherwise the edited value is the stem and the existing managed suffix is
+  preserved.
 - AC91: Given a valid Unicode title, when rename succeeds, then the Unicode name is preserved in the display path and on disk.
 - AC92: Given an untitled tab with a typed title lacking an extension, when Save opens Save As, then the suggested filename is that title plus `.md`.
 
@@ -149,9 +165,14 @@ Canonical output uses one blank line between adjacent block nodes, no trailing s
 - AC93: Given an editor transaction that changes persistent document content, when it commits, then the owning tab's document revision advances and dirty state equals whether the current persistent document model or pending title differs from the last opened or successfully committed baseline.
 - AC94: Given a dirty path-backed tab with an unchanged `DiskVersion`, when Save succeeds, then the saved revision's serialized bytes replace that file and the saved revision becomes clean.
 - AC95: Given a pristine path-backed tab without a pending rename, when Save is invoked, then no disk write occurs and no error is shown.
-- **Outdated by spec 0009 AC8:** AC96: Given Save on an untitled tab or Save As on any active tab, when the native dialog opens, then it uses a default `.md` extension and the explicit title `Save Current Tab As`, confirmation label `Save As`, and platform-supported message or filename label stating that a new document will be created from the current tab.
-  Comment: This default remains current for Markdown tabs. CSV tabs instead use
-  a `.csv` default and CSV filter without converting their document kind.
+- AC96: Given Save on an untitled Markdown tab or Save As on a writable active
+  tab, when the native dialog opens, then it uses the kind's managed extension
+  and filter—`.md` for untitled Markdown, `.csv` for CSV, `.json` for JSON, or
+  the opening generic-text suffix/basename rules from spec 0011—plus the
+  explicit title `Save Current Tab As`, confirmation label `Save As`, and
+  platform-supported message or filename label stating that a new document
+  will be created from the current tab; raster and external tabs cannot invoke
+  Save As.
 - AC97: Given Save As to an unoccupied target, when its commit succeeds, then the source file remains unchanged, the target contains the current tab's captured bytes, and the existing open tab is repointed to and adopts the newly created document identity rather than opening a second tab.
 - AC98: Given a Save As dialog, when it is cancelled, then no file, title, dirty revision, `FileKey`, or image source changes.
 - AC99: Given same-path Save fails before atomic replacement, when the coordinator reports failure, then the original file remains byte-for-byte unchanged and the tab remains dirty.
@@ -209,12 +230,12 @@ Canonical output uses one blank line between adjacent block nodes, no trailing s
 |---|---|---|
 | New File | Always | Create a single-file window containing one untitled tab |
 | Open… | Always | Complete the native chooser, then create or focus a single-file window for the selected document |
-| Save | The active tab is dirty or has a pending rename; invalid pending names remain enabled so the command can focus their inline error | Disabled |
-| Save As… | An active tab exists and its pending title is valid | Disabled |
-| Save All | The focused window has at least one dirty tab | Disabled |
+| Save | The active tab is writable and dirty or has a pending rename; invalid pending names remain enabled so the command can focus their inline error | Disabled |
+| Save As… | A writable active tab exists and its pending title is valid | Disabled |
+| Save All | The focused window has at least one dirty writable tab | Disabled |
 | Close Tab | The focused window has at least one tab | Disabled |
 | Close Window | A live Markzen window is focused | Disabled |
-| Undo, Redo, Cut, Copy, Paste, Select All | The focused editor or filename control reports the corresponding action eligible | Disabled |
+| Undo, Redo, Cut, Copy, Paste, Select All | The focused editor or editable filename control reports the corresponding action eligible; raster and external views do not report editor or title eligibility | Disabled |
 
 ### Post-commit rename recovery
 

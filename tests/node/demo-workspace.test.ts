@@ -4,11 +4,15 @@ import nodePath from 'node:path'
 import { describe, expect, test } from 'vitest'
 
 import { validateRaster } from '../../src/assets/raster'
+import { classifyDocumentName } from '../../src/documents/file-types'
 import { parseDocumentBytes, serializeRichDocument, type RichNode } from '../../src/documents/markdown'
+import { parseCsvBytes } from '../../src/documents/csv'
+import { parseJsonBytes } from '../../src/documents/json'
+import { parseTextBytes } from '../../src/documents/text'
 
 const workspace = 'examples/stoic-workspace'
 const preservationDocument = 'archive/Unfinished Footnote.md'
-const recognized = /\.(?:md|markdown|txt)$/i
+const recognized = /\.(?:md|markdown)$/i
 
 async function walk(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -28,7 +32,7 @@ function visit(node: RichNode, nodes: Set<string>, marks: Set<string>): void {
 describe('Stoic demo workspace', () => {
   test('recognized demo documents parse and round-trip without semantic loss', async () => {
     const paths = (await walk(workspace)).filter((path) => recognized.test(path))
-    expect(paths.map((path) => nodePath.extname(path).toLowerCase())).toEqual(expect.arrayContaining(['.md', '.markdown', '.txt']))
+    expect(paths.map((path) => nodePath.extname(path).toLowerCase())).toEqual(expect.arrayContaining(['.md', '.markdown']))
 
     for (const path of paths) {
       const bytes = new Uint8Array(await readFile(path))
@@ -105,5 +109,26 @@ describe('Stoic demo workspace', () => {
       'assets/missing-stoa.png',
       'https://example.com/stoic-demo/remote-bust.png',
     ])
+  })
+
+  test('AC67: the corpus includes every closed document kind and representative generic-text rules', async () => {
+    const files = await walk(workspace)
+    const classifications = files.map((file) => ({ file, classification: classifyDocumentName(nodePath.basename(file)) }))
+    expect(new Set(classifications.map(({ classification }) => classification.kind))).toEqual(
+      new Set(['markdown', 'csv', 'json', 'text', 'raster', 'external']),
+    )
+
+    const editable = classifications.filter(({ classification }) => ['csv', 'json', 'text'].includes(classification.kind))
+    for (const { classification, file } of editable) {
+      const bytes = new Uint8Array(await readFile(file))
+      const parsed = classification.kind === 'csv' ? parseCsvBytes(bytes)
+        : classification.kind === 'json' ? parseJsonBytes(bytes)
+          : parseTextBytes(bytes)
+      expect(parsed.mode, nodePath.relative(workspace, file)).toBe('editable')
+    }
+    expect(classifyDocumentName('Dockerfile')).toMatchObject({ kind: 'text', language: 'Dockerfile' })
+    expect(classifyDocumentName('CMakeLists.txt')).toMatchObject({ kind: 'text', language: 'CMake' })
+    expect(classifyDocumentName('practice.yaml')).toMatchObject({ kind: 'text', language: 'YAML' })
+    expect(classifyDocumentName('references.bib')).toEqual({ kind: 'external' })
   })
 })

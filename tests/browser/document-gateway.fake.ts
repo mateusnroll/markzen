@@ -29,6 +29,7 @@ export class FakeDocumentGateway implements DocumentGatewayPort {
   async completeQuitSaveAll(): Promise<void> {}
   async createTabId(): Promise<string> { return `browser-${this.#nextTab++}` }
   async open(): Promise<OpenOutcome> { return { kind: 'cancelled' } }
+  async openInDefaultApp(): Promise<import('../../src/platform/contracts').ExternalOpenResult> { return { kind: 'opened' } }
   async openWorkspace(input: WorkspaceOpenInput): Promise<OpenOutcome> {
     void input
     return { kind: 'error' }
