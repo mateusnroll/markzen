@@ -28,6 +28,7 @@ type Fixture = {
   readonly generatedWorkspace?: { readonly entriesPerRoot: number; readonly roots: number }
   readonly files: readonly {
     readonly bytes?: string
+    readonly bytesBase64?: string
     readonly generatedBytes?: number
     readonly generatedPattern?: string
     readonly path: string
@@ -232,6 +233,38 @@ const fixtures: Readonly<Record<string, Fixture>> = {
       title: 'JSON performance',
     }],
   },
+  'other-file-types': {
+    files: [
+      { bytes: 'export const answer = 42\n', path: '/notes/example.ts' },
+      { bytesBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XfL0GQAAAABJRU5ErkJggg==', path: '/notes/study.png' },
+      { bytesBase64: 'UEsDBA==', path: '/notes/archive.zip' },
+    ],
+    workspaceRoots: ['/notes'],
+  },
+  'other-file-types-preservation': {
+    externalAfterOpen: { bytes: 'External\n', delay: 500, path: '/notes/watched.log' },
+    files: [
+      { bytesBase64: 'Qf8=', path: '/notes/invalid.txt' },
+      { bytes: 'Initial\n', path: '/notes/watched.log' },
+    ],
+    workspaceRoots: ['/notes'],
+  },
+  'text-performance': {
+    files: [],
+    initialDocuments: [{
+      id: 'text-performance',
+      kind: 'text',
+      language: 'Plain text',
+      managedExtension: '.txt',
+      text: {
+        edited: false,
+        encoding: { bom: false, newline: 'lf' },
+        originalBytes: new Uint8Array(),
+        text: Array.from({ length: 20_000 }, (_, index) => index % 2 ? `ordinary ${index}` : `match ${index}`).join('\n'),
+      },
+      title: 'performance',
+    }],
+  },
   'workspace-performance-10k': {
     files: [],
     generatedWorkspace: { entriesPerRoot: 10_000, roots: 1 },
@@ -269,7 +302,10 @@ export async function bootstrapApplication(): Promise<BootResult> {
   for (const file of fixture.files) {
     const pattern = file.generatedPattern ?? 'line\n'
     const content = file.bytes ?? pattern.repeat(Math.ceil((file.generatedBytes ?? 0) / pattern.length)).slice(0, file.generatedBytes)
-    await memory.platform.fs.create(memory.harness.path(file.path), new TextEncoder().encode(content))
+    const bytes = file.bytesBase64
+      ? Uint8Array.from(atob(file.bytesBase64), (character) => character.charCodeAt(0))
+      : new TextEncoder().encode(content)
+    await memory.platform.fs.create(memory.harness.path(file.path), bytes)
     if (file.writable === false) memory.harness.setAccess(file.path, { writable: false })
   }
   if (fixture.dialogs) {
@@ -296,6 +332,15 @@ export async function bootstrapApplication(): Promise<BootResult> {
     override async open(id?: string) {
       const outcome = await super.open(id)
       if (outcome.kind === 'opened' && fixture.externalAfterOpen) {
+        const external = fixture.externalAfterOpen
+        setTimeout(() => { void memory.harness.externalWrite(external.path, new TextEncoder().encode(external.bytes)) }, external.delay)
+      }
+      return outcome
+    }
+
+    override async openWorkspace(input: import('../documents/gateway').WorkspaceOpenInput) {
+      const outcome = await super.openWorkspace(input)
+      if (outcome.kind === 'opened' && fixture.externalAfterOpen && input.path === memory.harness.path(fixture.externalAfterOpen.path)) {
         const external = fixture.externalAfterOpen
         setTimeout(() => { void memory.harness.externalWrite(external.path, new TextEncoder().encode(external.bytes)) }, external.delay)
       }

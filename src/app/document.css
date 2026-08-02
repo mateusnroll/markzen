@@ -775,3 +775,30 @@
     forced-color-adjust: none;
   }
 }
+.text-document .ProseMirror {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  min-height: 24rem;
+  overflow: auto;
+  white-space: pre;
+}
+
+.text-document pre {
+  font: inherit;
+  margin: 0;
+  white-space: pre;
+}
+
+.text-language-label,
+.raster-document,
+.external-document {
+  color: var(--text-muted, #666);
+}
+
+.raster-document img {
+  display: block;
+  height: auto;
+  margin: 1rem auto;
+  max-height: calc(100vh - 16rem);
+  max-width: 100%;
+  object-fit: contain;
+}

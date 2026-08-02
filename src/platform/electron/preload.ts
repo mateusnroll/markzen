@@ -54,6 +54,7 @@ const api: MarkzenApi = deepFreeze({
     completeQuitSaveAll: (success: boolean) => invoke<void>(channels.documentQuitSaveAllComplete, { success }),
     createTab: (kind: 'csv' | 'json' | 'markdown') => invoke<TabId>(channels.documentCreateTab, { kind }),
     open: (tabId: TabId, generation: number) => invoke<DocumentIntentOutcome>(channels.documentOpen, { generation, tabId }),
+    openInDefaultApp: (tabId: TabId, generation: number) => invoke<ExternalOpenResult>(channels.documentOpenInDefaultApp, { generation, tabId }),
     onCommand(listener: (command: RendererCommand) => void) {
       const wrapped = (_event: Electron.IpcRendererEvent, command: RendererCommand) => listener(command)
       ipcRenderer.on(channels.documentCommand, wrapped)

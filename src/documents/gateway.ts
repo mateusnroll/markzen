@@ -2,6 +2,8 @@ import { displayDocumentStem, deriveDocumentFilename, getRecognizedExtension } f
 import { parseDocumentBytes, serializeRichDocument, type DocumentEncoding, type RichDocument } from './markdown'
 import { csvPreservationMessage, parseCsvBytes, serializeCsvDocument, type CsvDocument } from './csv'
 import { jsonPreservationMessage, parseJsonBytes, serializeJsonDocument, type JsonDocument } from './json'
+import { classifyDocumentName, GENERIC_TEXT_EXTENSIONS, RASTER_EXTENSIONS, rasterDisplayMetadata, SPECIALIZED_DOCUMENT_EXTENSIONS, type RasterDisplayMetadata } from './file-types'
+import { parseTextBytes, serializeTextDocument, type TextDocument } from './text'
 import { decodeEmbeddedImage, MAX_ACQUIRED_IMAGE_BYTES } from '../assets/image-sources'
 import { validateRaster } from '../assets/raster'
 import { SaveCoordinator } from './save-coordinator'
@@ -24,10 +26,15 @@ export type GatewayDocument = {
   readonly document?: RichDocument
   readonly csv?: CsvDocument
   readonly json?: JsonDocument
+  readonly text?: TextDocument
+  readonly language?: string
+  readonly managedExtension?: string
+  readonly raster?: RasterDisplayMetadata & { readonly url: string }
+  readonly limitation?: string
   readonly encoding?: DocumentEncoding
   readonly fileKey?: FileKey
   readonly id: string
-  readonly kind?: 'csv' | 'json' | 'markdown'
+  readonly kind?: 'csv' | 'external' | 'json' | 'markdown' | 'raster' | 'text'
   readonly path?: Path
   readonly preservation?: { readonly bytes: Uint8Array; readonly display: string; readonly kind: 'bytes' | 'text' }
   readonly revision?: number
@@ -66,6 +73,7 @@ export interface DocumentGatewayPort {
   completeQuitSaveAll(success: boolean): Promise<void>
   createTabId(kind?: 'csv' | 'json' | 'markdown'): Promise<string>
   open(id?: string): Promise<OpenOutcome>
+  openInDefaultApp(id: string): Promise<import('../platform/contracts').ExternalOpenResult>
   openWorkspace(input: WorkspaceOpenInput): Promise<OpenOutcome>
   onCommand(listener: (command: import('../platform/contracts').RendererCommand) => void): () => void
   onExternalChange(listener: (event: ExternalGatewayEvent) => void): () => void
@@ -94,6 +102,11 @@ export class DocumentGateway implements DocumentGatewayPort {
   readonly #assetUrls = new Map<string, Set<string>>()
 
   constructor(readonly platform: Platform) {}
+
+  async openInDefaultApp(id: string): Promise<import('../platform/contracts').ExternalOpenResult> {
+    void id
+    return { kind: 'unsupported' }
+  }
 
   async authorizeImage(id: string, source: string): Promise<ImageIntentOutcome> {
     const target = await this.#readImageSource(id, source)
@@ -201,7 +214,10 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async open(id?: string): Promise<OpenOutcome> {
-    const selected = await this.platform.dialog.open({ extensions: ['md', 'markdown', 'txt', 'csv', 'json'], title: 'Open Markzen Document' })
+    const selected = await this.platform.dialog.open({
+      extensions: [...SPECIALIZED_DOCUMENT_EXTENSIONS, ...GENERIC_TEXT_EXTENSIONS, ...RASTER_EXTENSIONS, '*'],
+      title: 'Open Markzen Document',
+    })
     if (!selected.ok) return { kind: 'error' }
     return selected.value ? this.openPath(selected.value, id ?? `file-${Date.now()}`) : { kind: 'cancelled' }
   }
@@ -225,7 +241,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async #overwriteExternal(input: SaveInput, diskVersion: DiskVersion): Promise<SaveOutcome> {
-    if (!input.path || (!input.document && !input.csv && !input.json)) return { kind: 'error' }
+    if (!input.path || (!input.document && !input.csv && !input.json && !input.text)) return { kind: 'error' }
     const bytes = gatewayBytes(input)
     const replaced = await this.platform.fs.atomicReplace(input.path, bytes, diskVersion)
     return replaced.ok ? this.#saved(input, replaced.value) : failure(replaced.error.code)
@@ -254,11 +270,48 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async #readPath(path: Path, id: string): Promise<OpenOutcome> {
+    const classification = classifyDocumentName(basename(path))
+    if (classification.kind === 'external') {
+      const canonical = await this.platform.fs.canonicalize(path)
+      if (!canonical.ok) return { kind: 'error' }
+      return { document: {
+        fileKey: canonical.value.fileKey,
+        id,
+        kind: 'external',
+        limitation: 'Markzen cannot edit or preview this file type.',
+        path: canonical.value.path,
+        title: basename(canonical.value.path),
+      }, kind: 'opened' }
+    }
     const read = await this.platform.fs.read(path)
     if (!read.ok) return { kind: 'error' }
-    const title = displayDocumentStem(basename(read.value.path))
+    const filename = basename(read.value.path)
+    const textExtension = classification.kind === 'text' && classification.managedExtension
+      ? filename.slice(-classification.managedExtension.length)
+      : undefined
+    const title = classification.kind === 'raster'
+      ? filename
+      : classification.kind === 'text'
+        ? textExtension ? filename.slice(0, -textExtension.length) : filename
+        : displayDocumentStem(filename)
     const identity = { diskVersion: read.value.diskVersion, fileKey: read.value.fileKey, id, path: read.value.path, title }
-    if (/\.csv$/i.test(String(read.value.path))) {
+    if (classification.kind === 'raster') {
+      const validation = validateRaster(read.value.bytes, String(read.value.path))
+      if (!validation.ok) return { document: {
+        fileKey: read.value.fileKey,
+        id,
+        kind: 'external',
+        limitation: 'Markzen could not safely preview this raster image.',
+        path: read.value.path,
+        title: basename(read.value.path),
+      }, kind: 'opened' }
+      return { document: {
+        ...identity,
+        kind: 'raster',
+        raster: { ...rasterDisplayMetadata(validation.info), url: this.#assetUrl(id, read.value.bytes, String(read.value.path)) },
+      }, kind: 'opened' }
+    }
+    if (classification.kind === 'csv') {
       const parsed = parseCsvBytes(read.value.bytes)
       return parsed.mode === 'editable'
         ? { document: { ...identity, csv: parsed.document, kind: 'csv' }, kind: 'opened' }
@@ -275,7 +328,7 @@ export class DocumentGateway implements DocumentGatewayPort {
           kind: 'opened',
         }
     }
-    if (/\.json$/i.test(String(read.value.path))) {
+    if (classification.kind === 'json') {
       const parsed = parseJsonBytes(read.value.bytes)
       return parsed.mode === 'editable'
         ? { document: { ...identity, json: parsed.document, kind: 'json' }, kind: 'opened' }
@@ -291,6 +344,24 @@ export class DocumentGateway implements DocumentGatewayPort {
           },
           kind: 'opened',
         }
+    }
+    if (classification.kind === 'text') {
+      const parsed = parseTextBytes(read.value.bytes)
+      const textIdentity = {
+        ...identity,
+        kind: 'text' as const,
+        language: classification.language,
+        ...(textExtension ? { managedExtension: textExtension } : {}),
+      }
+      return parsed.mode === 'editable'
+        ? { document: { ...textIdentity, text: parsed.document }, kind: 'opened' }
+        : { document: { ...textIdentity, preservation: {
+          bytes: parsed.bytes,
+          display: parsed.reason === 'encoding'
+            ? 'This file is not valid UTF-8.'
+            : 'This file exceeds the safe generic-text editing limits.',
+          kind: 'text',
+        } }, kind: 'opened' }
     }
     const parsed = parseDocumentBytes(read.value.bytes)
     const outcome: OpenOutcome = parsed.mode === 'rich' ? {
@@ -318,14 +389,14 @@ export class DocumentGateway implements DocumentGatewayPort {
     if (!input.documentDirty && !input.titleDirty) return { kind: 'unchanged' }
     if (!input.path || !input.diskVersion) return this.#saveAs(input)
     const originalName = basename(input.path)
-    const targetName = deriveDocumentFilename(input.title, getRecognizedExtension(originalName), input.kind)
+    const targetName = deriveDocumentFilename(input.title, input.kind === 'text' ? input.managedExtension : getRecognizedExtension(originalName), input.kind)
     const titleChanged = targetName !== originalName
     if (titleChanged && input.documentDirty) return { kind: 'rename-decision' }
     if (titleChanged) {
       const moved = await this.platform.fs.move(input.path, join(dirname(input.path), targetName), input.diskVersion)
       return moved.ok ? this.#saved(input, moved.value) : failure(moved.error.code)
     }
-    if (!input.document && !input.csv && !input.json) return { kind: 'unchanged' }
+    if (!input.document && !input.csv && !input.json && !input.text) return { kind: 'unchanged' }
     const bytes = gatewayBytes(input)
     const replaced = await this.platform.fs.atomicReplace(input.path, bytes, input.diskVersion)
     return replaced.ok ? this.#saved(input, replaced.value) : failure(replaced.error.code)
@@ -336,11 +407,11 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async #saveAndRename(input: SaveInput): Promise<SaveOutcome> {
-    if (!input.path || !input.diskVersion || (!input.document && !input.csv && !input.json)) return { kind: 'error' }
+    if (!input.path || !input.diskVersion || (!input.document && !input.csv && !input.json && !input.text)) return { kind: 'error' }
     const latest = await this.platform.fs.read(input.path)
     if (!latest.ok) return failure(latest.error.code)
     if (latest.value.diskVersion !== input.diskVersion) return { kind: 'conflict' }
-    const targetName = deriveDocumentFilename(input.title, getRecognizedExtension(basename(input.path)), input.kind)
+    const targetName = deriveDocumentFilename(input.title, input.kind === 'text' ? input.managedExtension : getRecognizedExtension(basename(input.path)), input.kind)
     const target = join(dirname(input.path), targetName)
     const bytes = gatewayBytes(input)
     const written = await this.platform.fs.atomicReplace(target, bytes, 'missing')
@@ -362,7 +433,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   async #saveAs(input: GatewayDocument): Promise<SaveOutcome> {
     const selected = await this.platform.dialog.save({
       confirmationLabel: 'Save As',
-      defaultName: deriveDocumentFilename(input.title, undefined, input.kind),
+      defaultName: deriveDocumentFilename(input.title, input.kind === 'text' ? input.managedExtension : undefined, input.kind),
       message: 'A new document will be created from the current tab.',
       title: 'Save Current Tab As',
     })
@@ -401,7 +472,11 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   adopt(input: GatewayDocument, read: { readonly diskVersion: DiskVersion; readonly fileKey: FileKey; readonly path: Path }): GatewayDocument {
-    return { ...input, diskVersion: read.diskVersion, fileKey: read.fileKey, path: read.path, title: this.#adoptTitle(read.path) }
+    const filename = basename(read.path)
+    const title = input.kind === 'text' && input.managedExtension && filename.toLowerCase().endsWith(input.managedExtension.toLowerCase())
+      ? filename.slice(0, -input.managedExtension.length)
+      : this.#adoptTitle(read.path)
+    return { ...input, diskVersion: read.diskVersion, fileKey: read.fileKey, path: read.path, title }
   }
 
   #saved(input: GatewayDocument, read: { readonly diskVersion: DiskVersion; readonly fileKey: FileKey; readonly path: Path }): SaveOutcome {
@@ -432,7 +507,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   #watchDocument(document: GatewayDocument): void {
-    if (!document.path || !document.diskVersion) return
+    if (!document.path || !document.diskVersion || document.kind === 'external') return
     this.#watchDisposers.get(document.id)?.()
     const token = this.#watchState.repoint(asTabId(document.id), document.path, document.diskVersion)
     this.#watchTokens.set(document.id, token)
@@ -539,6 +614,11 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
     return parseRemoteFile(result.value.file)
   }
 
+  async openInDefaultApp(id: string): Promise<import('../platform/contracts').ExternalOpenResult> {
+    const result = await this.api.document.openInDefaultApp(asTabId(id), 0)
+    return result.ok ? result.value : { kind: 'error' }
+  }
+
   async openWorkspace(_input: WorkspaceOpenInput): Promise<OpenOutcome> {
     const result = await this.api.workspace.open(
       asTabId(_input.id),
@@ -631,15 +711,33 @@ export class ElectronDocumentGateway implements DocumentGatewayPort {
 }
 
 function parseRemoteFile(file: import('../platform/contracts').DocumentFilePayload): OpenOutcome {
-  const identity = {
-    diskVersion: file.diskVersion,
+  const baseIdentity = {
     fileKey: file.fileKey,
     id: file.tabId,
     path: file.path,
     ...(file.secondaryPath ? { secondaryPath: file.secondaryPath } : {}),
-    title: displayDocumentStem(basename(file.path)),
   }
   const kind = file.kind
+  if (kind === 'external') return { document: {
+    ...baseIdentity,
+    kind,
+    limitation: file.limitation,
+    title: basename(file.path),
+  }, kind: 'opened' }
+  if (kind === 'raster') return { document: {
+    ...baseIdentity,
+    diskVersion: file.diskVersion,
+    kind,
+    raster: file.raster,
+    title: basename(file.path),
+  }, kind: 'opened' }
+  const identity = {
+    ...baseIdentity,
+    diskVersion: file.diskVersion,
+    title: kind === 'text' && file.managedExtension
+      ? basename(file.path).slice(0, -file.managedExtension.length)
+      : displayDocumentStem(basename(file.path)),
+  }
   if (kind === 'csv') {
     const parsed = parseCsvBytes(file.bytes)
     if (parsed.mode === 'editable') return { document: { ...identity, csv: parsed.document, kind }, kind: 'opened' }
@@ -658,6 +756,21 @@ function parseRemoteFile(file: import('../platform/contracts').DocumentFilePaylo
       kind: 'text',
     } }, kind: 'opened' }
   }
+  if (kind === 'text') {
+    const parsed = parseTextBytes(file.bytes)
+    const textIdentity = {
+      ...identity,
+      kind,
+      language: file.language ?? 'Plain text',
+      ...(file.managedExtension ? { managedExtension: file.managedExtension } : {}),
+    }
+    if (parsed.mode === 'editable') return { document: { ...textIdentity, text: parsed.document }, kind: 'opened' }
+    return { document: { ...textIdentity, preservation: {
+      bytes: parsed.bytes,
+      display: parsed.reason === 'encoding' ? 'This file is not valid UTF-8.' : 'This file exceeds the safe generic-text editing limits.',
+      kind: 'text',
+    } }, kind: 'opened' }
+  }
   const parsed = parseDocumentBytes(file.bytes)
   if (parsed.mode === 'rich') return { document: { ...identity, document: parsed.document, encoding: parsed.encoding, kind }, kind: 'opened' }
   return { document: { ...identity, kind, preservation: {
@@ -673,6 +786,7 @@ function remoteSaveOutcome(
 ): SaveOutcome {
   if (!result.ok) return { kind: 'error' }
   if (result.value.kind === 'saved' || result.value.kind === 'cleanup-warning') {
+    if (result.value.file.kind === 'external' || result.value.file.kind === 'raster') return { kind: 'error' }
     const document = {
       ...input,
       diskVersion: result.value.file.diskVersion,
@@ -698,6 +812,7 @@ function gatewayBytes(document: GatewayDocument): Uint8Array {
   if (document.preservation?.bytes) return document.preservation.bytes
   if (document.csv) return serializeCsvDocument(document.csv)
   if (document.json) return serializeJsonDocument(document.json)
+  if (document.text) return serializeTextDocument(document.text)
   if (document.document) return serializeRichDocument(document.document, document.encoding ?? { bom: false, newline: 'lf' })
   return new Uint8Array()
 }

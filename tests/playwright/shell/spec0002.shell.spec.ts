@@ -50,7 +50,7 @@ test('AC150 AC151 AC162: packaged Open consumes a test-stubbed native dialog thr
     expect(surface.root).toEqual(['asset', 'bootstrap', 'document', 'openExternal', 'settings', 'version', 'window', 'workspace'])
     expect(surface.document).toEqual([
       'acceptExternal', 'close', 'completeQuitSaveAll', 'confirmClose', 'confirmWindowClose', 'createTab', 'onCommand',
-      'onExternalChange', 'open', 'overwriteExternal', 'retryCleanup', 'save', 'saveAndRename', 'saveAs', 'updateMenuState',
+      'onExternalChange', 'open', 'openInDefaultApp', 'overwriteExternal', 'retryCleanup', 'save', 'saveAndRename', 'saveAs', 'updateMenuState',
     ])
     await openDocumentForShellTest(app, page)
     await expect(page.getByTestId('document-title')).toHaveValue('Olá world')

@@ -207,7 +207,7 @@ export function WorkspaceSidebar({
       toggleDirectory(row)
       return
     }
-    if (row.entry.kind === 'directory-symlink' || !recognized(row.entry.name)) return
+    if (row.entry.kind === 'directory-symlink') return
     onOpen(row.entry, pinned, row.rootId)
   }, [onOpen, toggleDirectory])
 
@@ -327,7 +327,7 @@ export function WorkspaceSidebar({
                   {rootRows.map((row) => {
                     const directory = directories.get(row.entry.path)
                     const isDirectory = row.entry.kind === 'directory'
-                    const disabled = row.entry.kind === 'directory-symlink' || (!isDirectory && !recognized(row.entry.name))
+                    const disabled = row.entry.kind === 'directory-symlink'
                     const errorId = directory?.error ? `workspace-row-error-${safeId(row.entry.path)}` : undefined
                     const linkedId = row.entry.kind === 'directory-symlink' ? `workspace-linked-folder-${safeId(row.entry.path)}` : undefined
                     return (
@@ -425,7 +425,6 @@ const replaceDirectory = (value: ReadonlyMap<Path, DirectoryState>, path: Path, 
   return next
 }
 
-const recognized = (name: string): boolean => /\.(md|markdown|txt|csv|json)$/i.test(name)
 const clampStored = (value: number): number => Math.round(Math.min(480, Math.max(160, value)))
 const safeId = (path: Path): string => String(path).replace(/[^A-Za-z0-9_-]/g, '-')
 const icon = (kind: DirectoryEntry['kind'], expanded?: boolean): string =>

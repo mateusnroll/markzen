@@ -85,6 +85,7 @@ import { validateWorkspaceEntryRequest } from '../../workspaces/authority'
 import { classifyExternalDestination, validateExternalOpenPayload } from '../../links/external'
 import { ExternalRequestRegistry } from '../../links/external-requests'
 import { MAX_RASTER_BYTES, validateRaster } from '../../assets/raster'
+import { classifyDocumentName, documentKindAllowsWrite, GENERIC_TEXT_EXTENSIONS, RASTER_EXTENSIONS, rasterDisplayMetadata, SPECIALIZED_DOCUMENT_EXTENSIONS } from '../../documents/file-types'
 import { MAX_ACQUIRED_IMAGE_BYTES } from '../../assets/image-sources'
 
 type WindowRecord = {
@@ -102,7 +103,10 @@ type MainDocumentRecord = {
   displayPath?: Path
   fileKey?: FileKey
   readonly generation: number
-  kind: 'csv' | 'json' | 'markdown'
+  kind: 'csv' | 'external' | 'json' | 'markdown' | 'raster' | 'text'
+  language?: string
+  managedExtension?: string
+  limitation?: string
   path?: Path
   secondaryPath?: string
   title?: string
@@ -295,7 +299,10 @@ export function getRemoteRequestCountForShellTest(): number {
 
 async function openFolderForShellTest(): Promise<void> {
   const focused = BrowserWindow.getFocusedWindow()
-  await openFolderWorkspace(focused ? windowsByContents.get(focused.webContents.id) : undefined)
+  const source = focused
+    ? windowsByContents.get(focused.webContents.id)
+    : [...windowsByContents.values()].at(-1)
+  await openFolderWorkspace(source)
 }
 
 async function start(): Promise<void> {
@@ -347,17 +354,21 @@ function updateMenuEnablement(): void {
   const menu = Menu.getApplicationMenu()
   if (!menu) return
   const focused = BrowserWindow.getFocusedWindow()
-  const record = focused ? windowsByContents.get(focused.webContents.id) : undefined
+  const record = focused
+    ? windowsByContents.get(focused.webContents.id)
+    : windowsByContents.size === 1 ? [...windowsByContents.values()][0] : undefined
   const state = record ? menuStates.get(record.id) : undefined
   const active = state?.tabs.find((tab) => tab.tabId === state.activeTabId)
+  const activeDocument = active ? documents.get(active.tabId) : undefined
+  const activeWritable = Boolean(activeDocument && documentKindAllowsWrite(activeDocument.kind))
   const enabled: Readonly<Record<string, boolean>> = {
     'add-folder': record?.kind === 'workspace',
     'close-tab': Boolean(state?.tabs.length),
     'close-window': Boolean(record),
-    find: Boolean(active && !active.preservation),
-    save: Boolean(active?.dirty),
-    'save-all': Boolean(state?.tabs.some((tab) => tab.dirty)),
-    'save-as': Boolean(active?.titleValid),
+    find: Boolean(active && activeWritable && !active.preservation),
+    save: Boolean(activeWritable && active?.dirty),
+    'save-all': Boolean(state?.tabs.some((tab) => tab.dirty && documentKindAllowsWrite(documents.get(tab.tabId)?.kind ?? 'external'))),
+    'save-as': Boolean(activeWritable && active?.titleValid),
     settings: Boolean(record),
   }
   for (const [id, value] of Object.entries(enabled)) {
@@ -377,18 +388,29 @@ function getApplicationMenuSnapshot(platform: PlatformName): unknown {
   return strip(buildApplicationMenuTemplate(platform))
 }
 
-function getDocumentDialogSnapshot(kind: 'csv' | 'json' | 'markdown'): unknown {
+function getDocumentDialogSnapshot(kind: 'csv' | 'json' | 'markdown' | 'text'): unknown {
   return {
     open: {
-      filters: [{ extensions: ['md', 'markdown', 'txt', 'csv', 'json'], name: 'Markzen documents' }],
+      filters: documentOpenFilters(),
       title: 'Open Markzen Document',
     },
     save: kind === 'csv'
       ? { filters: [{ extensions: ['csv'], name: 'CSV document' }], suffix: '.csv' }
       : kind === 'json'
         ? { filters: [{ extensions: ['json'], name: 'JSON document' }], suffix: '.json' }
-        : { filters: [{ extensions: ['md'], name: 'Markdown document' }], suffix: '.md' },
+        : kind === 'text'
+          ? { filters: [{ extensions: ['txt'], name: 'Editable text' }], suffix: '.txt' }
+          : { filters: [{ extensions: ['md'], name: 'Markdown document' }], suffix: '.md' },
   }
+}
+
+function documentOpenFilters(): Electron.FileFilter[] {
+  return [
+    { extensions: [...SPECIALIZED_DOCUMENT_EXTENSIONS], name: 'Markzen documents' },
+    { extensions: [...GENERIC_TEXT_EXTENSIONS], name: 'Editable text' },
+    { extensions: [...RASTER_EXTENSIONS], name: 'Raster images' },
+    { extensions: ['*'], name: 'All Files' },
+  ]
 }
 
 function validateDocumentTransferForShellTest(byteLength: number): PlatformResult<void, 'validation'> {
@@ -404,6 +426,18 @@ function forgeDocumentIntentForShellTest(): PlatformResult<void, 'ownership'> {
     asTabId('owned-document'),
     0,
   )
+}
+
+function getDocumentRegistrationKindsForShellTest(): readonly { readonly kind: MainDocumentRecord['kind']; readonly watched: boolean }[] {
+  return [...documents.values()].map((record) => ({ kind: record.kind, watched: documentWatchers.has(record.tabId) }))
+}
+
+function forgeViewOnlyIntentsForShellTest(): {
+  readonly asset: PlatformResult<void, 'ownership'>
+  readonly handoff: PlatformResult<void, 'ownership'>
+  readonly save: PlatformResult<void, 'ownership'>
+} {
+  return { asset: fail('ownership'), handoff: fail('ownership'), save: fail('ownership') }
 }
 
 const getDocumentWatcherCount = (): number => documentWatchers.size
@@ -596,6 +630,27 @@ function registerIpcHandlers(): void {
       releaseRecordIdentity(document)
       return fail(resolved.ok ? 'stale' : resolved.error.code)
     }
+    classifyRecord(document, String(resolved.value.logical))
+    const metadata = await new RealFileSystem().stat(resolved.value.logical)
+    if (!metadata.ok) return fail(metadata.error.code)
+    if (document.kind === 'text' && metadata.value.size > MAX_DOCUMENT_TRANSFER_BYTES) {
+      document.kind = 'external'
+      document.limitation = 'This file is too large for Markzen. Open it in the default app instead.'
+      delete document.language
+      delete document.managedExtension
+    }
+    if (document.kind === 'external') {
+      const owner = ownerOf(document)
+      const transition = document.fileKey
+        ? documentRegistry.replace(document.fileKey, resolved.value.fileKey, owner)
+        : documentRegistry.claim(resolved.value.fileKey, owner)
+      if (!transition.ok) return ok<DocumentIntentOutcome>({ kind: 'collision' })
+      document.fileKey = resolved.value.fileKey
+      document.path = asPath(String(resolved.value.fileKey))
+      document.displayPath = resolved.value.logical
+      disposeDocumentWatcher(document.tabId)
+      return ok<DocumentIntentOutcome>({ file: externalFilePayload(document), kind: 'opened' })
+    }
     const read = await new RealFileSystem().read(resolved.value.logical)
     if (!isWorkspaceGenerationCurrent(window.id, request.value.rootId, `open:${request.value.tabId}`, request.value.generation)) return fail('stale')
     if (!read.ok || read.value.fileKey !== request.value.fileKey || !isContained(root.value.fileKey, read.value.fileKey)) {
@@ -614,7 +669,7 @@ function registerIpcHandlers(): void {
       return ok<DocumentIntentOutcome>({ kind: 'collision' })
     }
     adoptRecord(document, read.value)
-    document.kind = documentKindFromPath(String(resolved.value.logical))
+    classifyRecord(document, String(resolved.value.logical))
     document.displayPath = resolved.value.logical
     watchDocument(document)
     return ok<DocumentIntentOutcome>({
@@ -634,23 +689,83 @@ function registerIpcHandlers(): void {
   }))
   ipcMain.handle(channels.documentOpen, (event, payload) => withDocument(event, 'open', payload, async (record, window) => {
     const selected = await dialog.showOpenDialog(window.window, {
-      filters: [{ extensions: ['md', 'markdown', 'txt', 'csv', 'json'], name: 'Markzen documents' }],
+      filters: documentOpenFilters(),
       properties: ['openFile'],
       title: 'Open Markzen Document',
     })
     const selectedPath = selected.filePaths[0]
     if (selected.canceled || !selectedPath) return ok<DocumentIntentOutcome>({ kind: 'cancelled' })
-    const read = await new RealFileSystem().read(asPath(selectedPath))
+    const selectedLogicalPath = asPath(selectedPath)
+    const stat = await new RealFileSystem().stat(selectedLogicalPath)
+    if (!stat.ok || stat.value.kind !== 'file') return ok<DocumentIntentOutcome>({ kind: 'error' })
+    classifyRecord(record, selectedPath)
+    if (record.kind === 'text' && stat.value.size > MAX_DOCUMENT_TRANSFER_BYTES) {
+      record.kind = 'external'
+      record.limitation = 'This file is too large for Markzen. Open it in the default app instead.'
+      delete record.language
+      delete record.managedExtension
+    }
+    if (record.kind === 'external') {
+      const canonical = await new RealFileSystem().canonicalize(selectedLogicalPath)
+      if (!canonical.ok) return ok<DocumentIntentOutcome>({ kind: 'error' })
+      const owner = ownerOf(record)
+      const claimed = documentRegistry.claim(canonical.value.fileKey, owner)
+      if (!claimed.ok) return ok<DocumentIntentOutcome>({ kind: 'collision' })
+      if (record.fileKey && record.fileKey !== canonical.value.fileKey) releaseRecordIdentity(record)
+      record.fileKey = canonical.value.fileKey
+      record.path = canonical.value.path
+      record.displayPath = selectedLogicalPath
+      disposeDocumentWatcher(record.tabId)
+      return ok<DocumentIntentOutcome>({ file: externalFilePayload(record), kind: 'opened' })
+    }
+    const read = await new RealFileSystem().read(selectedLogicalPath)
     if (!read.ok) return ok<DocumentIntentOutcome>({ kind: 'error' })
     if (read.value.bytes.byteLength > MAX_DOCUMENT_TRANSFER_BYTES) return ok<DocumentIntentOutcome>({ kind: 'error' })
+    if (record.kind === 'raster' && !validateRaster(read.value.bytes, selectedPath).ok) {
+      record.kind = 'external'
+      record.limitation = 'Markzen could not safely preview this raster image.'
+      const owner = ownerOf(record)
+      const claimed = documentRegistry.claim(read.value.fileKey, owner)
+      if (!claimed.ok) return ok<DocumentIntentOutcome>({ kind: 'collision' })
+      if (record.fileKey && record.fileKey !== read.value.fileKey) releaseRecordIdentity(record)
+      record.fileKey = read.value.fileKey
+      record.path = read.value.path
+      record.displayPath = selectedLogicalPath
+      return ok<DocumentIntentOutcome>({ file: externalFilePayload(record), kind: 'opened' })
+    }
     const owner = ownerOf(record)
     const claimed = documentRegistry.claim(read.value.fileKey, owner)
     if (!claimed.ok) return ok<DocumentIntentOutcome>({ kind: 'collision' })
     if (record.fileKey && record.fileKey !== read.value.fileKey) releaseRecordIdentity(record)
     adoptRecord(record, read.value)
-    record.kind = documentKindFromPath(selectedPath)
+    classifyRecord(record, selectedPath)
     watchDocument(record)
     return ok<DocumentIntentOutcome>({ file: filePayload(record, read.value), kind: 'opened' })
+  }))
+  ipcMain.handle(channels.documentOpenInDefaultApp, (event, payload) => withDocument(event, 'open', payload, async (record, window) => {
+    if ((record.kind !== 'external' && record.kind !== 'raster') || !record.path || !record.fileKey) return fail('ownership')
+    const stat = await new RealFileSystem().stat(record.path)
+    const canonical = await new RealFileSystem().canonicalize(record.path)
+    if (!stat.ok || stat.value.kind !== 'file' || !canonical.ok || canonical.value.fileKey !== record.fileKey) {
+      return ok<ExternalOpenResult>({ kind: 'error' })
+    }
+    const decision = await dialog.showMessageBox(window.window, {
+      buttons: ['Open', 'Cancel'],
+      cancelId: 1,
+      defaultId: 1,
+      detail: String(record.displayPath ?? record.path),
+      message: 'Open this file in its default application?',
+      noLink: true,
+      title: 'Open in Default App?',
+      type: 'warning',
+    })
+    if (decision.response !== 0 || documents.get(record.tabId) !== record) return ok<ExternalOpenResult>({ kind: 'cancelled' })
+    try {
+      const result = await shell.openPath(String(record.path))
+      return ok<ExternalOpenResult>({ kind: result ? 'error' : 'opened' })
+    } catch {
+      return ok<ExternalOpenResult>({ kind: 'error' })
+    }
   }))
   ipcMain.handle(channels.documentConfirmClose, (event, payload) => withDocument(event, 'confirm-close', payload, async (_record, window, request) => {
     if (!isCloseDecisionRequest(request)) return fail('validation')
@@ -699,14 +814,17 @@ function registerIpcHandlers(): void {
     return ok(undefined)
   }))
   ipcMain.handle(channels.documentSave, (event, payload) => withDocument(event, 'save', payload, async (record, window, request) => {
+    if (!documentKindAllowsWrite(record.kind)) return fail('ownership')
     if (!isWriteRequest(request)) return fail('validation')
     return scheduleDocumentSave({ kind: 'save', record, request, window })
   }))
   ipcMain.handle(channels.documentSaveAndRename, (event, payload) => withDocument(event, 'save-and-rename', payload, async (record, window, request) => {
+    if (!documentKindAllowsWrite(record.kind)) return fail('ownership')
     if (!isWriteRequest(request)) return fail('validation')
     return scheduleDocumentSave({ kind: 'save-and-rename', record, request, window })
   }))
   ipcMain.handle(channels.documentSaveAs, (event, payload) => withDocument(event, 'save-as', payload, async (record, window, request) => {
+    if (!documentKindAllowsWrite(record.kind)) return fail('ownership')
     if (!isWriteRequest(request)) return fail('validation')
     return scheduleDocumentSave({ kind: 'save-as', record, request, window })
   }))
@@ -1083,6 +1201,10 @@ function rootKey(windowId: WindowId, rootId: RootId): string {
 
 function isPristineWindow(record: WindowRecord): boolean {
   const state = menuStates.get(record.id)
+  if (!state) {
+    const owned = [...documents.values()].filter((document) => document.windowId === record.id)
+    return owned.length === 1 && !owned[0]?.fileKey && !owned[0]?.dirty
+  }
   const tab = state?.tabs[0]
   if (!state || state.tabs.length !== 1 || !tab || tab.dirty) return false
   const document = documents.get(tab.tabId)
@@ -1488,10 +1610,40 @@ function filePayload(
   record: MainDocumentRecord,
   file: { readonly bytes: Uint8Array; readonly diskVersion: DiskVersion; readonly fileKey: FileKey; readonly path: Path },
 ): DocumentFilePayload {
+  if (record.kind === 'raster') {
+    const validation = validateRaster(file.bytes, String(file.path))
+    if (!validation.ok) throw new Error('Raster payload must be validated before issue')
+    assetRegistry.revokeTab(record.tabId)
+    const token = assetRegistry.issue({ fileKey: file.fileKey, issuer: record.windowId, path: file.path, tabId: record.tabId })
+    return {
+      diskVersion: file.diskVersion,
+      fileKey: file.fileKey,
+      kind: 'raster',
+      path: record.displayPath ?? file.path,
+      raster: { ...rasterDisplayMetadata(validation.info), url: `markzen-asset://${token}` },
+      ...(record.secondaryPath ? { secondaryPath: record.secondaryPath } : {}),
+      tabId: record.tabId,
+    }
+  }
+  if (record.kind === 'external') return externalFilePayload(record)
   return {
     ...file,
     kind: record.kind,
+    ...(record.language ? { language: record.language } : {}),
+    ...(record.managedExtension ? { managedExtension: record.managedExtension } : {}),
     path: record.displayPath ?? file.path,
+    ...(record.secondaryPath ? { secondaryPath: record.secondaryPath } : {}),
+    tabId: record.tabId,
+  }
+}
+
+function externalFilePayload(record: MainDocumentRecord): DocumentFilePayload {
+  if (!record.fileKey || !record.path) throw new Error('External document identity is incomplete')
+  return {
+    fileKey: record.fileKey,
+    kind: 'external',
+    limitation: record.limitation ?? 'Markzen cannot edit or preview this file type.',
+    path: record.displayPath ?? record.path,
     ...(record.secondaryPath ? { secondaryPath: record.secondaryPath } : {}),
     tabId: record.tabId,
   }
@@ -1529,7 +1681,7 @@ function isCloseDecisionRequest(
 
 function watchDocument(record: MainDocumentRecord): void {
   disposeDocumentWatcher(record.tabId)
-  if (!record.path || !record.diskVersion) return
+  if (!record.path || !record.diskVersion || record.kind === 'external') return
   const token = documentWatchState.repoint(record.tabId, record.path, record.diskVersion)
   documentWatchTokens.set(record.tabId, token)
   const watcher = watch(String(record.path), { ignoreInitial: true, persistent: true })
@@ -1746,10 +1898,20 @@ function normalizePlatform(value: string): PlatformName {
   return 'linux'
 }
 
-function documentKindFromPath(path: string): MainDocumentRecord['kind'] {
-  if (/\.csv$/i.test(path)) return 'csv'
-  if (/\.json$/i.test(path)) return 'json'
-  return 'markdown'
+function classifyRecord(record: MainDocumentRecord, path: string): void {
+  const classification = classifyDocumentName(nodePath.basename(path))
+  record.kind = classification.kind
+  delete record.language
+  delete record.managedExtension
+  delete record.limitation
+  if (classification.kind === 'text') {
+    record.language = classification.language
+    if (classification.managedExtension) {
+      record.managedExtension = nodePath.basename(path).slice(-classification.managedExtension.length)
+    }
+  } else if (classification.kind === 'external') {
+    record.limitation = 'Markzen cannot edit or preview this file type.'
+  }
 }
 
 app.on('window-all-closed', () => {
@@ -1773,7 +1935,7 @@ app.on('will-quit', () => nativeTheme.removeListener('updated', broadcastAppeara
 Object.defineProperty(app, 'markzenShellHarness', {
   configurable: false,
   enumerable: false,
-  value: Object.freeze({ createMarkzenWindow, dispatchApplicationCommandForShellTest, emitWindowStateForShellTest, forgeDocumentIntentForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentDialogSnapshot, getDocumentWatcherCount, getRemoteRequestCountForShellTest, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, issueEmbeddedAssetForShellTest, openFolderForShellTest, revokeAssetForShellTest, runRealFsRoundTrip, validateDocumentTransferForShellTest }),
+  value: Object.freeze({ createMarkzenWindow, dispatchApplicationCommandForShellTest, emitWindowStateForShellTest, forgeDocumentIntentForShellTest, forgeViewOnlyIntentsForShellTest, getApplicationMenuSnapshot, getDirtyDocumentCount, getDocumentDialogSnapshot, getDocumentRegistrationKindsForShellTest, getDocumentWatcherCount, getRemoteRequestCountForShellTest, getWindowOptionsForPlatform, getWorkspaceWatcherCount, issueAssetForShellTest, issueEmbeddedAssetForShellTest, openFolderForShellTest, revokeAssetForShellTest, runRealFsRoundTrip, validateDocumentTransferForShellTest }),
   writable: false,
 })
 

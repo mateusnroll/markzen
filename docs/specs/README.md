@@ -20,13 +20,18 @@ When the user ends the session, the normal lifecycle resumes at Draft. Approval,
 
 ## Milestones
 
-| # | Milestone | Verification checkpoint |
-|---|---|---|
-| 0001 | [Secure runtime and verification](0001-secure-runtime-and-verification.md) | Secure multi-window shell, browser fake, CI, and shell smoke |
-| 0002 | [Document lifecycle and tabs](0002-document-lifecycle-and-tabs.md) | Loss-safe editing, opening, saving, renaming, switching, and closing |
-| 0003 | [Folder workspaces](0003-folder-workspaces.md) | Multi-root folder windows, preview tabs, live trees, and persisted workspace settings |
-| 0004 | [Everyday writing experience](0004-everyday-writing-experience.md) | Accessible formatting, links, search, themes, and toolbar preferences |
-| 0005 | [Structured content and local assets](0005-structured-content-and-assets.md) | Accessible tables and securely rendered local images |
+| # | Milestone | Status | Verification checkpoint |
+|---|---|---|---|
+| 0001 | [Secure runtime and verification](0001-secure-runtime-and-verification.md) | Implemented | Secure multi-window shell, browser fake, CI, and shell smoke |
+| 0002 | [Document lifecycle and tabs](0002-document-lifecycle-and-tabs.md) | Implemented | Loss-safe editing, opening, saving, renaming, switching, and closing |
+| 0003 | [Folder workspaces](0003-folder-workspaces.md) | Implemented | Multi-root folder windows, preview tabs, live trees, and persisted workspace settings |
+| 0004 | [Everyday writing experience](0004-everyday-writing-experience.md) | Implemented | Accessible formatting, links, search, themes, and toolbar preferences |
+| 0005 | [Structured content and local assets](0005-structured-content-and-assets.md) | Implemented | Accessible tables and securely rendered local images |
+
+Specs 0002, 0003, and 0009 were revised with spec 0011 after the user accepted
+the shared Open, title, command, tree-row, symlink, and preview findings. All
+four returned to Implemented together after their mapped tests, independent
+simplicity review, and browser plus packaged-shell verification passed.
 
 Post-rewrite feature specs continue the same lifecycle:
 
@@ -37,7 +42,7 @@ Post-rewrite feature specs continue the same lifecycle:
 | 0008 | [Opt-in pseudonymous usage and crash diagnostics](0008-opt-in-pseudonymous-telemetry.md) | Draft |
 | 0009 | [First-class CSV documents](0009-first-class-csv-documents.md) | Implemented |
 | 0010 | [First-class JSON documents](0010-first-class-json-documents.md) | Implemented |
-| 0011 | [Other file types](0011-other-file-types.md) | Draft |
+| 0011 | [Other file types](0011-other-file-types.md) | Implemented |
 
 ## Scenario routing
 
