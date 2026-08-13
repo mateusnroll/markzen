@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-07-13
-**Specs:** [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md)
+**Specs:** [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md), [0011 — Other File Types](../specs/0011-other-file-types.md)
 
 ## Context
 
@@ -17,6 +17,10 @@ Markdown image sources are untrusted path text. Chromium must display explicitly
 - `markzen-asset` is registered before readiness as secure but non-standard, non-streaming, non-CORS, unavailable to Fetch, without service workers or CSP bypass. CSP admits it only in `img-src`.
 - The handler accepts only GET with a single exact token and no credentials, port, query, fragment, encoded traversal, or navigation form. Electron does not expose a destination signal to custom-protocol handlers, so image-only reachability is enforced by the combined non-Fetch/non-CORS/non-standard scheme registration and CSP `img-src` admission; packaged smoke proves renderer Fetch denial. Every denial is the same non-cacheable 404. Success is non-cacheable, `nosniff`, and the validated raster MIME.
 - Image-node `assetUrl`, internal-reference state, load status, source kind, and display origin are transient schema attributes and never serialize. Spec 0006 may issue byte-backed grants only after its separate acquisition policy succeeds; raw remote, data, file, active, malformed, and other custom sources remain unavailable to Chromium.
+- A first-class raster tab reuses this exact validation and bearer registry. Its
+  closed renderer payload contains only width, height, validated format,
+  animation status, and the opaque URL; it never receives the path-derived
+  authority or source bytes. Replacement and close revoke the tab's grant.
 
 ## Consequences
 

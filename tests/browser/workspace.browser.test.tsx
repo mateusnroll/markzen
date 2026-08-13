@@ -34,7 +34,7 @@ const roots = (...values: Array<{ path: string; entries: readonly DirectoryEntry
 }))
 
 describe('spec 0003 accessible workspace sidebar', () => {
-  test('AC16 AC19 outdated AC30 AC32: CSV is recognized while unsupported rows stay disabled and collapse removes descendants', async () => {
+  test('AC16 AC19 revised AC30 AC32: every visible regular file is enabled and collapse removes descendants', async () => {
     const active = asFileKey('/shared/a.md')
     await renderSidebar({
       activeFileKey: active,
@@ -52,8 +52,8 @@ describe('spec 0003 accessible workspace sidebar', () => {
     })
     expect([...document.querySelectorAll('[data-testid="workspace-root-header"]')].map((node) => node.textContent)).toEqual(['first', 'second'])
     expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(2)
-    const unsupported = byLabel<HTMLButtonElement>('image.png')
-    expect(unsupported.getAttribute('aria-disabled')).toBe('true')
+    const raster = byLabel<HTMLButtonElement>('image.png')
+    expect(raster.hasAttribute('aria-disabled')).toBe(false)
     expect(byLabel<HTMLButtonElement>('data.csv').hasAttribute('aria-disabled')).toBe(false)
 
     await userEvent.click(document.querySelectorAll<HTMLButtonElement>('[data-testid="workspace-root-header"]')[0]!)

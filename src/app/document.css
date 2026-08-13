@@ -136,19 +136,13 @@
   scrollbar-width: thin;
 }
 
-.document-surface-csv {
+.document-surface-full-panel {
   padding-top: 0;
   padding-right: 0;
   padding-bottom: 0;
   padding-left: 0;
   cursor: default;
   overflow: hidden;
-}
-
-.document-surface-json {
-  cursor: default;
-  overflow: hidden;
-  padding: 0;
 }
 
 .document-surface::-webkit-scrollbar {
@@ -183,7 +177,7 @@
   box-shadow: none;
 }
 
-.document-page-csv {
+.document-page-full-panel {
   display: flex;
   height: 100%;
   max-width: none;
@@ -192,17 +186,7 @@
   padding: 0;
 }
 
-.document-page-json {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  max-width: none;
-  min-height: 0;
-  padding: 0;
-}
-
-.document-page-csv .document-title-gutter,
-.document-page-json .document-title-gutter {
+.document-page-full-panel .document-title-gutter {
   align-items: center;
   display: flex;
   width: 100%;
@@ -233,8 +217,7 @@
   font-weight: 700;
 }
 
-.document-page-csv .document-title-control,
-.document-page-json .document-title-control {
+.document-page-full-panel .document-title-control {
   align-items: baseline;
   display: flex;
   width: auto;
@@ -243,8 +226,7 @@
   z-index: 7;
 }
 
-.document-page-csv .document-title,
-.document-page-json .document-title {
+.document-page-full-panel .document-title {
   width: auto;
   max-width: 100%;
   min-width: 1ch;
@@ -770,8 +752,85 @@
     background: Highlight;
   }
 
+  .text-document [class^="hljs-"],
+  .text-document [class*=" hljs-"] {
+    color: CanvasText;
+    forced-color-adjust: none;
+  }
+
   .ProseMirror [data-markzen-image] {
     border-color: CanvasText;
     forced-color-adjust: none;
   }
+}
+.text-document {
+  --mz-code-keyword: #8250df;
+  --mz-code-name: #0a6b3e;
+  --mz-code-comment: #656d76;
+  --mz-code-number: #0550ae;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.text-document .ProseMirror {
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  padding: 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre;
+}
+
+.text-document pre {
+  font: inherit;
+  margin: 0;
+  white-space: pre;
+}
+
+.text-language-label,
+.raster-document,
+.external-document {
+  color: var(--mz-text-muted);
+}
+
+.text-language-label {
+  flex: none;
+  margin: 0 0 0 auto;
+  padding-left: 16px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.text-document :where(.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-link) {
+  color: var(--mz-code-keyword);
+}
+
+.text-document :where(.hljs-string, .hljs-title, .hljs-name, .hljs-type, .hljs-built_in, .hljs-attr, .hljs-attribute, .hljs-symbol, .hljs-bullet, .hljs-addition, .hljs-variable, .hljs-template-tag, .hljs-template-variable) {
+  color: var(--mz-code-name);
+}
+
+.text-document :where(.hljs-comment, .hljs-quote, .hljs-deletion, .hljs-meta) {
+  color: var(--mz-code-comment);
+}
+
+.text-document :where(.hljs-number, .hljs-regexp, .hljs-selector-id, .hljs-selector-class) {
+  color: var(--mz-code-number);
+}
+
+.app-shell[data-theme="dark"] .text-document {
+  --mz-code-keyword: #d2a8ff;
+  --mz-code-name: #7ee787;
+  --mz-code-comment: #8b949e;
+  --mz-code-number: #79c0ff;
+}
+
+.raster-document img {
+  display: block;
+  height: auto;
+  margin: 1rem auto;
+  max-height: calc(100vh - 16rem);
+  max-width: 100%;
+  object-fit: contain;
 }

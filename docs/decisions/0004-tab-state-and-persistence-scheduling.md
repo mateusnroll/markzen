@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md), [0010 — First-Class JSON Documents](../specs/0010-first-class-json-documents.md)
+**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md), [0010 — First-Class JSON Documents](../specs/0010-first-class-json-documents.md), [0011 — Other File Types](../specs/0011-other-file-types.md)
 
 ## Context
 
@@ -12,7 +12,12 @@ Each tab needs independent ProseMirror state, history, selection, scroll, title,
 
 ### Editor and tab ownership
 
-- A renderer-side `DocumentController` owns ordered tab records keyed by main-assigned `TabId`. Each editable tab has a closed `markdown`, `csv`, or `json` kind and owns one TipTap `Editor`/ProseMirror state for its lifetime; React renders metadata and the active editor but never stores document content.
+- A renderer-side `DocumentController` owns ordered tab records keyed by
+  main-assigned `TabId`. Each editable tab has a closed `markdown`, `csv`,
+  `json`, or `text` kind and owns one TipTap `Editor`/ProseMirror state for its
+  lifetime; `raster` and `external` tabs are closed view-only variants with no
+  editor, dirty model, rename field, or persistence coordinator. React renders
+  metadata and the active editor/view without storing document content.
 - Tab metadata contains display path, baseline title/model fingerprint, revision, saved revision, mode, load generation, persistence generation, scroll, errors, and conflict state.
 - Persistent transactions monotonically advance revision. Dirty state is semantic equality of current persistent JSON plus pending title against the adopted baseline, not merely `revision !== savedRevision`, so undo/reversion can become clean.
 

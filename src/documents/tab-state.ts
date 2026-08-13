@@ -30,11 +30,13 @@ export function isTabDirty(state: TabBaselineState): boolean {
 }
 
 export function isDocumentCompletionCurrent(
-  captured: { readonly generation: number; readonly kind: 'csv' | 'json' | 'markdown'; readonly owner: string; readonly revision: number },
-  current: { readonly generation: number; readonly kind: 'csv' | 'json' | 'markdown'; readonly owner: string; readonly revision: number },
+  captured: { readonly fileKey?: string; readonly generation: number; readonly kind: DocumentKind; readonly owner: string; readonly revision?: number },
+  current: { readonly fileKey?: string; readonly generation: number; readonly kind: DocumentKind; readonly owner: string; readonly revision?: number },
 ): boolean {
   return captured.owner === current.owner
     && captured.kind === current.kind
     && captured.generation === current.generation
     && captured.revision === current.revision
+    && captured.fileKey === current.fileKey
 }
+import type { DocumentKind } from './file-types'

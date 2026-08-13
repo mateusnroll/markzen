@@ -16,3 +16,4 @@ Accepted architecture decisions for the Electron rewrite live here. Specs define
 | [0010](0010-remote-image-acquisition.md) | Accepted | Explicit remote/embedded acquisition, pinned public networking, byte budgets, and per-node generation ownership |
 | [0011](0011-first-class-csv-documents.md) | Accepted | Bounded CSV codec, literal ProseMirror model, fixed virtual grid, clipboard reuse, and shared persistence |
 | [0012](0012-first-class-json-documents.md) | Accepted | Bounded duplicate-preserving JSON, transient tree identity, row-first editing, and shared persistence |
+| [0013](0013-other-file-types.md) | Accepted | Closed file classification, bounded generic text, view-only raster previews, and main-owned default-app handoff |

@@ -16,6 +16,7 @@ export const channels = {
   documentExternal: 'markzen:document:external',
   documentCreateTab: 'markzen:document:create-tab',
   documentOpen: 'markzen:document:open',
+  documentOpenInDefaultApp: 'markzen:document:open-in-default-app',
   documentOverwriteExternal: 'markzen:document:overwrite-external',
   documentQuitSaveAllComplete: 'markzen:document:quit-save-all-complete',
   documentRetryCleanup: 'markzen:document:retry-cleanup',
