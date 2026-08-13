@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, truncate, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -6,14 +6,19 @@ import { expect, test } from '@playwright/test'
 
 import { callMain, launchMarkzen, quitMarkzen } from './helpers'
 
-test('AC7 AC23 AC40-AC41 AC52-AC57 AC61 AC65: packaged Open filters, raster bearer, external no-read handoff, and menu routing stay main-owned', async () => {
+test('AC6-AC7 AC23 AC40-AC41 AC52-AC57 AC61 AC65: packaged fallback probing, raster bearer, handoff, and menu routing stay main-owned', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'markzen-other-files-'))
   const textPath = path.join(directory, 'example.ts')
+  const fallbackTextPath = path.join(directory, 'references.bib')
   const rasterPath = path.join(directory, 'study.png')
   const externalPath = path.join(directory, 'archive.zip')
+  const overLimitPath = path.join(directory, 'huge.unknown')
   await writeFile(textPath, 'export const answer = 42\n')
+  await writeFile(fallbackTextPath, '@book{meditations, title={Meditations}}\n')
   await writeFile(rasterPath, await readFile('examples/stoic-workspace/assets/stoic-study.png'))
-  await writeFile(externalPath, Uint8Array.from([0x50, 0x4b, 0x03, 0x04]))
+  await writeFile(externalPath, Uint8Array.from([0x41, 0xff]))
+  await writeFile(overLimitPath, new Uint8Array())
+  await truncate(overLimitPath, 32 * 1_048_576 + 1)
   const app = await launchMarkzen()
   try {
     await app.evaluate(({ dialog, shell }, values) => {
@@ -34,18 +39,24 @@ test('AC7 AC23 AC40-AC41 AC52-AC57 AC61 AC65: packaged Open filters, raster bear
           return ''
         },
       })
-    }, { paths: [textPath, rasterPath, externalPath] })
+    }, { paths: [textPath, fallbackTextPath, rasterPath, externalPath, overLimitPath] })
     const page = await app.firstWindow()
     const windowId = await page.getByTestId('window-id').textContent()
 
     await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'open'])
     await expect(page.getByTestId('text-editor-content')).toBeVisible()
+    expect(await page.getByTestId('text-editor-content').evaluate((editor) => editor.querySelector('.hljs-keyword')?.textContent)).toBe('export')
+    await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'open'])
+    await expect(page.getByTestId('text-language-label')).toHaveText('Plain text')
+    await expect(page.getByTestId('text-editor-content')).toContainText('@book{meditations')
     await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'open'])
     await expect(page.getByTestId('raster-image')).toBeVisible()
     await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'open'])
     await expect(page.getByTestId('external-limitation')).toBeVisible()
     await page.getByRole('button', { name: 'Open in Default App' }).click()
     await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { openedPaths?: string[] }).openedPaths ?? [])).toEqual([await realpath(externalPath)])
+    await callMain(app, 'dispatchApplicationCommandForShellTest', [windowId, 'open'])
+    await expect(page.getByTestId('external-limitation')).toContainText('too large')
 
     const filters = JSON.stringify(await callMain(app, 'getDocumentDialogSnapshot', ['text']))
     expect(filters).toContain('All Files')

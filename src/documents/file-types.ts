@@ -46,6 +46,16 @@ const prefixBasenames: readonly (readonly [string, string])[] = [
 
 const rasterSuffixes = new Set(RASTER_EXTENSIONS.map((extension) => `.${extension}`))
 
+const languageGrammars: Readonly<Record<string, string>> = {
+  Bash: 'bash', C: 'c', 'C header': 'c', 'C#': 'csharp', 'C++': 'cpp', 'C++ header': 'cpp',
+  Configuration: 'ini', CSS: 'css', EditorConfig: 'ini', Go: 'go', GraphQL: 'graphql', HTML: 'xml',
+  INI: 'ini', Java: 'java', JavaScript: 'javascript', JSX: 'javascript', 'JSON with comments': 'json',
+  Kotlin: 'kotlin', Less: 'less', Lua: 'lua', Makefile: 'makefile', Perl: 'perl', PHP: 'php',
+  'Prettier configuration': 'json', Python: 'python', R: 'r', Ruby: 'ruby', Rust: 'rust', Sass: 'scss',
+  SCSS: 'scss', Shell: 'bash', SQL: 'sql', Svelte: 'xml', Swift: 'swift', TSX: 'typescript',
+  TypeScript: 'typescript', Vue: 'xml', XML: 'xml', YAML: 'yaml', Zsh: 'bash',
+}
+
 export function classifyDocumentName(name: string): DocumentClassification {
   const lower = name.toLocaleLowerCase('en-US')
   if (lower.endsWith('.markdown') || lower.endsWith('.md')) return { kind: 'markdown' }
@@ -62,6 +72,10 @@ export function classifyDocumentName(name: string): DocumentClassification {
   if (language) return textClassification(language, extension)
   if (rasterSuffixes.has(extension)) return { kind: 'raster' }
   return { kind: 'external' }
+}
+
+export function grammarForLanguage(language: string): string | undefined {
+  return languageGrammars[language]
 }
 
 export function documentKindAllowsWrite(kind: DocumentKind): boolean {

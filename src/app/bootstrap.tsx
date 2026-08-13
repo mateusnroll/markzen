@@ -236,8 +236,9 @@ const fixtures: Readonly<Record<string, Fixture>> = {
   'other-file-types': {
     files: [
       { bytes: 'export const answer = 42\n', path: '/notes/example.ts' },
+      { bytes: '@book{meditations, title={Meditations}}\n', path: '/notes/references.bib' },
       { bytesBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XfL0GQAAAABJRU5ErkJggg==', path: '/notes/study.png' },
-      { bytesBase64: 'UEsDBA==', path: '/notes/archive.zip' },
+      { bytesBase64: 'Qf8=', path: '/notes/archive.zip' },
     ],
     workspaceRoots: ['/notes'],
   },
@@ -263,6 +264,22 @@ const fixtures: Readonly<Record<string, Fixture>> = {
         text: Array.from({ length: 20_000 }, (_, index) => index % 2 ? `ordinary ${index}` : `match ${index}`).join('\n'),
       },
       title: 'performance',
+    }],
+  },
+  'text-performance-highlighted': {
+    files: [],
+    initialDocuments: [{
+      id: 'text-performance-highlighted',
+      kind: 'text',
+      language: 'TypeScript',
+      managedExtension: '.ts',
+      text: {
+        edited: false,
+        encoding: { bom: false, newline: 'lf' },
+        originalBytes: new Uint8Array(),
+        text: Array.from({ length: 5_000 }, (_, index) => `export const match${index}: number = ${index}`).join('\n'),
+      },
+      title: 'performance-highlighted',
     }],
   },
   'workspace-performance-10k': {

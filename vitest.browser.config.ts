@@ -5,6 +5,7 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       '@tiptap/core',
+      '@tiptap/extension-code-block-lowlight',
       '@tiptap/extension-link',
       '@tiptap/extension-table',
       '@tiptap/extension-task-item',
@@ -15,6 +16,7 @@ export default defineConfig({
       '@tiptap/pm/view',
       '@tiptap/react',
       '@tiptap/starter-kit',
+      'lowlight',
     ],
   },
   test: {

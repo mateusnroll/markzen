@@ -1,6 +1,7 @@
 export const TEXT_DOCUMENT_MAX_BYTES = 10 * 1024 * 1024
 export const TEXT_MAX_LINES = 200_000
 export const TEXT_LINE_MAX_BYTES = 1024 * 1024
+export const TEXT_TRANSFER_MAX_BYTES = 32 * 1024 * 1024
 
 export interface TextDocument {
   readonly edited: boolean
@@ -65,6 +66,15 @@ export function serializeTextDocument(document: TextDocument): Uint8Array {
   return result
 }
 
+export function textPreservationMessage(reason: Extract<TextParseResult, { readonly mode: 'preserve' }>['reason']): string {
+  switch (reason) {
+    case 'document-bytes': return 'This file exceeds the 10 MiB editable document limit.'
+    case 'encoding': return 'This file is not valid UTF-8.'
+    case 'line-bytes': return 'A line exceeds the 1 MiB UTF-8 editable limit.'
+    case 'lines': return 'This file exceeds the 200,000-line editable limit.'
+  }
+}
+
 function dominantNewline(text: string): 'crlf' | 'lf' {
   let crlf = 0
   let lf = 0
@@ -79,70 +89,3 @@ function dominantNewline(text: string): 'crlf' | 'lf' {
   if (crlf === lf) return first ?? 'lf'
   return crlf > lf ? 'crlf' : 'lf'
 }
-
-export function createTextEditor(
-  document: TextDocument,
-  onUpdate?: (editor: Editor) => void,
-  onRejected?: (reason: TextBoundsResult & { readonly ok: false }) => void,
-): Editor {
-  const bounds = Extension.create({
-    name: 'textDocumentBounds',
-    addProseMirrorPlugins: () => [new Plugin({
-      filterTransaction: (transaction) => {
-        if (!transaction.docChanged) return true
-        const result = checkTextBounds(transaction.doc.textContent)
-        if (!result.ok) onRejected?.(result)
-        return result.ok
-      },
-    })],
-  })
-  return new Editor({
-    content: textJson(document.text),
-    editorProps: {
-      attributes: {
-        'aria-label': 'Text document editor',
-        'data-testid': 'text-editor-content',
-        role: 'textbox',
-        spellcheck: 'false',
-      },
-    },
-    extensions: [
-      StarterKit.configure({
-        blockquote: false,
-        bold: false,
-        bulletList: false,
-        code: false,
-        hardBreak: false,
-        heading: false,
-        horizontalRule: false,
-        italic: false,
-        listItem: false,
-        orderedList: false,
-        paragraph: false,
-        strike: false,
-      }),
-      bounds,
-      SearchExtension,
-    ],
-    onUpdate: ({ editor }) => onUpdate?.(editor),
-  })
-}
-
-export function textFromEditor(editor: Editor): string {
-  return editor.state.doc.textContent
-}
-
-function textJson(text: string): JSONContent {
-  return {
-    content: [{
-      ...(text ? { content: [{ text, type: 'text' }] } : {}),
-      type: 'codeBlock',
-    }],
-    type: 'doc',
-  }
-}
-import { Editor, Extension, type JSONContent } from '@tiptap/core'
-import { Plugin } from '@tiptap/pm/state'
-import StarterKit from '@tiptap/starter-kit'
-
-import { SearchExtension } from '../search/search'

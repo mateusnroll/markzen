@@ -3,7 +3,7 @@ import { parseDocumentBytes, serializeRichDocument, type DocumentEncoding, type 
 import { csvPreservationMessage, parseCsvBytes, serializeCsvDocument, type CsvDocument } from './csv'
 import { jsonPreservationMessage, parseJsonBytes, serializeJsonDocument, type JsonDocument } from './json'
 import { classifyDocumentName, GENERIC_TEXT_EXTENSIONS, RASTER_EXTENSIONS, rasterDisplayMetadata, SPECIALIZED_DOCUMENT_EXTENSIONS, type RasterDisplayMetadata } from './file-types'
-import { parseTextBytes, serializeTextDocument, type TextDocument } from './text'
+import { parseTextBytes, serializeTextDocument, textPreservationMessage, TEXT_TRANSFER_MAX_BYTES, type TextDocument } from './text'
 import { decodeEmbeddedImage, MAX_ACQUIRED_IMAGE_BYTES } from '../assets/image-sources'
 import { validateRaster } from '../assets/raster'
 import { SaveCoordinator } from './save-coordinator'
@@ -272,16 +272,13 @@ export class DocumentGateway implements DocumentGatewayPort {
   async #readPath(path: Path, id: string): Promise<OpenOutcome> {
     const classification = classifyDocumentName(basename(path))
     if (classification.kind === 'external') {
-      const canonical = await this.platform.fs.canonicalize(path)
-      if (!canonical.ok) return { kind: 'error' }
-      return { document: {
-        fileKey: canonical.value.fileKey,
-        id,
-        kind: 'external',
-        limitation: 'Markzen cannot edit or preview this file type.',
-        path: canonical.value.path,
-        title: basename(canonical.value.path),
-      }, kind: 'opened' }
+      const stat = await this.platform.fs.stat(path)
+      if (!stat.ok || stat.value.kind !== 'file') return { kind: 'error' }
+      if (stat.value.size > TEXT_TRANSFER_MAX_BYTES) {
+        const canonical = await this.platform.fs.canonicalize(path)
+        if (!canonical.ok || canonical.value.fileKey !== stat.value.fileKey) return { kind: 'error' }
+        return externalCandidate(id, canonical.value, 'This file is too large for Markzen. Open it in the default app instead.')
+      }
     }
     const read = await this.platform.fs.read(path)
     if (!read.ok) return { kind: 'error' }
@@ -295,6 +292,12 @@ export class DocumentGateway implements DocumentGatewayPort {
         ? textExtension ? filename.slice(0, -textExtension.length) : filename
         : displayDocumentStem(filename)
     const identity = { diskVersion: read.value.diskVersion, fileKey: read.value.fileKey, id, path: read.value.path, title }
+    if (classification.kind === 'external') {
+      const parsed = parseTextBytes(read.value.bytes)
+      return parsed.mode === 'editable'
+        ? { document: { ...identity, kind: 'text', language: 'Plain text', text: parsed.document, title: filename }, kind: 'opened' }
+        : externalCandidate(id, read.value, `${textPreservationMessage(parsed.reason)} Open it in the default app instead.`)
+    }
     if (classification.kind === 'raster') {
       const validation = validateRaster(read.value.bytes, String(read.value.path))
       if (!validation.ok) return { document: {
@@ -357,9 +360,7 @@ export class DocumentGateway implements DocumentGatewayPort {
         ? { document: { ...textIdentity, text: parsed.document }, kind: 'opened' }
         : { document: { ...textIdentity, preservation: {
           bytes: parsed.bytes,
-          display: parsed.reason === 'encoding'
-            ? 'This file is not valid UTF-8.'
-            : 'This file exceeds the safe generic-text editing limits.',
+          display: textPreservationMessage(parsed.reason),
           kind: 'text',
         } }, kind: 'opened' }
     }
@@ -536,6 +537,21 @@ export class DocumentGateway implements DocumentGatewayPort {
     }
     return coordinator.save({ revision: input.revision ?? 0, snapshot: operation })
   }
+}
+
+function externalCandidate(
+  id: string,
+  file: { readonly fileKey: FileKey; readonly path: Path },
+  limitation: string,
+): OpenOutcome {
+  return { document: {
+    fileKey: file.fileKey,
+    id,
+    kind: 'external',
+    limitation,
+    path: file.path,
+    title: basename(file.path),
+  }, kind: 'opened' }
 }
 
 export class ElectronDocumentGateway implements DocumentGatewayPort {
@@ -767,7 +783,7 @@ function parseRemoteFile(file: import('../platform/contracts').DocumentFilePaylo
     if (parsed.mode === 'editable') return { document: { ...textIdentity, text: parsed.document }, kind: 'opened' }
     return { document: { ...textIdentity, preservation: {
       bytes: parsed.bytes,
-      display: parsed.reason === 'encoding' ? 'This file is not valid UTF-8.' : 'This file exceeds the safe generic-text editing limits.',
+      display: textPreservationMessage(parsed.reason),
       kind: 'text',
     } }, kind: 'opened' }
   }

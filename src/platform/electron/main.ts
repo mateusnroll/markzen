@@ -86,6 +86,7 @@ import { classifyExternalDestination, validateExternalOpenPayload } from '../../
 import { ExternalRequestRegistry } from '../../links/external-requests'
 import { MAX_RASTER_BYTES, validateRaster } from '../../assets/raster'
 import { classifyDocumentName, documentKindAllowsWrite, GENERIC_TEXT_EXTENSIONS, RASTER_EXTENSIONS, rasterDisplayMetadata, SPECIALIZED_DOCUMENT_EXTENSIONS } from '../../documents/file-types'
+import { parseTextBytes, textPreservationMessage } from '../../documents/text'
 import { MAX_ACQUIRED_IMAGE_BYTES } from '../../assets/image-sources'
 
 type WindowRecord = {
@@ -631,15 +632,14 @@ function registerIpcHandlers(): void {
       return fail(resolved.ok ? 'stale' : resolved.error.code)
     }
     classifyRecord(document, String(resolved.value.logical))
+    const contentCandidate = document.kind === 'external'
     const metadata = await new RealFileSystem().stat(resolved.value.logical)
     if (!metadata.ok) return fail(metadata.error.code)
-    if (document.kind === 'text' && metadata.value.size > MAX_DOCUMENT_TRANSFER_BYTES) {
+    if ((document.kind === 'text' || contentCandidate) && metadata.value.size > MAX_DOCUMENT_TRANSFER_BYTES) {
       document.kind = 'external'
       document.limitation = 'This file is too large for Markzen. Open it in the default app instead.'
       delete document.language
       delete document.managedExtension
-    }
-    if (document.kind === 'external') {
       const owner = ownerOf(document)
       const transition = document.fileKey
         ? documentRegistry.replace(document.fileKey, resolved.value.fileKey, owner)
@@ -668,9 +668,17 @@ function registerIpcHandlers(): void {
       if (existing) focusDocumentOwner(existing)
       return ok<DocumentIntentOutcome>({ kind: 'collision' })
     }
-    adoptRecord(document, read.value)
     classifyRecord(document, String(resolved.value.logical))
+    if (contentCandidate) classifyContentCandidate(document, read.value.bytes)
     document.displayPath = resolved.value.logical
+    if (document.kind === 'external') {
+      document.fileKey = read.value.fileKey
+      document.path = read.value.path
+      delete document.diskVersion
+      disposeDocumentWatcher(document.tabId)
+      return ok<DocumentIntentOutcome>({ file: externalFilePayload(document), kind: 'opened' })
+    }
+    adoptRecord(document, read.value)
     watchDocument(document)
     return ok<DocumentIntentOutcome>({
       file: filePayload(document, { ...read.value, path: resolved.value.logical }),
@@ -699,13 +707,12 @@ function registerIpcHandlers(): void {
     const stat = await new RealFileSystem().stat(selectedLogicalPath)
     if (!stat.ok || stat.value.kind !== 'file') return ok<DocumentIntentOutcome>({ kind: 'error' })
     classifyRecord(record, selectedPath)
-    if (record.kind === 'text' && stat.value.size > MAX_DOCUMENT_TRANSFER_BYTES) {
+    const contentCandidate = record.kind === 'external'
+    if ((record.kind === 'text' || contentCandidate) && stat.value.size > MAX_DOCUMENT_TRANSFER_BYTES) {
       record.kind = 'external'
       record.limitation = 'This file is too large for Markzen. Open it in the default app instead.'
       delete record.language
       delete record.managedExtension
-    }
-    if (record.kind === 'external') {
       const canonical = await new RealFileSystem().canonicalize(selectedLogicalPath)
       if (!canonical.ok) return ok<DocumentIntentOutcome>({ kind: 'error' })
       const owner = ownerOf(record)
@@ -733,12 +740,20 @@ function registerIpcHandlers(): void {
       record.displayPath = selectedLogicalPath
       return ok<DocumentIntentOutcome>({ file: externalFilePayload(record), kind: 'opened' })
     }
+    if (contentCandidate) classifyContentCandidate(record, read.value.bytes)
     const owner = ownerOf(record)
     const claimed = documentRegistry.claim(read.value.fileKey, owner)
     if (!claimed.ok) return ok<DocumentIntentOutcome>({ kind: 'collision' })
     if (record.fileKey && record.fileKey !== read.value.fileKey) releaseRecordIdentity(record)
+    if (record.kind === 'external') {
+      record.fileKey = read.value.fileKey
+      record.path = read.value.path
+      record.displayPath = selectedLogicalPath
+      delete record.diskVersion
+      disposeDocumentWatcher(record.tabId)
+      return ok<DocumentIntentOutcome>({ file: externalFilePayload(record), kind: 'opened' })
+    }
     adoptRecord(record, read.value)
-    classifyRecord(record, selectedPath)
     watchDocument(record)
     return ok<DocumentIntentOutcome>({ file: filePayload(record, read.value), kind: 'opened' })
   }))
@@ -1912,6 +1927,18 @@ function classifyRecord(record: MainDocumentRecord, path: string): void {
   } else if (classification.kind === 'external') {
     record.limitation = 'Markzen cannot edit or preview this file type.'
   }
+}
+
+function classifyContentCandidate(record: MainDocumentRecord, bytes: Uint8Array): void {
+  const parsed = parseTextBytes(bytes)
+  if (parsed.mode === 'editable') {
+    record.kind = 'text'
+    record.language = 'Plain text'
+    delete record.limitation
+    return
+  }
+  record.kind = 'external'
+  record.limitation = `${textPreservationMessage(parsed.reason)} Open it in the default app instead.`
 }
 
 app.on('window-all-closed', () => {

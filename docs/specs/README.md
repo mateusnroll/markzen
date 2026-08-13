@@ -33,6 +33,8 @@ the shared Open, title, command, tree-row, symlink, and preview findings. All
 four returned to Implemented together after their mapped tests, independent
 simplicity review, and browser plus packaged-shell verification passed.
 
+Spec 0011 returned to Draft after desktop testing established that unrecognized valid UTF-8 files should join the generic-text editor and path-known languages should use a full-panel CodeBlockLowlight presentation. The user approved that revision, and it returned to Implemented after mapped tests, two independent simplicity reviews, browser verification, and packaged-shell verification passed. Specs 0002, 0003, 0009, and 0010 retain their Implemented specialized contracts.
+
 Post-rewrite feature specs continue the same lifecycle:
 
 | # | Feature | Status |

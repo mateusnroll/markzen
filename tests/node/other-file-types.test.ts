@@ -6,8 +6,11 @@ import {
   classifyDocumentName,
   documentKindAllowsMarkdownAssets,
   documentKindAllowsWrite,
+  grammarForLanguage,
   rasterDisplayMetadata,
 } from '../../src/documents/file-types'
+import { DocumentGateway } from '../../src/documents/gateway'
+import { createMemoryPlatform } from '../../src/platform/memory'
 import { isDocumentCompletionCurrent } from '../../src/documents/tab-state'
 import {
   checkTextBounds,
@@ -65,6 +68,55 @@ describe('spec 0011 closed file classification', () => {
       { fileKey: 'one', generation: 3, kind: 'raster', owner: 'tab-1' },
       { fileKey: 'one', generation: 4, kind: 'text', owner: 'tab-1' },
     )).toBe(false)
+  })
+
+  test('AC6 AC19 AC21 AC23 AC30 AC67: unknown valid UTF-8 opens as Plain text while unsafe candidates stay byte-free external tabs', async () => {
+    const { harness, platform } = createMemoryPlatform({ caseSensitive: true, platform: 'posix' })
+    harness.mkdir('/notes')
+    await platform.fs.create(harness.path('/notes/references.bib'), new TextEncoder().encode('@book{meditations, title={Meditations}}\n'))
+    await platform.fs.create(harness.path('/notes/archive.bin'), Uint8Array.from([0x41, 0xff]))
+    await platform.fs.create(harness.path('/notes/oversized.data'), new TextEncoder().encode('x'.repeat(TEXT_LINE_MAX_BYTES + 1)))
+    const gateway = new DocumentGateway(platform)
+
+    await expect(gateway.openPath(harness.path('/notes/references.bib'), 'valid')).resolves.toMatchObject({
+      document: {
+        kind: 'text',
+        language: 'Plain text',
+        text: { text: '@book{meditations, title={Meditations}}\n' },
+        title: 'references.bib',
+      },
+      kind: 'opened',
+    })
+    for (const [path, id, limitation] of [
+      ['/notes/archive.bin', 'invalid', 'valid UTF-8'],
+      ['/notes/oversized.data', 'oversized', '1 MiB'],
+    ] as const) {
+      const opened = await gateway.openPath(harness.path(path), id)
+      expect(opened).toMatchObject({ document: { kind: 'external' }, kind: 'opened' })
+      if (opened.kind !== 'opened') throw new Error('expected external candidate')
+      expect(opened.document.limitation).toContain(limitation)
+      expect(opened.document).not.toHaveProperty('text')
+      expect(opened.document).not.toHaveProperty('preservation')
+    }
+  })
+
+  test('AC70: every language label derives exactly one approved common grammar without storing grammar in classification', () => {
+    const expected: Readonly<Record<string, string | undefined>> = {
+      Bash: 'bash', C: 'c', 'C header': 'c', 'C#': 'csharp', 'C++': 'cpp', 'C++ header': 'cpp',
+      Configuration: 'ini', CSS: 'css', EditorConfig: 'ini', Go: 'go', GraphQL: 'graphql', HTML: 'xml',
+      INI: 'ini', Java: 'java', JavaScript: 'javascript', JSX: 'javascript', 'JSON with comments': 'json',
+      Kotlin: 'kotlin', Less: 'less', Lua: 'lua', Makefile: 'makefile', Perl: 'perl', PHP: 'php',
+      'Plain text': undefined, 'Prettier configuration': 'json', Python: 'python', R: 'r', Ruby: 'ruby',
+      Rust: 'rust', Sass: 'scss', SCSS: 'scss', Shell: 'bash', SQL: 'sql', Svelte: 'xml', Swift: 'swift',
+      TSX: 'typescript', TypeScript: 'typescript', Vue: 'xml', XML: 'xml', YAML: 'yaml', Zsh: 'bash',
+    }
+    for (const [language, grammar] of Object.entries(expected)) expect(grammarForLanguage(language), language).toBe(grammar)
+    for (const language of [
+      'AsciiDoc', 'CMake', 'Dockerfile', 'Environment', 'ESLint configuration', 'Fish', 'Git attributes',
+      'Gradle', 'HCL', 'Ignore rules', 'Java properties', 'Nix', 'npm configuration', 'nvm configuration',
+      'Protocol Buffers', 'reStructuredText', 'Scala', 'TeX', 'Terraform', 'TOML',
+    ]) expect(grammarForLanguage(language), language).toBeUndefined()
+    expect(classifyDocumentName('example.ts')).toEqual({ kind: 'text', language: 'TypeScript', managedExtension: '.ts' })
   })
 })
 

@@ -29,6 +29,9 @@ describe('spec 0011 generic text editor', () => {
     expect(getComputedStyle(editor).whiteSpace).toBe('pre')
     expect(editor.querySelector('img')).toBeNull()
     expect(editor.textContent).toContain('<img src=x>')
+    expect(byTestId('active-document-panel').classList).toContain('document-surface-full-panel')
+    expect(byTestId('document-page').classList).toContain('document-page-full-panel')
+    expect(byTestId('document-title-gutter').classList).toContain('document-title-gutter')
 
     editor.focus()
     await userEvent.keyboard('{Control>}f{/Control}')
@@ -44,6 +47,30 @@ describe('spec 0011 generic text editor', () => {
     expect(byTestId('document-tab').getAttribute('aria-label')).not.toContain('Preview')
     await userEvent.keyboard(/Mac/.test(navigator.platform) ? '{Meta>}z{/Meta}' : '{Control>}z{/Control}')
     expect(editor.textContent).not.toContain('!')
+    expect((await axe.run(document.body)).violations.filter((violation) => ['serious', 'critical'].includes(violation.impact ?? ''))).toEqual([])
+  })
+
+  test('AC70-AC74: CodeBlockLowLight derives TypeScript tokens while plain text remains uncolored literal content', async () => {
+    await renderWorkspace(textSeed('export const answer: number = 42\n'))
+    const editor = byTestId('text-editor-content')
+    expect(editor.querySelector('code.language-typescript')).not.toBeNull()
+    expect(editor.querySelector('.hljs-keyword')?.textContent).toBe('export')
+    expect(editor.querySelector('.hljs-built_in')?.textContent).toBe('number')
+    expect(editor.textContent).toBe('export const answer: number = 42\n')
+
+    editor.focus()
+    await userEvent.keyboard('{End} // value')
+    expect(editor.querySelector('.hljs-comment')?.textContent).toContain('// value')
+    expect(byTestId('document-tab').getAttribute('aria-label')).toContain('dirty')
+    await userEvent.keyboard(/Mac/.test(navigator.platform) ? '{Meta>}z{/Meta}' : '{Control>}z{/Control}')
+    expect(editor.textContent).toBe('export const answer: number = 42\n')
+
+    rerender()
+    await renderWorkspace(textSeed('export const answer = 42\n', false, 'Plain text'))
+    const plain = byTestId('text-editor-content')
+    expect(plain.querySelector('[class^="hljs-"]')).toBeNull()
+    expect(plain.textContent).toBe('export const answer = 42\n')
+    expect(byTestId('text-language-label').textContent).toBe('Plain text')
     expect((await axe.run(document.body)).violations.filter((violation) => ['serious', 'critical'].includes(violation.impact ?? ''))).toEqual([])
   })
 
@@ -63,7 +90,7 @@ describe('spec 0011 generic text editor', () => {
     expect(byTestId('open-in-default-app')).not.toBeNull()
 
     rerender()
-    await renderWorkspace(textSeed('x'.repeat(TEXT_LINE_MAX_BYTES), true))
+    await renderWorkspace(textSeed('x'.repeat(TEXT_LINE_MAX_BYTES), true, 'Plain text'))
     const editor = byTestId('text-editor-content')
     editor.focus()
     const before = document.getSelection()?.anchorOffset
@@ -133,14 +160,14 @@ describe('spec 0011 view-only documents', () => {
   })
 })
 
-function textSeed(text: string, preview = false): DocumentSeed {
+function textSeed(text: string, preview = false, language = 'TypeScript'): DocumentSeed {
   const document: TextDocument = {
     edited: false,
     encoding: { bom: false, newline: 'lf' },
     originalBytes: new TextEncoder().encode(text),
     text,
   }
-  return { id: 'text', kind: 'text', language: 'TypeScript', managedExtension: '.ts', preview, text: document, title: 'example' }
+  return { id: 'text', kind: 'text', language, managedExtension: '.ts', preview, text: document, title: 'example' }
 }
 
 async function renderWorkspace(

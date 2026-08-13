@@ -36,7 +36,8 @@ import { TableActions } from './TableActions'
 import { useOverlaySurface } from './overlays'
 import { CsvGrid } from './CsvGrid'
 import { commitJsonDraft, JsonTree } from './JsonTree'
-import { createTextEditor, textFromEditor, type TextDocument } from '../documents/text'
+import { createTextEditor, textFromEditor } from '../documents/text-editor'
+import type { TextDocument } from '../documents/text'
 import type { RasterDisplayMetadata } from '../documents/file-types'
 
 import './document.css'
@@ -157,6 +158,7 @@ export function DocumentWorkspace({
         }
         const editor = createTextEditor(
           text,
+          seed.language ?? 'Plain text',
           (updated) => updateDocument(seed.id, updated),
           (reason) => setIssue({
             kind: 'error',
@@ -943,7 +945,8 @@ export function DocumentWorkspace({
       {active ? (
         <section
           aria-label={active.title || 'Untitled document'}
-          className={`document-surface${active.kind === 'csv' ? ' document-surface-csv' : active.kind === 'json' ? ' document-surface-json' : ''}`}
+          className={`document-surface${active.kind === 'csv' || active.kind === 'json' || active.kind === 'text' ? ' document-surface-full-panel' : ''}`}
+          data-testid="active-document-panel"
           id="active-document-panel"
           onMouseDown={(event) => {
             if (active.preservation || active.kind !== 'markdown' || event.button !== 0 || !(event.target instanceof Element)) return
@@ -967,10 +970,13 @@ export function DocumentWorkspace({
           role="tabpanel"
         >
           <div
-            className={`document-page${active.kind === 'csv' ? ' document-page-csv' : active.kind === 'json' ? ' document-page-json' : ''}`}
+            className={`document-page${active.kind === 'csv' || active.kind === 'json' || active.kind === 'text' ? ' document-page-full-panel' : ''}`}
             data-testid="document-page"
           >
-            {active.kind !== 'raster' && active.kind !== 'external' ? <div className="document-title-gutter">
+            {active.kind !== 'raster' && active.kind !== 'external' ? <div
+              className="document-title-gutter"
+              data-testid="document-title-gutter"
+            >
               <div className="document-title-control">
                 {!active.title ? <span aria-hidden="true" className="untitled-fallback">Untitled</span> : null}
                 <input
@@ -1007,7 +1013,7 @@ export function DocumentWorkspace({
                     }
                   }}
                   placeholder="Untitled"
-                  size={active.kind === 'csv' || active.kind === 'json' ? Math.max(1, active.title.length) : undefined}
+                  size={active.kind === 'csv' || active.kind === 'json' || active.kind === 'text' ? Math.max(1, active.title.length) : undefined}
                   value={active.title}
                 />
                 {active.kind === 'csv' ? <span aria-hidden="true" className="csv-title-extension" data-testid="csv-title-extension">.csv</span> : null}
@@ -1023,6 +1029,7 @@ export function DocumentWorkspace({
                   {secondaryPath}
                 </p>
               ) : null}
+              {active.kind === 'text' ? <p className="text-language-label" data-testid="text-language-label">{active.language ?? 'Plain text'}</p> : null}
             </div> : null}
             {active.preservation && active.kind === 'text' ? (
               <div className="preservation-panel">
@@ -1052,8 +1059,7 @@ export function DocumentWorkspace({
                 onRequestFind={openSearch}
               />
             ) : active.kind === 'text' ? (
-              <div className="text-document">
-                <p className="text-language-label" data-testid="text-language-label">{active.language ?? 'Plain text'}</p>
+              <div className="text-document" data-testid="text-document">
                 <EditorContent data-testid="text-editor" editor={active.editor} />
               </div>
             ) : active.kind === 'raster' ? (
