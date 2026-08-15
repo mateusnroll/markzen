@@ -313,6 +313,46 @@
   margin-block: 0;
 }
 
+.ProseMirror [data-nested-list-parent] {
+  position: relative;
+}
+
+.ProseMirror [data-nested-list] {
+  border-inline-start: 1px solid var(--mz-border);
+}
+
+.ProseMirror .nested-list-toggle {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 0;
+  inset-inline-start: -22px;
+  display: grid;
+  width: 18px;
+  height: 1.45em;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  color: var(--mz-text-muted);
+  background: var(--mz-surface);
+  cursor: pointer;
+  place-items: center;
+}
+
+.ProseMirror .nested-list-toggle:hover,
+.ProseMirror .nested-list-toggle:focus-visible {
+  color: var(--mz-text);
+  background: color-mix(in srgb, var(--mz-surface) 75%, var(--mz-text) 25%);
+}
+
+.ProseMirror .nested-list-toggle:focus-visible {
+  outline: 2px solid var(--mz-focus);
+  outline-offset: 1px;
+}
+
+.ProseMirror .nested-list-section-collapsed {
+  display: none;
+}
+
 .ProseMirror ul[data-type="taskList"] {
   padding-inline-start: 0;
   list-style: none;
@@ -760,6 +800,14 @@
 
   .ProseMirror [data-markzen-image] {
     border-color: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .ProseMirror [data-nested-list],
+  .ProseMirror .nested-list-toggle {
+    border-color: CanvasText;
+    color: ButtonText;
+    background: ButtonFace;
     forced-color-adjust: none;
   }
 }
