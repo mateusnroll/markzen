@@ -2,6 +2,7 @@ import { Extension, type Editor } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { revealNestedListPosition } from '../documents/nested-lists'
 
 export type NormalizedSearchText = {
   readonly ends: readonly number[]
@@ -81,7 +82,9 @@ export function findTextMatches(source: string, query: string): readonly TextMat
 }
 
 export function setEditorSearch(editor: Editor, query: string, current = 0): SearchPluginState {
-  editor.view.dispatch(editor.state.tr.setMeta(searchPluginKey, { current, query }))
+  editor.view.dispatch(editor.state.tr.setMeta('skipTrailingNode', true).setMeta(searchPluginKey, { current, query }))
+  const state = getEditorSearch(editor)
+  revealNestedListPosition(editor, state.matches[state.current]?.from)
   return getEditorSearch(editor)
 }
 

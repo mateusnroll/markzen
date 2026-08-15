@@ -25,7 +25,7 @@ describe('spec 0002 Markdown model and serialization', () => {
     expect(parsed.document).toEqual(value.expected)
   })
 
-  test.each(['basic', 'blocks', 'inline', 'gfm', 'raw'])('AC18 AC20 AC21 AC25-AC27 AC30-AC31: %s model matches its independent golden', async (name) => {
+  test.each(['basic', 'blocks', 'inline', 'gfm', 'raw'])('AC18 AC20 AC21 AC25-AC27 AC30-AC31; spec 0012 AC12: %s model matches its independent golden', async (name) => {
     const value = await fixture(name)
 
     expect(serializeRichDocument(value.expected, { bom: false, newline: 'lf' })).toEqual(value.golden)
@@ -92,6 +92,7 @@ describe('spec 0002 Markdown model and serialization', () => {
     const serialized = new TextDecoder().decode(serializeRichDocument(value.expected, { bom: false, newline: 'lf' }))
     expect(serialized).toContain('![Alt](images/a.png "Pic")')
   })
+
 })
 
 describe('spec 0005 table serialization', () => {

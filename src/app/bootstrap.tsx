@@ -64,6 +64,22 @@ const fixtures: Readonly<Record<string, Fixture>> = {
       },
     }],
   },
+  'nested-lists': {
+    files: [],
+    initialDocuments: ['first', 'second'].map((id) => ({
+      id: `nested-${id}`,
+      title: `Nested ${id}`,
+      document: nestedListDocument(),
+    })),
+  },
+  'nested-lists-10k': {
+    files: [],
+    initialDocuments: [{
+      id: 'nested-performance',
+      title: 'Nested-list performance',
+      document: nestedListPerformanceDocument(),
+    }],
+  },
   'structured-table-100x20': {
     files: [],
     initialDocuments: [{
@@ -290,6 +306,44 @@ const fixtures: Readonly<Record<string, Fixture>> = {
     files: [],
     generatedWorkspace: { entriesPerRoot: 1_000, roots: 20 },
   },
+}
+
+function nestedListDocument(): import('@tiptap/core').JSONContent {
+  const paragraph = (text: string): import('@tiptap/core').JSONContent => ({ type: 'paragraph', content: [{ type: 'text', text }] })
+  return {
+    type: 'doc',
+    content: [{
+      type: 'bulletList',
+      content: [{
+        type: 'listItem',
+        content: [
+          paragraph('Parent'),
+          { type: 'bulletList', content: [
+            { type: 'listItem', content: [paragraph('Child with branch'), { type: 'orderedList', content: [{ type: 'listItem', content: [paragraph('Grandchild')] }] }] },
+            { type: 'listItem', content: [paragraph('Child leaf')] },
+          ] },
+          { type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: false }, content: [paragraph('Task parent'), { type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: true }, content: [paragraph('Task child')] }] }] }] },
+        ],
+      }],
+    }],
+  }
+}
+
+function nestedListPerformanceDocument(): import('@tiptap/core').JSONContent {
+  const paragraph = (text: string): import('@tiptap/core').JSONContent => ({ type: 'paragraph', content: [{ type: 'text', text }] })
+  return {
+    type: 'doc',
+    content: [{
+      type: 'bulletList',
+      content: Array.from({ length: 1_000 }, (_, parent) => ({
+        type: 'listItem',
+        content: [
+          paragraph(`Parent ${parent}`),
+          { type: 'bulletList', content: Array.from({ length: 9 }, (_, child) => ({ type: 'listItem', content: [paragraph(`Child ${parent}:${child}`)] })) },
+        ],
+      })),
+    }],
+  }
 }
 
 export async function bootstrapApplication(): Promise<BootResult> {

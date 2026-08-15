@@ -6,6 +6,7 @@ import TaskList from '@tiptap/extension-task-list'
 import { Markdown, MarkdownManager } from '@tiptap/markdown'
 import StarterKit from '@tiptap/starter-kit'
 import { SearchExtension } from '../search/search'
+import { NestedListExtension } from './nested-lists'
 
 export type RichDocument = {
   readonly attrs?: Readonly<Record<string, unknown>>
@@ -184,6 +185,7 @@ export function createDocumentExtensions(): Extensions {
   return [
     ...baseExtensions(),
     SearchExtension,
+    NestedListExtension,
     Markdown.configure({ indentation: { size: 4, style: 'space' }, markedOptions: { gfm: true } }),
   ]
 }
