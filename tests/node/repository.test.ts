@@ -141,4 +141,15 @@ describe('spec 0001 repository verification contract', () => {
     expect(csvTests).toContain('tests/fixtures/csv')
     expect(csvTests).not.toContain('fetch(')
   })
+
+  test('spec 0013 AC33: structural movement remains renderer-local without capability or dependency expansion', async () => {
+    const packageJson = await readJson<{ dependencies: Record<string, string> }>('package.json')
+    const movement = await readFile('src/app/MoveController.tsx', 'utf8')
+    const contracts = await readFile('src/platform/contracts.ts', 'utf8')
+    const preload = await readFile('src/platform/electron/preload.ts', 'utf8')
+    expect(movement).not.toMatch(/gateway|clipboard|fetch|ipc|preload|platform/)
+    expect(contracts).not.toContain('moveStructuralContent')
+    expect(preload).not.toContain('moveStructuralContent')
+    expect(Object.keys(packageJson.dependencies).some((name) => /drag|dnd|sortable/i.test(name))).toBe(false)
+  })
 })

@@ -28,7 +28,9 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
   readonly gateway: DocumentGatewayPort
   readonly tabId: string
   readonly onIssue: (message: string) => void
-}>(function ImageActions({ editor, gateway, onIssue, tabId }, forwardedRef) {
+  readonly onMove: () => void
+  readonly onPointerMove: (event: React.PointerEvent<HTMLButtonElement>) => void
+}>(function ImageActions({ editor, gateway, onIssue, onMove, onPointerMove, tabId }, forwardedRef) {
   const [surface, setSurface] = useState<Surface>()
   const [candidate, setCandidate] = useState<ImageCandidate>()
   const [alt, setAlt] = useState('')
@@ -208,6 +210,8 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
       {selected ? (
         <div className="image-actions" data-testid="image-actions-owner">
           <button aria-label="Image Actions" data-testid="image-actions" onClick={openSelected} type="button">Image Actions</button>
+          <button data-testid="image-move" onClick={onMove} type="button">Move Image</button>
+          <button aria-label="Drag image" className="move-drag-handle" data-testid="image-drag-handle" onPointerDown={onPointerMove} type="button">↕</button>
           {editor.state.selection instanceof NodeSelection
             && !editor.state.selection.node.attrs.assetUrl
             && classifyImageSource(String(editor.state.selection.node.attrs.src ?? '')).kind === 'local' ? (

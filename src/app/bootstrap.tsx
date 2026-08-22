@@ -35,6 +35,7 @@ type Fixture = {
     readonly writable?: boolean
   }[]
   readonly initialDocuments?: readonly import('./DocumentWorkspace').DocumentSeed[]
+  readonly saveDelay?: number
   readonly workspaceRoots?: readonly string[]
 }
 
@@ -78,6 +79,41 @@ const fixtures: Readonly<Record<string, Fixture>> = {
       id: 'nested-performance',
       title: 'Nested-list performance',
       document: nestedListPerformanceDocument(),
+    }],
+  },
+  reordering: {
+    dialogs: [{ kind: 'save', path: '/notes/reordering.md' }],
+    files: [],
+    saveDelay: 1_500,
+    initialDocuments: [
+      {
+        id: 'reordering',
+        preview: true,
+        title: 'Reordering',
+        document: reorderingDocument(),
+      },
+      {
+        id: 'reordering-other',
+        title: 'Other',
+        document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Other document' }] }] },
+      },
+    ],
+  },
+  'reordering-500': {
+    files: [],
+    initialDocuments: [{
+      id: 'reordering-performance',
+      title: 'Reordering performance',
+      document: {
+        type: 'doc',
+        content: Array.from({ length: 500 }, (_, index) => ({
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: `Block ${index} ` },
+            ...([0, 250, 499].includes(index) ? [{ type: 'image', attrs: { alt: `Image ${index}`, assetId: `performance-image-${index}`, src: `image-${index}.png` } }] : []),
+          ],
+        })),
+      },
     }],
   },
   'structured-table-100x20': {
@@ -346,6 +382,22 @@ function nestedListPerformanceDocument(): import('@tiptap/core').JSONContent {
   }
 }
 
+function reorderingDocument(): import('@tiptap/core').JSONContent {
+  const cell = (type: 'tableHeader' | 'tableCell', text: string) => ({ type, content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })
+  return {
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'Before ' }, { type: 'image', attrs: { alt: 'Diagram', assetId: 'fixture-image', src: 'images/a.png', title: 'Exact' } }] },
+      { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Quote' }] }] },
+      { type: 'table', content: [
+        { type: 'tableRow', content: [cell('tableHeader', 'Header')] },
+        { type: 'tableRow', content: [cell('tableCell', 'Target')] },
+        { type: 'tableRow', content: [cell('tableCell', 'Later')] },
+      ] },
+    ],
+  }
+}
+
 export async function bootstrapApplication(): Promise<BootResult> {
   const api = window.markzen
   if (api !== undefined) return bootstrapElectron(api)
@@ -407,6 +459,16 @@ export async function bootstrapApplication(): Promise<BootResult> {
         setTimeout(() => { void memory.harness.externalWrite(external.path, new TextEncoder().encode(external.bytes)) }, external.delay)
       }
       return outcome
+    }
+
+    override async save(input: import('../documents/gateway').SaveInput) {
+      if (!fixture.saveDelay) return super.save(input)
+      document.documentElement.dataset.testid = 'fixture-save-status'
+      document.documentElement.dataset.fixtureSaveState = 'pending'
+      await new Promise<void>((resolve) => setTimeout(resolve, fixture.saveDelay))
+      delete document.documentElement.dataset.fixtureSaveState
+      delete document.documentElement.dataset.testid
+      return super.save(input)
     }
 
     override async openWorkspace(input: import('../documents/gateway').WorkspaceOpenInput) {

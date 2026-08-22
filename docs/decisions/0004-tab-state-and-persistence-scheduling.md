@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md), [0010 — First-Class JSON Documents](../specs/0010-first-class-json-documents.md), [0011 — Other File Types](../specs/0011-other-file-types.md)
+**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md), [0010 — First-Class JSON Documents](../specs/0010-first-class-json-documents.md), [0011 — Other File Types](../specs/0011-other-file-types.md), [0013 — Table and Image Reordering](../specs/0013-table-and-image-reordering.md)
 
 ## Context
 
@@ -20,6 +20,7 @@ Each tab needs independent ProseMirror state, history, selection, scroll, title,
   metadata and the active editor/view without storing document content.
 - Tab metadata contains display path, baseline title/model fingerprint, revision, saved revision, mode, load generation, persistence generation, scroll, errors, and conflict state.
 - Persistent transactions monotonically advance revision. Dirty state is semantic equality of current persistent JSON plus pending title against the adopted baseline, not merely `revision !== savedRevision`, so undo/reversion can become clean.
+- A structural move session belongs to one tab/editor and contains no document copy. Tab switch, replacement, window blur, modal takeover, or an intervening persistent transaction cancels it; a successful move pins a preview before dispatching one normal persistent history transaction.
 
 ### Switching, focus, and IME
 

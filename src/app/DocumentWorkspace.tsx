@@ -33,6 +33,7 @@ import { ImageActions, imageKeyboardHandler, type ImageActionsHandle } from './I
 import { SearchPanel } from './SearchPanel'
 import { WritingToolbar } from './WritingToolbar'
 import { TableActions } from './TableActions'
+import { MoveController, type MoveControllerHandle } from './MoveController'
 import { useOverlaySurface } from './overlays'
 import { CsvGrid } from './CsvGrid'
 import { commitJsonDraft, JsonTree } from './JsonTree'
@@ -136,6 +137,7 @@ export function DocumentWorkspace({
   const handledCloseRequest = useRef(0)
   const linkActions = useRef<LinkActionsHandle>(null)
   const imageActions = useRef<ImageActionsHandle>(null)
+  const moveController = useRef<MoveControllerHandle>(null)
   const searchBookmark = useRef<SelectionBookmark | undefined>(undefined)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchRequest, setSearchRequest] = useState(0)
@@ -1082,15 +1084,33 @@ export function DocumentWorkspace({
             ) : (
               <EditorContent data-testid="rich-editor" editor={active.editor} />
             )}
-            {!active.preservation && active.kind === 'markdown' ? <TableActions editor={active.editor} key={`tables-${active.id}`} /> : null}
+            {!active.preservation && active.kind === 'markdown' ? (
+              <TableActions
+                editor={active.editor}
+                key={`tables-${active.id}`}
+                onMove={(kind) => moveController.current?.start(kind)}
+                onPointerMove={(kind, event) => moveController.current?.startPointer(kind, event)}
+              />
+            ) : null}
             {!active.preservation && active.kind === 'markdown' ? (
               <ImageActions
                 editor={active.editor}
                 gateway={gateway}
                 key={`images-${active.id}`}
                 onIssue={(message) => setIssue({ kind: 'error', message })}
+                onMove={() => moveController.current?.start('image')}
+                onPointerMove={(event) => moveController.current?.startPointer('image', event)}
                 ref={imageActions}
                 tabId={active.id}
+              />
+            ) : null}
+            {!active.preservation && active.kind === 'markdown' ? (
+              <MoveController
+                editor={active.editor}
+                key={`move-${active.id}`}
+                onAnnouncement={setAnnouncement}
+                onBeforeCommit={() => pinTab(active.id)}
+                ref={moveController}
               />
             ) : null}
             {!active.preservation && active.kind === 'markdown' ? (

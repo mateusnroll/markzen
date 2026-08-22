@@ -17,3 +17,4 @@ Accepted architecture decisions for the Electron rewrite live here. Specs define
 | [0011](0011-first-class-csv-documents.md) | Accepted | Bounded CSV codec, literal ProseMirror model, fixed virtual grid, clipboard reuse, and shared persistence |
 | [0012](0012-first-class-json-documents.md) | Accepted | Bounded duplicate-preserving JSON, transient tree identity, row-first editing, and shared persistence |
 | [0013](0013-other-file-types.md) | Accepted | Closed file classification, bounded generic text, view-only raster previews, and main-owned default-app handoff |
+| [0014](0014-accessible-structural-movement.md) | Accepted | One accessible insertion-gap model for table and image movement with shared explicit and direct-pointer paths |

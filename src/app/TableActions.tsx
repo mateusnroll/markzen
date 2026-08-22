@@ -12,7 +12,15 @@ type TableContext = {
   readonly rows: number
 }
 
-export function TableActions({ editor }: { readonly editor: Editor }) {
+export function TableActions({
+  editor,
+  onMove,
+  onPointerMove,
+}: {
+  readonly editor: Editor
+  readonly onMove: (kind: 'column' | 'row') => void
+  readonly onPointerMove: (kind: 'column' | 'row', event: React.PointerEvent<HTMLButtonElement>) => void
+}) {
   const [open, setOpen] = useState(false)
   const [hovered, setHovered] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -73,6 +81,11 @@ export function TableActions({ editor }: { readonly editor: Editor }) {
     setOpen(false)
   }
 
+  const move = (kind: 'column' | 'row') => {
+    setOpen(false)
+    onMove(kind)
+  }
+
   return (
     <div className="table-actions" data-testid="table-actions-owner">
       <button
@@ -86,12 +99,30 @@ export function TableActions({ editor }: { readonly editor: Editor }) {
         ref={trigger}
         type="button"
       >Table Actions</button>
+      <button
+        aria-label={`Drag data row ${current.header ? '' : current.row - 1}`.trim()}
+        className="move-drag-handle"
+        data-testid="table-row-drag-handle"
+        disabled={!context || current.header || current.rows <= 2}
+        onPointerDown={(event) => onPointerMove('row', event)}
+        type="button"
+      >↕</button>
+      <button
+        aria-label={`Drag column ${columnIndex(editor)}`}
+        className="move-drag-handle"
+        data-testid="table-column-drag-handle"
+        disabled={!context || current.columns <= 1}
+        onPointerDown={(event) => onPointerMove('column', event)}
+        type="button"
+      >↔</button>
       <span className="visually-hidden" data-testid="table-actions-context" id="table-actions-context">{description}</span>
       {open ? (
         <div aria-label="Table Actions" className="toolbar-menu table-actions-menu" data-testid="table-actions-menu" role="menu">
           <p aria-live="polite">{description}</p>
           <button data-testid="table-add-row" onClick={() => run('addRow')} role="menuitem" type="button">Add Row</button>
           <button data-testid="table-add-column" onClick={() => run('addColumn')} role="menuitem" type="button">Add Column</button>
+          <button aria-description={current.header ? 'The header row cannot move.' : current.rows <= 2 ? 'This table has only one data row.' : undefined} data-testid="table-move-row" disabled={current.header || current.rows <= 2} onClick={() => move('row')} role="menuitem" type="button">Move Row</button>
+          <button aria-description={current.columns <= 1 ? 'This table has only one column.' : undefined} data-testid="table-move-column" disabled={current.columns <= 1} onClick={() => move('column')} role="menuitem" type="button">Move Column</button>
           <button aria-description={current.header ? 'The header row cannot be deleted.' : undefined} data-testid="table-delete-row" disabled={current.header} onClick={() => run('deleteRow')} role="menuitem" type="button">Delete Row</button>
           <button data-testid="table-delete-column" onClick={() => run('deleteColumn')} role="menuitem" type="button">Delete Column</button>
           <button data-testid="table-delete-table" onClick={() => run('deleteTable')} role="menuitem" type="button">Delete Table</button>

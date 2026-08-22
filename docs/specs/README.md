@@ -46,6 +46,7 @@ Post-rewrite feature specs continue the same lifecycle:
 | 0010 | [First-class JSON documents](0010-first-class-json-documents.md) | Implemented |
 | 0011 | [Other file types](0011-other-file-types.md) | Implemented |
 | 0012 | [Nested list presentation](0012-nested-list-presentation.md) | Implemented |
+| 0013 | [Table and image reordering](0013-table-and-image-reordering.md) | Implemented |
 
 ## Scenario routing
 
