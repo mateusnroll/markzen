@@ -11,6 +11,7 @@ import {
   type StructuralMovePlan,
 } from '../documents/reordering'
 import { useOverlaySurface } from './overlays'
+import { IMAGE_RUNTIME_TRANSACTION_META } from './ImageActions'
 
 export type MoveControllerHandle = {
   readonly start: (kind: StructuralMoveKind) => void
@@ -181,7 +182,14 @@ export const MoveController = forwardRef<MoveControllerHandle, {
     const transaction = ({ transaction }: { transaction: Transaction }) => {
       const current = sessionRef.current
       if (!current || transaction.getMeta('structuralMove') === true || !transaction.docChanged) return
-      if (transaction.getMeta('addToHistory') === false && current.plan.kind === 'image') return
+      if (transaction.getMeta(IMAGE_RUNTIME_TRANSACTION_META) === true) {
+        if (current.plan.kind !== 'image') {
+          const next = { ...current, plan: { ...current.plan, document: transaction.doc } }
+          sessionRef.current = next
+          setSession(next)
+        }
+        return
+      }
       close('invalid')
     }
     const selection = () => {

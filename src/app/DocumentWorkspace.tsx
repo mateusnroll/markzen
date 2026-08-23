@@ -29,7 +29,7 @@ import {
 import { insertPinnedBeforePreview, preparePreviewReplacement } from '../workspaces/state'
 import { WorkspaceSidebar, type WorkspaceRootSeed } from './WorkspaceSidebar'
 import { LinkActions, type LinkActionsHandle } from './LinkActions'
-import { ImageActions, imageKeyboardHandler, type ImageActionsHandle } from './ImageActions'
+import { ImageActions, IMAGE_RUNTIME_TRANSACTION_META, imageKeyboardHandler, type ImageActionsHandle } from './ImageActions'
 import { SearchPanel } from './SearchPanel'
 import { WritingToolbar } from './WritingToolbar'
 import { TableActions } from './TableActions'
@@ -1174,13 +1174,20 @@ function applySourceRebases(editor: Editor, rebases: readonly import('../platfor
   const byId = new Map(rebases.flatMap((entry) => entry.assetId ? [[entry.assetId, entry] as const] : []))
   const bySource = new Map(rebases.filter((entry) => !entry.assetId).map((entry) => [entry.from, entry]))
   const transaction = editor.state.tr
+  let sourceChanged = false
   editor.state.doc.descendants((node, position) => {
     if (node.type.name !== 'image' || typeof node.attrs.src !== 'string') return
     const rebase = (typeof node.attrs.assetId === 'string' ? byId.get(node.attrs.assetId) : undefined) ?? bySource.get(node.attrs.src)
     if ((!rebase || rebase.from !== node.attrs.src) && !clearAssets) return
-    transaction.setNodeMarkup(position, undefined, { ...node.attrs, ...(clearAssets ? { assetUrl: null } : {}), ...(rebase && rebase.from === node.attrs.src ? { internal: false, src: rebase.to } : {}) })
+    const changesSource = Boolean(rebase && rebase.from === node.attrs.src)
+    sourceChanged ||= changesSource
+    transaction.setNodeMarkup(position, undefined, { ...node.attrs, ...(clearAssets ? { assetUrl: null } : {}), ...(changesSource ? { internal: false, src: rebase?.to } : {}) })
   })
-  if (transaction.docChanged) editor.view.dispatch(transaction.setMeta('addToHistory', false))
+  if (transaction.docChanged) {
+    transaction.setMeta('addToHistory', false)
+    if (!sourceChanged) transaction.setMeta(IMAGE_RUNTIME_TRANSACTION_META, true)
+    editor.view.dispatch(transaction)
+  }
 }
 
 function RenameDecision({ onCancel, onSave }: { readonly onCancel: () => void; readonly onSave: () => void }) {

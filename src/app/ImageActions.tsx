@@ -7,6 +7,8 @@ import type { DocumentGatewayPort } from '../documents/gateway'
 import type { ImageCandidate } from '../platform/contracts'
 import { useOverlaySurface } from './overlays'
 
+export const IMAGE_RUNTIME_TRANSACTION_META = 'imageRuntimeTransaction'
+
 export type ImageActionsHandle = {
   readonly openInsertion: (selection: Selection) => void
   readonly openSelected: () => void
@@ -112,7 +114,9 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
       editor.commands.command(({ state, tr }) => {
         const node = state.doc.nodeAt(position)
         if (!node || node.type.name !== 'image') return false
-        tr.setNodeMarkup(position, undefined, { ...node.attrs, assetUrl: null, loadState: 'broken' }).setMeta('addToHistory', false)
+        tr.setNodeMarkup(position, undefined, { ...node.attrs, assetUrl: null, loadState: 'broken' })
+          .setMeta('addToHistory', false)
+          .setMeta(IMAGE_RUNTIME_TRANSACTION_META, true)
         return true
       })
     }
@@ -376,7 +380,9 @@ function setImageState(editor: Editor, assetId: string, source: string, attrs: R
   editor.commands.command(({ state, tr }) => {
     const node = state.doc.nodeAt(position)
     if (!node || node.type.name !== 'image' || node.attrs.src !== source || node.attrs.assetId !== assetId) return false
-    tr.setNodeMarkup(position, undefined, { ...node.attrs, ...attrs }).setMeta('addToHistory', false)
+    tr.setNodeMarkup(position, undefined, { ...node.attrs, ...attrs })
+      .setMeta('addToHistory', false)
+      .setMeta(IMAGE_RUNTIME_TRANSACTION_META, true)
     return true
   })
 }

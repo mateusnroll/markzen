@@ -100,7 +100,7 @@ export function TableActions({
         type="button"
       >Table Actions</button>
       <button
-        aria-label={`Drag data row ${current.header ? '' : current.row - 1}`.trim()}
+        aria-label={context && !current.header ? `Drag data row ${current.row - 1}` : 'Drag data row'}
         className="move-drag-handle"
         data-testid="table-row-drag-handle"
         disabled={!context || current.header || current.rows <= 2}

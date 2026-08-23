@@ -71,6 +71,53 @@ describe('spec 0013 table and image reordering', () => {
     expect(document.querySelector('[data-testid="move-controller"]')).toBeNull()
   })
 
+  test('AC30: transient image state does not cancel an active row move', async () => {
+    let finish!: (outcome: ImageIntentOutcome) => void
+    const pending = new Promise<ImageIntentOutcome>((resolve) => { finish = resolve })
+    const gateway = new class extends FakeDocumentGateway {
+      override async loadRemoteImage(): Promise<ImageIntentOutcome> { return pending }
+    }()
+    await renderWorkspace([remoteImageSeed()], gateway)
+    await userEvent.click(byTestId('remote-image'))
+    await userEvent.click(page.getByTestId('image-load'))
+    await userEvent.click(cell('Later'))
+    await userEvent.click(page.getByTestId('table-actions'))
+    await userEvent.click(page.getByTestId('table-move-row'))
+    finish({ asset: { source: 'https://images.example/diagram.png', url: memoryImageUrl() }, kind: 'authorized' })
+    await frame()
+    await frame()
+    await expect.element(page.getByTestId('move-controller')).toBeVisible()
+    await userEvent.click(page.getByTestId('move-first'))
+    await userEvent.click(page.getByTestId('move-place'))
+    expect(tableRows()).toEqual(['Header', 'Later', 'Target'])
+  })
+
+  test('AC30: a source rebase invalidates an active image move', async () => {
+    let captured: SaveInput | undefined
+    let finish!: (outcome: SaveOutcome) => void
+    const pending = new Promise<SaveOutcome>((resolve) => { finish = resolve })
+    const gateway = new class extends FakeDocumentGateway {
+      override async save(input: SaveInput): Promise<SaveOutcome> { captured = input; return pending }
+    }()
+    await renderWorkspace([{ ...imageSeed(), path: asPath('/notes/reorder.md') }], gateway)
+    gateway.emitCommand('save')
+    await frame()
+    await userEvent.click(byTestId('blocked-image'))
+    await userEvent.click(page.getByTestId('image-move'))
+    finish({
+      document: {
+        ...captured!,
+        assetsRevoked: true,
+        sourceRebases: [{ assetId: 'asset-1', from: 'images/a.png', to: '../images/a.png' }],
+      },
+      kind: 'saved',
+    })
+    await frame()
+    await frame()
+    expect(document.querySelector('[data-testid="move-controller"]')).toBeNull()
+    await expect.element(page.getByTestId('workspace-announcement')).toHaveTextContent('cancelled because the document changed')
+  })
+
   test('AC19–AC22 AC27 AC31–AC33: Move Image reaches a nested valid gap without changing source identity or invoking authority', async () => {
     const gateway = new FakeDocumentGateway()
     const select = vi.spyOn(gateway, 'selectImage')
@@ -173,6 +220,14 @@ describe('spec 0013 table and image reordering', () => {
     expect(audit.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact ?? ''))).toEqual([])
   })
 
+  test('AC36: a hovered table without a table selection has a neutral row-drag label', async () => {
+    const table = tableSeed()
+    await renderWorkspace([{ ...table, document: { ...table.document, content: [paragraphDocument('Outside').content[0]!, ...table.document.content!] } }])
+    cell('6').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    await frame()
+    await expect.element(page.getByTestId('table-row-drag-handle')).toHaveAccessibleName('Drag data row')
+  })
+
   test('AC34: candidate discovery and commit do not serialize the whole document', async () => {
     const serialize = vi.mocked(markdown.serializeRichDocument)
     serialize.mockClear()
@@ -194,7 +249,7 @@ async function renderWorkspace(seeds: readonly DocumentSeed[], gateway = new Fak
   await frame()
 }
 
-function tableSeed(preview = false): DocumentSeed {
+function tableSeed(preview = false): MarkdownSeed {
   const item = (type: 'tableHeader' | 'tableCell', text: string, align: 'left' | 'center' | 'right') => ({ attrs: { align }, type, content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })
   return { id: 'table', preview, title: 'Table', document: { type: 'doc', content: [{ type: 'table', content: [
     { type: 'tableRow', content: [item('tableHeader', 'A', 'left'), item('tableHeader', 'B', 'center'), item('tableHeader', 'C', 'right')] },
