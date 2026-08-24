@@ -185,7 +185,9 @@ async function renderShell(
       windowPort={memory.platform.window}
       {...(workspace ? {
         workspace: {
+          finderStatus: { generation: 0, kind: 'ready' },
           onList: async () => [],
+          onQueryFiles: async () => ({ generation: 0, kind: 'ready', results: [], total: 0 }),
           onWidthChange: () => undefined,
           roots: [{ entries: [], path: memory.harness.path(workspacePath), rootId: asRootId('root') }],
           width: 240,

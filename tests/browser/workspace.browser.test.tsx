@@ -213,8 +213,10 @@ describe('spec 0003 preview tabs', () => {
       <DocumentWorkspace
         gateway={gateway}
         workspace={{
+          finderStatus: { generation: 0, kind: 'ready' },
           forcedColors: false,
           onList: async () => [],
+          onQueryFiles: async () => ({ generation: 0, kind: 'ready', results: [], total: 0 }),
           onWidthChange: () => undefined,
           reducedMotion: false,
           roots: roots({ path: '/notes', entries: [file] }),
@@ -342,8 +344,10 @@ async function renderDocumentWorkspace(
     gateway={gateway}
     {...(initialTabs ? { initialTabs } : {})}
     {...(workspaceRoots ? { workspace: {
+      finderStatus: { generation: 0, kind: 'ready' },
       forcedColors: false,
       onList: async () => [],
+      onQueryFiles: async () => ({ generation: 0, kind: 'ready', results: [], total: 0 }),
       onWidthChange: () => undefined,
       reducedMotion: false,
       roots: workspaceRoots,

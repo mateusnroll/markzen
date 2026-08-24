@@ -18,3 +18,4 @@ Accepted architecture decisions for the Electron rewrite live here. Specs define
 | [0012](0012-first-class-json-documents.md) | Accepted | Bounded duplicate-preserving JSON, transient tree identity, row-first editing, and shared persistence |
 | [0013](0013-other-file-types.md) | Accepted | Closed file classification, bounded generic text, view-only raster previews, and main-owned default-app handoff |
 | [0014](0014-accessible-structural-movement.md) | Accepted | One accessible insertion-gap model for table and image movement with shared explicit and direct-pointer paths |
+| [0015](0015-bounded-workspace-file-index.md) | Accepted | Main-owned sequential file collection, atomic fuzzysort snapshots, and bounded owner-scoped queries |

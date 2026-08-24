@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
   DirectoryEntry,
+  FinderQueryOutcome,
+  FinderStatusPayload,
   EffectiveTheme,
   ExternalOpenResult,
   Path,
@@ -47,11 +49,13 @@ export type ShellAppProps = {
   readonly windowPort: Pick<WindowPort, 'close' | 'getState' | 'minimize' | 'onState' | 'toggleMaximize'>
   readonly workspace?: {
     readonly onList: (rootId: RootId, path: Path) => Promise<readonly DirectoryEntry[]>
+    readonly onQueryFiles: (query: string) => Promise<FinderQueryOutcome>
     readonly onEvent?: (listener: (event: WorkspaceEventPayload) => void) => () => void
     readonly onRetryRoot?: (rootId: RootId) => Promise<boolean>
     readonly onWidthChange: (width: number) => void
     readonly roots: import('./WorkspaceSidebar').WorkspaceRootSeed[]
     readonly width: number
+    readonly finderStatus: FinderStatusPayload
   }
 }
 
@@ -87,6 +91,7 @@ export function ShellApp({
   const settingsOrigin = useRef<HTMLElement | undefined>(undefined)
   const [workspaceIssue, setWorkspaceIssue] = useState<{ readonly message: string; readonly rootId: RootId }>()
   const [workspaceInvalidation, setWorkspaceInvalidation] = useState<{ readonly generation: number; readonly path: Path; readonly rootId: RootId }>()
+  const [finderStatus, setFinderStatus] = useState<FinderStatusPayload>(workspace?.finderStatus ?? { generation: 0, kind: 'indexing' })
   const appliedSettingsRevision = useRef(settings?.snapshot.revision ?? 0)
 
   useEffect(() => settings?.onSnapshot((snapshot) => {
@@ -97,6 +102,12 @@ export function ShellApp({
   }), [settings])
   useEffect(() => settings?.onAppearance(setAppearance), [settings])
   useEffect(() => workspace?.onEvent?.((event) => {
+    if (event.kind === 'finder-status') {
+      setFinderStatus(event.status)
+      const incomplete = event.status.incompleteRootIds?.[0]
+      if (incomplete) setWorkspaceIssue({ message: 'The file index is incomplete for this workspace root.', rootId: incomplete })
+      return
+    }
     if (event.kind === 'root-added') {
       setWorkspaceRoots((current) => current.some((root) => root.rootId === event.root.rootId)
         ? current
@@ -237,11 +248,13 @@ export function ShellApp({
             ...environment,
             ...(workspaceInvalidation ? { invalidation: workspaceInvalidation } : {}),
             onList: workspace.onList,
+            onQueryFiles: workspace.onQueryFiles,
             onWidthChange: (width: number) => {
               setSidebarWidth(width)
               workspace.onWidthChange(width)
             },
             roots: workspaceRoots,
+            finderStatus,
             width: sidebarWidth,
           } } : {})}
         />
