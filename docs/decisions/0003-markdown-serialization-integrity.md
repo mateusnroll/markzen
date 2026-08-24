@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md)
+**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md), [0013 — Table and Image Reordering](../specs/0013-table-and-image-reordering.md)
 
 ## Context
 
@@ -15,6 +15,7 @@ TipTap's editor model is semantic while Markdown contains alternate spellings, u
 - Use the official `@tiptap/markdown` manager with explicit Markdown content type, GFM enabled, and four-space indentation. StarterKit plus task-list, table, link, and inert-image schema extensions define the supported model.
 - Independently authored source, expected JSON, and golden Markdown fixtures are the oracle. Production parser or serializer output never refreshes them.
 - Edited supported content serializes canonically according to Spec 0002's fixture contract. The editor never serializes on transactions, selection, focus, or scrolling.
+- Structural movement reorders complete ProseMirror row, column, or image subtrees in one transaction and preserves their stored semantic attributes; candidate discovery and movement never invoke Markdown serialization.
 
 ### Coverage and opaque source
 

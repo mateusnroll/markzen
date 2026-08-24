@@ -7,6 +7,8 @@ import type { DocumentGatewayPort } from '../documents/gateway'
 import type { ImageCandidate } from '../platform/contracts'
 import { useOverlaySurface } from './overlays'
 
+export const IMAGE_RUNTIME_TRANSACTION_META = 'imageRuntimeTransaction'
+
 export type ImageActionsHandle = {
   readonly openInsertion: (selection: Selection) => void
   readonly openSelected: () => void
@@ -28,7 +30,9 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
   readonly gateway: DocumentGatewayPort
   readonly tabId: string
   readonly onIssue: (message: string) => void
-}>(function ImageActions({ editor, gateway, onIssue, tabId }, forwardedRef) {
+  readonly onMove: () => void
+  readonly onPointerMove: (event: React.PointerEvent<HTMLButtonElement>) => void
+}>(function ImageActions({ editor, gateway, onIssue, onMove, onPointerMove, tabId }, forwardedRef) {
   const [surface, setSurface] = useState<Surface>()
   const [candidate, setCandidate] = useState<ImageCandidate>()
   const [alt, setAlt] = useState('')
@@ -110,7 +114,9 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
       editor.commands.command(({ state, tr }) => {
         const node = state.doc.nodeAt(position)
         if (!node || node.type.name !== 'image') return false
-        tr.setNodeMarkup(position, undefined, { ...node.attrs, assetUrl: null, loadState: 'broken' }).setMeta('addToHistory', false)
+        tr.setNodeMarkup(position, undefined, { ...node.attrs, assetUrl: null, loadState: 'broken' })
+          .setMeta('addToHistory', false)
+          .setMeta(IMAGE_RUNTIME_TRANSACTION_META, true)
         return true
       })
     }
@@ -208,6 +214,8 @@ export const ImageActions = forwardRef<ImageActionsHandle, {
       {selected ? (
         <div className="image-actions" data-testid="image-actions-owner">
           <button aria-label="Image Actions" data-testid="image-actions" onClick={openSelected} type="button">Image Actions</button>
+          <button data-testid="image-move" onClick={onMove} type="button">Move Image</button>
+          <button aria-label="Drag image" className="move-drag-handle" data-testid="image-drag-handle" onPointerDown={onPointerMove} type="button">↕</button>
           {editor.state.selection instanceof NodeSelection
             && !editor.state.selection.node.attrs.assetUrl
             && classifyImageSource(String(editor.state.selection.node.attrs.src ?? '')).kind === 'local' ? (
@@ -372,7 +380,9 @@ function setImageState(editor: Editor, assetId: string, source: string, attrs: R
   editor.commands.command(({ state, tr }) => {
     const node = state.doc.nodeAt(position)
     if (!node || node.type.name !== 'image' || node.attrs.src !== source || node.attrs.assetId !== assetId) return false
-    tr.setNodeMarkup(position, undefined, { ...node.attrs, ...attrs }).setMeta('addToHistory', false)
+    tr.setNodeMarkup(position, undefined, { ...node.attrs, ...attrs })
+      .setMeta('addToHistory', false)
+      .setMeta(IMAGE_RUNTIME_TRANSACTION_META, true)
     return true
   })
 }

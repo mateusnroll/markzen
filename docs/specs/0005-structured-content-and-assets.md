@@ -9,9 +9,9 @@ Tables and local images are common in real Markdown but are difficult to manipul
 
 ## Non-goals
 
-- Table column resizing, cell merging, per-column alignment controls, CSV import/paste conversion, or row/column reordering.
+- Table column resizing, cell merging, per-column alignment controls, or CSV import/paste conversion. Row and column reordering is owned by spec 0013.
 - Always-visible delete controls on every row or column; structural deletion lives in contextual table actions.
-- Image paste/drop insertion, copying images into the note folder, resizing, captions, alignment, movement, or orphan management.
+- Image paste/drop insertion, copying images into the note folder, resizing, captions, alignment, or orphan management. In-document image movement is owned by spec 0013.
 - Remote HTTP(S) acquisition and embedded `data:` decoding, which are owned exclusively by spec 0006 and do not widen this milestone's local-file authority.
 - Executing or rendering SVG content.
 - Following image destinations or exposing a general renderer-readable filesystem protocol.
@@ -21,6 +21,7 @@ Tables and local images are common in real Markdown but are difficult to manipul
 
 - Link, table, and image schema parsing plus loss-safe serialization are established in milestone 0002. This milestone adds table manipulation and secure local rendering without weakening those guarantees.
 - Table insertion, extension, and deletion are single undoable editor transactions. Persistent mutations dirty the tab and synchronously pin a preview before committing.
+- Spec 0013 extends the same transaction, undo, dirty, preview, serialization, and asset-ownership guarantees to row, column, and image movement without changing this spec's insertion, metadata, authorization, or rendering behavior.
 - Local pixels are served only through opaque, main-issued, exact-resource bearer capabilities. A token is sufficient authority while live regardless of which Markzen window presents it; issuance remains behind sender-authorized application intents, the token exposes no path, and closing its issuing window or revoking its grant expires it. This narrowly documented possession-based exception does not make renderer-provided IDs, paths, or destinations authoritative.
 - The asset scheme is separate from `markzen://app`, non-standard, secure, non-CORS, non-streaming, unavailable to Fetch, and admitted by CSP only for images. Its handler accepts only a live opaque token on an image-destination GET and never maps URL text to a path.
 - Folder windows automatically authorize raster assets canonically contained by an opened root. Standalone documents automatically authorize raster assets contained by their document directory. Explicit image selection authorizes that exact canonical file.

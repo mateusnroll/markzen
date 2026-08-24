@@ -29,10 +29,11 @@ import {
 import { insertPinnedBeforePreview, preparePreviewReplacement } from '../workspaces/state'
 import { WorkspaceSidebar, type WorkspaceRootSeed } from './WorkspaceSidebar'
 import { LinkActions, type LinkActionsHandle } from './LinkActions'
-import { ImageActions, imageKeyboardHandler, type ImageActionsHandle } from './ImageActions'
+import { ImageActions, IMAGE_RUNTIME_TRANSACTION_META, imageKeyboardHandler, type ImageActionsHandle } from './ImageActions'
 import { SearchPanel } from './SearchPanel'
 import { WritingToolbar } from './WritingToolbar'
 import { TableActions } from './TableActions'
+import { MoveController, type MoveControllerHandle } from './MoveController'
 import { useOverlaySurface } from './overlays'
 import { CsvGrid } from './CsvGrid'
 import { commitJsonDraft, JsonTree } from './JsonTree'
@@ -136,6 +137,7 @@ export function DocumentWorkspace({
   const handledCloseRequest = useRef(0)
   const linkActions = useRef<LinkActionsHandle>(null)
   const imageActions = useRef<ImageActionsHandle>(null)
+  const moveController = useRef<MoveControllerHandle>(null)
   const searchBookmark = useRef<SelectionBookmark | undefined>(undefined)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchRequest, setSearchRequest] = useState(0)
@@ -1082,15 +1084,33 @@ export function DocumentWorkspace({
             ) : (
               <EditorContent data-testid="rich-editor" editor={active.editor} />
             )}
-            {!active.preservation && active.kind === 'markdown' ? <TableActions editor={active.editor} key={`tables-${active.id}`} /> : null}
+            {!active.preservation && active.kind === 'markdown' ? (
+              <TableActions
+                editor={active.editor}
+                key={`tables-${active.id}`}
+                onMove={(kind) => moveController.current?.start(kind)}
+                onPointerMove={(kind, event) => moveController.current?.startPointer(kind, event)}
+              />
+            ) : null}
             {!active.preservation && active.kind === 'markdown' ? (
               <ImageActions
                 editor={active.editor}
                 gateway={gateway}
                 key={`images-${active.id}`}
                 onIssue={(message) => setIssue({ kind: 'error', message })}
+                onMove={() => moveController.current?.start('image')}
+                onPointerMove={(event) => moveController.current?.startPointer('image', event)}
                 ref={imageActions}
                 tabId={active.id}
+              />
+            ) : null}
+            {!active.preservation && active.kind === 'markdown' ? (
+              <MoveController
+                editor={active.editor}
+                key={`move-${active.id}`}
+                onAnnouncement={setAnnouncement}
+                onBeforeCommit={() => pinTab(active.id)}
+                ref={moveController}
               />
             ) : null}
             {!active.preservation && active.kind === 'markdown' ? (
@@ -1154,13 +1174,20 @@ function applySourceRebases(editor: Editor, rebases: readonly import('../platfor
   const byId = new Map(rebases.flatMap((entry) => entry.assetId ? [[entry.assetId, entry] as const] : []))
   const bySource = new Map(rebases.filter((entry) => !entry.assetId).map((entry) => [entry.from, entry]))
   const transaction = editor.state.tr
+  let sourceChanged = false
   editor.state.doc.descendants((node, position) => {
     if (node.type.name !== 'image' || typeof node.attrs.src !== 'string') return
     const rebase = (typeof node.attrs.assetId === 'string' ? byId.get(node.attrs.assetId) : undefined) ?? bySource.get(node.attrs.src)
     if ((!rebase || rebase.from !== node.attrs.src) && !clearAssets) return
-    transaction.setNodeMarkup(position, undefined, { ...node.attrs, ...(clearAssets ? { assetUrl: null } : {}), ...(rebase && rebase.from === node.attrs.src ? { internal: false, src: rebase.to } : {}) })
+    const changesSource = Boolean(rebase && rebase.from === node.attrs.src)
+    sourceChanged ||= changesSource
+    transaction.setNodeMarkup(position, undefined, { ...node.attrs, ...(clearAssets ? { assetUrl: null } : {}), ...(changesSource ? { internal: false, src: rebase?.to } : {}) })
   })
-  if (transaction.docChanged) editor.view.dispatch(transaction.setMeta('addToHistory', false))
+  if (transaction.docChanged) {
+    transaction.setMeta('addToHistory', false)
+    if (!sourceChanged) transaction.setMeta(IMAGE_RUNTIME_TRANSACTION_META, true)
+    editor.view.dispatch(transaction)
+  }
 }
 
 function RenameDecision({ onCancel, onSave }: { readonly onCancel: () => void; readonly onSave: () => void }) {

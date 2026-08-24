@@ -647,6 +647,74 @@
   margin: 8px;
 }
 
+.table-actions > button,
+.image-actions > button,
+.move-controller button {
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.move-drag-handle {
+  display: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+@media (any-pointer: fine) {
+  .move-drag-handle {
+    display: inline-block;
+  }
+}
+
+.move-drag-handle:active {
+  cursor: grabbing;
+}
+
+.move-controller {
+  position: sticky;
+  z-index: 11;
+  bottom: 56px;
+  display: grid;
+  width: min(560px, calc(100% - 16px));
+  max-height: min(240px, calc(100vh - 16px));
+  gap: 6px;
+  padding: 8px;
+  margin: 8px;
+  overflow: auto;
+  border: 1px solid var(--mz-border);
+  border-radius: 8px;
+  color: var(--mz-text);
+  background: var(--mz-surface);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 20%);
+}
+
+.move-controller p {
+  margin: 0;
+}
+
+.move-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.move-controls button {
+  min-height: 32px;
+}
+
+.ProseMirror [data-move-source] {
+  outline: 2px dashed var(--mz-focus);
+  outline-offset: 2px;
+}
+
+.ProseMirror [data-move-target] {
+  box-shadow: inset 0 3px 0 var(--mz-focus);
+}
+
+.ProseMirror [data-move-target="after"] {
+  box-shadow: inset 0 -3px 0 var(--mz-focus);
+}
+
 .table-actions-menu {
   right: 8px;
   bottom: 48px;
@@ -777,6 +845,7 @@
   .search-panel,
   .link-surface,
   .image-popover,
+  .move-controller,
   .table-actions-menu,
   .search-match,
   .search-match-current {
@@ -800,6 +869,13 @@
 
   .ProseMirror [data-markzen-image] {
     border-color: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .ProseMirror [data-move-source],
+  .ProseMirror [data-move-target] {
+    outline-color: Highlight;
+    box-shadow: inset 0 3px 0 Highlight;
     forced-color-adjust: none;
   }
 

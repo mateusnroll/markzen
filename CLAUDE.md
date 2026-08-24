@@ -78,3 +78,4 @@ Corollaries:
 
 - A fresh worktree is stale until proven otherwise. Fetch `origin`, compare with `origin/main`, and rebase before starting if the base moved.
 - Preserve unrelated worktree changes and never use destructive resets to solve local conflicts.
+- A pull request that changes the user-visible interface must include a screenshot of the change in the PR description or a PR comment. Upload the screenshot directly to GitHub; keep temporary captures outside the repository and do not commit them.
