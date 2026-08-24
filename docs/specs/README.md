@@ -7,7 +7,7 @@ The spec is the test plan: every observable in-scope behavior is a numbered acce
 ## Status lifecycle
 
 - **Draft** — still under design; implementation is forbidden.
-- **Approved** — decision-complete, with no open questions, and explicitly approved by the user.
+- **Approved** — decision-complete, with no open questions, and approved under the policy below.
 - **Implemented** — implementation and all mapped tests exist, required verification is green, and the simplicity review is dispositioned. This does not mean released.
 
 If Implemented behavior changes, return the spec to Draft, update and reapprove it, then restore Implemented only after verification passes.
@@ -76,7 +76,7 @@ Tests are named after the AC: `test('AC12: a later edit remains dirty after save
 ## Workflow
 
 1. **Draft** — use [TEMPLATE.md](TEMPLATE.md), resolve decisions, sweep related specs and backlog entries, run an independent simplicity challenge, and leave status Draft.
-2. **Approve** — the user reviews the approval checklist and explicitly changes status to Approved.
+2. **Approve** — someone other than the writer reviews the exact spec digest against the approval checklist, records the approval, and changes status to Approved.
 3. **Implement** — write mapped AC tests first, implement, add required ADRs, and run `npm run verify` plus mapped shell smoke.
 4. **Review** — after the first green verification, run an independent simplicity review, apply or rebut every finding, and rerun required verification after edits.
 5. **Close** — mark Implemented only when every AC passes, required verification is green, and no simplicity finding remains unresolved.
@@ -90,6 +90,15 @@ Tests are named after the AC: `test('AC12: a later edit remains dirty after save
 - Accessibility, security, and privacy have been reviewed and expressed as ACs where applicable.
 - The independent simplicity challenge is dispositioned; current behavior is necessary, and existing, standard, or native alternatives have been considered.
 - Cross-spec references, backlog entries, and required ADRs are accurate.
+
+## Approval policy
+
+A spec must be approved by someone other than its writer. The approver may be a human or an independent Review Agent.
+
+- Record the writer identity, approver identity, and exact spec digest in the spec.
+- Self-approval is invalid.
+- Approval applies only to the recorded digest. Changing normative content invalidates approval: return the spec to Draft and clear the approver and approval digest until a new approval is recorded.
+- A Review Agent evaluates completeness and fidelity but does not invent unresolved product decisions. A spec with unresolved product decisions remains Draft.
 
 ## Decisions and local research
 

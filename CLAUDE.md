@@ -8,7 +8,7 @@ Markzen is an open-source, cross-platform Markdown editor built with Electron, R
 
 **No feature work without a numbered spec.** The initial rewrite is organized as five linear, verifiable milestones in [docs/specs/](docs/specs/):
 
-1. **Spec** — resolve the behavior, non-goals, numbered acceptance criteria, constraints, and AC-to-test mapping. Status stays **Draft** until the user explicitly marks it **Approved**.
+1. **Spec** — resolve the behavior, non-goals, numbered acceptance criteria, constraints, and AC-to-test mapping. Status stays **Draft** until someone other than the writer approves the exact spec digest. The approver may be a human or an independent Review Agent; record both identities, and invalidate approval after any normative change.
 2. **Implement** — write AC-named tests first, implement the behavior, record durable architecture in ADRs, and run verification.
 3. **Close** — when every mapped test and required verification passes and every simplicity finding is resolved, mark the spec **Implemented**.
 
@@ -18,7 +18,7 @@ The five rewrite milestones are implemented in order. Later feature work takes t
 
 The repository-local `$polish` skill may make a narrow, uncommitted visual prototype before its numbered spec exists. This exception covers CSS, layout, presentational markup, visible copy, animation, existing-control hover/focus/keyboard behavior, and shell chrome only. It never permits new dependencies, persistence, IPC or preload capabilities, filesystem authority, document semantics, security weakening, or complete feature flows.
 
-A polish session starts from one of two clean baselines: the current non-default implementation branch after its complete `$implement` worktree is committed, or an updated `codex/polish-*` branch for standalone polish. It leaves that baseline `HEAD` unchanged during prototyping: no prototype commit or push is allowed. When the user explicitly finishes, the diff is research for a retroactive Draft, not approved behavior. The user must approve that spec before the prototype can become implementation. AC-named tests must then be shown to fail against the unchanged starting `HEAD` in a disposable worktree, pass with the retained implementation, and complete the normal verification and simplicity gates. Publication from an implementation baseline updates that same branch and PR rather than opening a second PR that republishes its commits. If approval is withheld, the prototype stays uncommitted and is not implementation.
+A polish session starts from one of two clean baselines: the current non-default implementation branch after its complete `$implement` worktree is committed, or an updated `codex/polish-*` branch for standalone polish. It leaves that baseline `HEAD` unchanged during prototyping: no prototype commit or push is allowed. When the user explicitly finishes, the diff is research for a retroactive Draft, not approved behavior. Someone other than the spec writer must approve the exact spec digest before the prototype can become implementation. AC-named tests must then be shown to fail against the unchanged starting `HEAD` in a disposable worktree, pass with the retained implementation, and complete the normal verification and simplicity gates. Publication from an implementation baseline updates that same branch and PR rather than opening a second PR that republishes its commits. If approval is withheld, the prototype stays uncommitted and is not implementation.
 
 Scenario routing is strict:
 

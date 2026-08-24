@@ -1,6 +1,9 @@
 # Spec NNNN: <Feature or Milestone>
 
 **Status:** Draft | Approved | Implemented   **Date:** YYYY-MM
+**Writer:** <identity>
+**Approver:** <identity; blank until approved>
+**Approval digest:** <exact spec digest; blank until approved>
 **Origin:** <optional: earlier spec, old-repo behavior, ADR, or prior art>
 
 <!-- Formatting: keep each prose paragraph, list item, constraint, and AC on one physical source line. Do not hard-wrap prose or use trailing spaces/backslashes to force line breaks. Use blank lines only between intentional paragraphs or blocks. -->

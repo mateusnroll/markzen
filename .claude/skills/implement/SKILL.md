@@ -12,12 +12,13 @@ Turn an Approved behavior contract into passing tests and working code.
 Read `CLAUDE.md`, `docs/specs/README.md`, and the target spec. Stop before changing code if:
 
 - Status is not **Approved**.
+- The writer identity, different approver identity, or approval digest is missing.
 - Open questions is non-empty.
 - An AC lacks exactly one primary test mapping.
 - Normative behavior remains outside numbered ACs.
 - For rewrite milestones 0002–0005, the previous milestone is not **Implemented**.
 
-An uncommitted `$polish` prototype is allowed only when it satisfies the exception in `CLAUDE.md`: its topic branch still points at the clean starting `HEAD`, it contains no forbidden capability or data changes, and the user approved the retroactive spec after the prototype was frozen.
+An uncommitted `$polish` prototype is allowed only when it satisfies the exception in `CLAUDE.md`: its topic branch still points at the clean starting `HEAD`, it contains no forbidden capability or data changes, and someone other than the spec writer approved the exact retroactive spec digest after the prototype was frozen.
 
 ## Steps
 
@@ -31,7 +32,7 @@ An uncommitted `$polish` prototype is allowed only when it satisfies the excepti
 
 5. **Run the simplicity gate.** After the first green verification, give a fresh independent agent `CLAUDE.md`, `docs/specs/README.md`, the Approved spec, the implementation diff against its starting base, and relevant source; do not provide the implementer's rationale. Have it use `$review-simplicity`. The reviewer reports findings and never edits files. Apply each valid cut or rebut it in one sentence with the AC or constraint that requires the complexity. No finding may remain unresolved.
 
-6. **Correct the contract when needed.** If an AC is wrong or a proposed simplification changes Approved behavior, return the spec to Draft, agree on revised behavior with the user, update tests and spec together, and obtain approval again.
+6. **Correct the contract when needed.** If an AC is wrong or a proposed simplification changes Approved behavior, return the spec to Draft, clear the approver and approval digest, resolve the revised behavior, update tests and spec together, and obtain approval of the new exact digest from someone other than the writer.
 
 7. **Verify the reviewed result.** After simplicity edits, rerun the complete verification required by step 4. Run one more fresh simplicity review only when remediation introduced a dependency, abstraction, or material design.
 
