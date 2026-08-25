@@ -13,7 +13,7 @@ test('AC39 AC40: 50,000-file finder and 100-tab switcher publish non-blocking me
   for (const query of ['file-49999', 'f499', 'fle 499', 'résumé', 'missing']) {
     const started = performance.now()
     await finder.getByRole('searchbox').fill(query)
-    await expect(finder.getByTestId('file-finder-status')).toBeVisible()
+    await expect(finder.getByTestId('file-finder-status')).toHaveAttribute('data-query', query)
     report[`query-${query}`] = performance.now() - started
   }
   await page.keyboard.press('Escape')

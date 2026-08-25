@@ -52,6 +52,7 @@ describe('spec 0014 quick-open surfaces', () => {
     await vi.waitFor(() => expect(document.querySelectorAll('[role="option"]')).toHaveLength(2))
     await userEvent.keyboard('{ArrowDown}')
     expect(document.querySelector('[aria-selected="true"]')?.textContent).toContain('beta.md')
+    expect(input.getAttribute('aria-activedescendant')).toBe('file-finder-option-1')
     await userEvent.keyboard('{Control>}{Enter}{/Control}')
     expect(activate).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'beta.md' }), true)
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('Blocked draft')
@@ -60,19 +61,47 @@ describe('spec 0014 quick-open surfaces', () => {
   test('AC27-AC34: tab switcher exposes MRU rows and commits or cancels the selected live tab', async () => {
     const activate = vi.fn(() => true)
     const close = vi.fn()
+    const tabs = [
+      { dirty: false, id: asTabId('two'), label: 'two.md', preview: false, secondaryPath: 'notes' },
+      { dirty: true, id: asTabId('one'), label: 'one.md', preview: true, secondaryPath: 'drafts' },
+    ]
     await render(<TabSwitcherDialog
       onActivate={activate}
       onClose={close}
-      tabs={[
-        { dirty: false, id: asTabId('two'), label: 'two.md', preview: false, secondaryPath: 'notes' },
-        { dirty: true, id: asTabId('one'), label: 'one.md', preview: true },
-      ]}
+      tabs={tabs}
     />)
     expect(document.querySelectorAll('[role="option"]')).toHaveLength(2)
     expect(document.querySelector('[aria-selected="true"]')?.textContent).toContain('two.md')
-    await userEvent.keyboard('{ArrowDown}{Enter}')
+    expect(document.querySelector('[role="listbox"]')?.getAttribute('aria-activedescendant')).toBe('tab-switcher-option-0')
+    expect(document.querySelectorAll('[role="option"]')[1]?.textContent).toContain('one.md (unsaved changes)drafts · Preview')
+    root?.render(<TabSwitcherDialog advanceRequest={1} onActivate={activate} onClose={close} tabs={tabs} />)
+    await vi.waitFor(() => expect(document.querySelector('[aria-selected="true"]')?.textContent).toContain('one.md'))
+    await userEvent.keyboard('{Enter}')
     expect(activate).toHaveBeenCalledWith(asTabId('one'))
     expect(close).toHaveBeenCalled()
+  })
+
+  test('AC31 AC32: a blocked tab commit remains open and announces the actionable reason', async () => {
+    await render(<TabSwitcherDialog
+      onActivate={() => 'Complete or cancel the current JSON edit before switching tabs.'}
+      onClose={vi.fn()}
+      tabs={[{ dirty: true, id: asTabId('one'), label: 'one.json', preview: false }]}
+    />)
+    await userEvent.keyboard('{Enter}')
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Complete or cancel')
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  test('AC12 AC19: a new index generation reruns the current finder query', async () => {
+    const query = vi.fn(async () => outcome)
+    const props = { onActivate: async () => ({ ok: true as const }), onClose: vi.fn(), onQuery: query }
+    await render(<FileFinderDialog {...props} status={{ generation: 1, kind: 'indexing' }} />)
+    await userEvent.type(document.querySelector<HTMLInputElement>('[data-testid="file-finder-input"]')!, 'guide')
+    await vi.waitFor(() => expect(query).toHaveBeenLastCalledWith('guide'))
+    const callsBeforeRefresh = query.mock.calls.length
+    root?.render(<FileFinderDialog {...props} status={{ generation: 2, kind: 'ready' }} />)
+    await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(callsBeforeRefresh + 1))
+    expect(query).toHaveBeenLastCalledWith('guide')
   })
 
   test('AC35 AC36: finder and switcher retain dialog/listbox semantics and serious accessibility is green', async () => {

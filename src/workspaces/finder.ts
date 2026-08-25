@@ -36,7 +36,7 @@ export class WorkspaceFinder {
     this.rootOrder = new Map(roots.map((root, index) => [root.rootId, index]))
     for (const root of roots) {
       try {
-        await this.scan(root.rootId, '', collected)
+        if (!(await this.scan(root.rootId, '', collected, operation))) return
       } catch {
         incomplete.push(root.rootId)
       }
@@ -92,14 +92,18 @@ export class WorkspaceFinder {
     this.snapshot = undefined
   }
 
-  private async scan(rootId: RootId, relativePath: string, collected: FinderEntry[]): Promise<void> {
+  private async scan(rootId: RootId, relativePath: string, collected: FinderEntry[], operation: number): Promise<boolean> {
     const entries = await this.list(rootId, relativePath)
+    if (this.disposed || operation !== this.operation) return false
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue
       const child = relativePath ? `${relativePath}/${entry.name}` : entry.name
-      if (entry.kind === 'directory') await this.scan(rootId, child, collected)
+      if (entry.kind === 'directory') {
+        if (!(await this.scan(rootId, child, collected, operation))) return false
+      }
       else if (entry.kind !== 'directory-symlink') collected.push({ fileKey: entry.fileKey, relativePath: child, rootId })
     }
+    return true
   }
 
   private compareEntries(left: FinderEntry, right: FinderEntry): number {

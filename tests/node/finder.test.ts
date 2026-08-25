@@ -89,6 +89,17 @@ describe('spec 0014 workspace finder', () => {
     resolvePending([file('late.md', 'late')])
     await rebuilding
     expect(delayed.query('late').results).toEqual([])
+
+    let releaseSuperseded!: (entries: readonly DirectoryEntry[]) => void
+    const traversed = vi.fn((_: RootId, relativePath: string) => relativePath === ''
+      ? new Promise<readonly DirectoryEntry[]>((resolve) => { releaseSuperseded = resolve })
+      : Promise.resolve([file('obsolete.md', 'obsolete')]))
+    const superseded = new WorkspaceFinder(traversed)
+    const obsolete = superseded.rebuild([{ rootId: rootOne }])
+    const replacement = superseded.rebuild([])
+    releaseSuperseded([file('late-directory', 'late-directory', 'directory')])
+    await Promise.all([obsolete, replacement])
+    expect(traversed).not.toHaveBeenCalledWith(rootOne, 'late-directory')
     current = [file('new.md', 'new')]
   })
 

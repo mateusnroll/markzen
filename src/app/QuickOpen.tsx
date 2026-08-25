@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type Co
 import type { FinderQueryOutcome, FinderResultPayload, FinderStatusPayload, TabId } from '../platform/contracts'
 import { useOverlaySurface } from './overlays'
 
-type Activation = { readonly ok: true } | { readonly message: string; readonly ok: false }
+type Activation = { readonly ok: true } | { readonly message?: string; readonly ok: false }
 
 export function FileFinderDialog({
   onActivate,
@@ -22,25 +22,36 @@ export function FileFinderDialog({
   const input = useRef<HTMLInputElement>(null)
   const composing = useRef(false)
   const request = useRef(0)
+  const queryValue = useRef('')
+  const restoreOrigin = useRef(true)
   const [outcome, setOutcome] = useState<FinderQueryOutcome>({ ...status, results: [], total: 0 })
   const [selected, setSelected] = useState(0)
   const [error, setError] = useState<string>()
+  const [completedQuery, setCompletedQuery] = useState('')
   useOverlaySurface('file-finder', true, true, close)
 
   useLayoutEffect(() => { input.current?.focus() }, [])
-  useEffect(() => () => { requestAnimationFrame(() => origin.current?.isConnected && origin.current.focus()) }, [])
-  useEffect(() => setOutcome((current) => ({ ...current, ...status })), [status])
+  useEffect(() => () => {
+    if (restoreOrigin.current) requestAnimationFrame(() => origin.current?.isConnected && origin.current.focus())
+  }, [])
+  useEffect(() => {
+    setOutcome((current) => ({ ...current, ...status }))
+    if (queryValue.current.trim()) void query(queryValue.current)
+  }, [status.generation, status.kind])
 
   function close(): void { if (origin.current?.isConnected) origin.current.focus(); onClose() }
   async function query(value: string): Promise<void> {
+    queryValue.current = value
     const token = ++request.current
     const next = await onQuery(value)
     if (token !== request.current) return
     setOutcome(next)
+    setCompletedQuery(value)
     setSelected(0)
     setError(undefined)
   }
   function change(event: ChangeEvent<HTMLInputElement>): void {
+    queryValue.current = event.currentTarget.value
     if (!composing.current) void query(event.currentTarget.value)
   }
   function compositionEnd(event: CompositionEvent<HTMLInputElement>): void {
@@ -51,8 +62,8 @@ export function FileFinderDialog({
     const entry = outcome.results[selected]
     if (!entry) return
     const result = await onActivate(entry, pinned)
-    if (result.ok) close()
-    else setError(result.message)
+    if (result.ok) { restoreOrigin.current = false; onClose() }
+    else if (result.message) setError(result.message)
   }
   function keyDown(event: KeyboardEvent<HTMLInputElement>): void {
     if (event.nativeEvent.isComposing) return
@@ -75,6 +86,7 @@ export function FileFinderDialog({
   return (
     <div aria-label="Go to File" aria-modal="true" className="quick-open" data-testid="file-finder-dialog" onKeyDown={trapTab} role="dialog">
       <input
+        aria-activedescendant={outcome.results[selected] ? `file-finder-option-${selected}` : undefined}
         aria-controls="file-finder-results"
         aria-label="Search workspace files"
         data-testid="file-finder-input"
@@ -93,6 +105,7 @@ export function FileFinderDialog({
             aria-posinset={index + 1}
             aria-setsize={outcome.total}
             data-testid="file-finder-result"
+            id={`file-finder-option-${index}`}
             key={`${entry.rootId}:${entry.relativePath}`}
             onClick={() => { setSelected(index); void activate(false) }}
             onMouseEnter={() => setSelected(index)}
@@ -103,7 +116,7 @@ export function FileFinderDialog({
           </button>
         ))}
       </div>
-      <p aria-live="polite" data-testid="file-finder-status">{statusText}</p>
+      <p aria-live="polite" data-query={completedQuery} data-testid="file-finder-status">{statusText}</p>
       {error ? <p role="alert">{error}</p> : null}
       <div className="quick-open-actions">
         <button data-testid="file-finder-keep-open" disabled={!outcome.results[selected]} onClick={() => { void activate(true) }} type="button">Keep Open</button>
@@ -121,21 +134,37 @@ export type TabSwitcherEntry = {
   readonly secondaryPath?: string
 }
 
-export function TabSwitcherDialog({ onActivate, onClose, releaseToActivate = false, tabs }: {
-  readonly onActivate: (id: TabId) => boolean
+export function TabSwitcherDialog({ advanceRequest = 0, onActivate, onClose, releaseToActivate = false, tabs }: {
+  readonly advanceRequest?: number
+  readonly onActivate: (id: TabId) => boolean | string
   readonly onClose: () => void
   readonly releaseToActivate?: boolean
   readonly tabs: readonly TabSwitcherEntry[]
 }) {
   const origin = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : undefined)
-  const dialog = useRef<HTMLDivElement>(null)
+  const listbox = useRef<HTMLDivElement>(null)
+  const handledAdvance = useRef(advanceRequest)
   const [selected, setSelected] = useState(0)
+  const [error, setError] = useState<string>()
   useOverlaySurface('tab-switcher', true, true, onClose)
-  const commit = () => { const tab = tabs[selected]; if (tab && onActivate(tab.id)) onClose() }
-  useEffect(() => { dialog.current?.focus() }, [])
+  const commit = () => {
+    const tab = tabs[selected]
+    if (!tab) return
+    const result = onActivate(tab.id)
+    if (result === true) onClose()
+    else setError(typeof result === 'string' ? result : 'This tab cannot be activated until the current edit is complete.')
+  }
+  const commitRef = useRef(commit)
+  commitRef.current = commit
+  useEffect(() => { listbox.current?.focus() }, [])
+  useEffect(() => {
+    if (handledAdvance.current === advanceRequest) return
+    handledAdvance.current = advanceRequest
+    setSelected((current) => current >= tabs.length - 1 ? 0 : current + 1)
+  }, [advanceRequest, tabs.length])
   useEffect(() => {
     if (!releaseToActivate) return
-    const release = (event: globalThis.KeyboardEvent) => { if (event.key === 'Control') commit() }
+    const release = (event: globalThis.KeyboardEvent) => { if (event.key === 'Control') commitRef.current() }
     window.addEventListener('keyup', release, true)
     return () => window.removeEventListener('keyup', release, true)
   })
@@ -151,14 +180,15 @@ export function TabSwitcherDialog({ onActivate, onClose, releaseToActivate = fal
     event.preventDefault()
   }
   return (
-    <div aria-label="Switch Tab" aria-modal="true" className="quick-open" onKeyDown={(event) => { keyDown(event); trapTab(event) }} ref={dialog} role="dialog" tabIndex={-1}>
-      <div aria-label="Open tabs" role="listbox">
+    <div aria-label="Switch Tab" aria-modal="true" className="quick-open" onKeyDown={(event) => { keyDown(event); trapTab(event) }} role="dialog">
+      <div aria-activedescendant={tabs[selected] ? `tab-switcher-option-${selected}` : undefined} aria-label="Open tabs" ref={listbox} role="listbox" tabIndex={0}>
         {tabs.map((tab, index) => (
-          <button aria-posinset={index + 1} aria-selected={index === selected} aria-setsize={tabs.length} data-testid="tab-switcher-result" key={tab.id} onClick={() => { if (onActivate(tab.id)) onClose() }} onMouseEnter={() => setSelected(index)} role="option" type="button">
-            <span>{tab.label}{tab.dirty ? ' •' : ''}</span><small>{tab.secondaryPath ?? (tab.preview ? 'Preview' : '')}</small>
+          <button aria-posinset={index + 1} aria-selected={index === selected} aria-setsize={tabs.length} data-testid="tab-switcher-result" id={`tab-switcher-option-${index}`} key={tab.id} onClick={() => { setSelected(index); const result = onActivate(tab.id); if (result === true) onClose(); else setError(typeof result === 'string' ? result : 'This tab cannot be activated until the current edit is complete.') }} onMouseEnter={() => setSelected(index)} role="option" type="button">
+            <span>{tab.label}{tab.dirty ? ' (unsaved changes)' : ''}</span><small>{[tab.secondaryPath, tab.preview ? 'Preview' : undefined].filter(Boolean).join(' · ')}</small>
           </button>
         ))}
       </div>
+      {error ? <p role="alert">{error}</p> : null}
       <div className="quick-open-actions">
         <button data-testid="tab-switcher-activate" disabled={!tabs[selected]} onClick={commit} type="button">Switch</button>
         <button data-testid="tab-switcher-close" onClick={onClose} type="button">Close</button>
