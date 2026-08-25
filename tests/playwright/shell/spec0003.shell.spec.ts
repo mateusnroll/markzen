@@ -51,7 +51,7 @@ test('AC6 AC78 AC130 AC139: native folder commands and the preload expose only n
     }))
     expect(surface.root).toEqual(['asset', 'bootstrap', 'document', 'openExternal', 'settings', 'version', 'window', 'workspace'])
     expect(surface.settings).toEqual(['onAppearance', 'onSnapshot', 'onWarning', 'patch', 'retry'])
-    expect(surface.workspace).toEqual(['addFolder', 'list', 'onEvent', 'open', 'retryRoot'])
+    expect(surface.workspace).toEqual(['addFolder', 'list', 'onEvent', 'open', 'queryFiles', 'retryRoot'])
     const menu = await callMain<readonly MenuItem[]>(app, 'getApplicationMenuSnapshot', [process.platform])
     const items = flatten(menu)
     expect(items.find((item) => item.label === 'Open Folder…')?.accelerator).toBe('CmdOrCtrl+Shift+O')

@@ -3,6 +3,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -120,7 +121,7 @@ export function JsonTree({
     scroll.scrollTop = viewport.scrollTop
   }, [editor])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
     const measure = () => {

@@ -88,6 +88,7 @@ import { MAX_RASTER_BYTES, validateRaster } from '../../assets/raster'
 import { classifyDocumentName, documentKindAllowsWrite, GENERIC_TEXT_EXTENSIONS, RASTER_EXTENSIONS, rasterDisplayMetadata, SPECIALIZED_DOCUMENT_EXTENSIONS } from '../../documents/file-types'
 import { parseTextBytes, textPreservationMessage } from '../../documents/text'
 import { MAX_ACQUIRED_IMAGE_BYTES } from '../../assets/image-sources'
+import { WorkspaceFinder, validateFinderQueryRequest } from '../../workspaces/finder'
 
 type WindowRecord = {
   closeApproved: boolean
@@ -147,6 +148,7 @@ const MAX_DOCUMENT_TRANSFER_BYTES = 32 * 1_048_576
 const workspaceRoots = new RootRegistry()
 const workspaceSnapshots = new Map<string, readonly DirectoryEntry[]>()
 const workspaceGenerations = new Map<string, number>()
+const workspaceFinders = new Map<WindowId, WorkspaceFinder>()
 const pendingFolderWindows = new Set<string>()
 const externalRequests = new ExternalRequestRegistry<WindowId>()
 const imageAcquisition = new ImageAcquisitionService({ registry: assetRegistry })
@@ -367,10 +369,12 @@ function updateMenuEnablement(): void {
     'close-tab': Boolean(state?.tabs.length),
     'close-window': Boolean(record),
     find: Boolean(active && activeWritable && !active.preservation),
+    'go-to-file': record?.kind === 'workspace',
     save: Boolean(activeWritable && active?.dirty),
     'save-all': Boolean(state?.tabs.some((tab) => tab.dirty && documentKindAllowsWrite(documents.get(tab.tabId)?.kind ?? 'external'))),
     'save-as': Boolean(activeWritable && active?.titleValid),
     settings: Boolean(record),
+    'switch-tab': Boolean(state && state.tabs.length > 1),
   }
   for (const [id, value] of Object.entries(enabled)) {
     const item = menu.getMenuItemById(`markzen-${id}`)
@@ -532,6 +536,7 @@ function registerIpcHandlers(): void {
   }))
   ipcMain.handle(channels.bootstrap, (event, payload) => withWindow(event, payload, (record) => ok<BootstrapPayload>({
     appearance: effectiveAppearance(),
+    ...(record.kind === 'workspace' ? { finderStatus: workspaceFinder(record).status() } : {}),
     ...(record.initialDocumentKind ? { initialDocumentKind: record.initialDocumentKind } : {}),
     kind: record.kind,
     platformName: normalizePlatform(process.platform),
@@ -684,6 +689,12 @@ function registerIpcHandlers(): void {
       file: filePayload(document, { ...read.value, path: resolved.value.logical }),
       kind: 'opened',
     })
+  }))
+  ipcMain.handle(channels.workspaceQueryFiles, (event, payload) => withAuthorizedWindow(event, (record) => {
+    if (record.kind !== 'workspace') return fail('ownership')
+    const request = validateFinderQueryRequest(payload)
+    if (!request.ok) return request
+    return ok(workspaceFinder(record).query(request.value.query))
   }))
   ipcMain.handle(channels.workspaceRetryRoot, (event, payload) => withAuthorizedWindow(event, async (record) => {
     const request = validateWorkspaceRetryRequest(payload)
@@ -1024,6 +1035,7 @@ async function acceptWorkspaceRoot(record: WindowRecord, logicalPath: Path): Pro
   if (accepted.kind === 'accepted') {
     workspaceSnapshots.set(key, listed.value)
     await startWorkspaceWatch(record, accepted.root.rootId, logicalPath)
+    void rebuildWorkspaceFinder(record)
   }
   const entries = workspaceSnapshots.get(key) ?? listed.value
   return {
@@ -1067,6 +1079,7 @@ async function startWorkspaceWatch(record: WindowRecord, rootId: RootId, logical
     batcher.invalidate()
   })
   const warn = () => {
+    workspaceFinder(record).markStale(rootId)
     if (!record.window.isDestroyed()) record.window.webContents.send(channels.workspaceEvent, {
       generation: nextWorkspaceGeneration(record.id, rootId, 'watch-error'),
       kind: 'watch-warning',
@@ -1114,6 +1127,7 @@ async function routeWorkspaceInvalidation(record: WindowRecord, rootId: RootId, 
     return
   }
   workspaceSnapshots.set(rootKey(record.id, rootId), listed.value)
+  void rebuildWorkspaceFinder(record)
   record.window.webContents.send(channels.workspaceEvent, {
     generation,
     kind: 'invalidated',
@@ -1141,6 +1155,7 @@ async function refreshWorkspaceRoot(record: WindowRecord, rootId: RootId): Promi
   if (!listed.ok) return { kind: 'error' }
   workspaceSnapshots.set(rootKey(record.id, rootId), listed.value)
   await startWorkspaceWatch(record, rootId, root.path)
+  void rebuildWorkspaceFinder(record)
   return { kind: 'duplicate', root: { entries: listed.value, path: root.path, rootId } }
 }
 
@@ -1212,6 +1227,28 @@ function nextWorkspaceGeneration(windowId: WindowId, rootId: RootId, operation: 
 
 function rootKey(windowId: WindowId, rootId: RootId): string {
   return `${windowId}:${rootId}`
+}
+
+function workspaceFinder(record: WindowRecord): WorkspaceFinder {
+  const existing = workspaceFinders.get(record.id)
+  if (existing) return existing
+  const finder = new WorkspaceFinder(async (rootId, relativePath) => {
+    const root = workspaceRoots.get(record.id, rootId)
+    if (!root || record.window.isDestroyed()) throw new Error('Workspace root is unavailable')
+    const resolved = await resolveWorkspacePath(root.path, root.fileKey, relativePath, 'directory')
+    if (!resolved.ok) throw new Error(resolved.error.code)
+    const listed = await new RealFileSystem().list(resolved.value.logical)
+    if (!listed.ok) throw new Error(listed.error.code)
+    return listed.value
+  }, (status) => {
+    if (!record.window.isDestroyed()) record.window.webContents.send(channels.workspaceEvent, { kind: 'finder-status', status })
+  })
+  workspaceFinders.set(record.id, finder)
+  return finder
+}
+
+function rebuildWorkspaceFinder(record: WindowRecord): Promise<void> {
+  return workspaceFinder(record).rebuild(workspaceRoots.values(record.id))
 }
 
 function isPristineWindow(record: WindowRecord): boolean {
@@ -1896,6 +1933,8 @@ function bindWindowEvents(record: WindowRecord): void {
       workspaceSnapshots.delete(key)
     }
     workspaceRoots.disposeWindow(record.id)
+    workspaceFinders.get(record.id)?.dispose()
+    workspaceFinders.delete(record.id)
     menuStates.delete(record.id)
     owners.dispose(record.id)
   })

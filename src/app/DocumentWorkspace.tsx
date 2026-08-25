@@ -18,7 +18,11 @@ import { createDocumentExtensions, type RichDocument } from '../documents/markdo
 import { acceptTabBaseline, createTabBaseline, editTabDocument, editTabTitle, isTabDirty } from '../documents/tab-state'
 import {
   asTabId,
+  asPath,
   type DirectoryEntry,
+  type FinderQueryOutcome,
+  type FinderStatusPayload,
+  type FinderResultPayload,
   type DiskVersion,
   type ExternalOpenResult,
   type FileKey,
@@ -26,7 +30,7 @@ import {
   type RootId,
   type ToolbarMode,
 } from '../platform/contracts'
-import { insertPinnedBeforePreview, preparePreviewReplacement } from '../workspaces/state'
+import { disambiguateRootLabels, insertPinnedBeforePreview, preparePreviewReplacement } from '../workspaces/state'
 import { WorkspaceSidebar, type WorkspaceRootSeed } from './WorkspaceSidebar'
 import { LinkActions, type LinkActionsHandle } from './LinkActions'
 import { ImageActions, IMAGE_RUNTIME_TRANSACTION_META, imageKeyboardHandler, type ImageActionsHandle } from './ImageActions'
@@ -40,6 +44,7 @@ import { commitJsonDraft, JsonTree } from './JsonTree'
 import { createTextEditor, textFromEditor } from '../documents/text-editor'
 import type { TextDocument } from '../documents/text'
 import type { RasterDisplayMetadata } from '../documents/file-types'
+import { FileFinderDialog, TabSwitcherDialog } from './QuickOpen'
 
 import './document.css'
 
@@ -66,9 +71,11 @@ export type DocumentWorkspaceFolder = {
   readonly forcedColors: boolean
   readonly invalidation?: { readonly generation: number; readonly path: Path; readonly rootId: RootId }
   readonly onList: (rootId: RootId, path: Path) => Promise<readonly DirectoryEntry[]>
+  readonly onQueryFiles: (query: string) => Promise<FinderQueryOutcome>
   readonly onWidthChange: (width: number) => void
   readonly reducedMotion: boolean
   readonly roots: readonly WorkspaceRootSeed[]
+  readonly finderStatus: FinderStatusPayload
   readonly width: number
 }
 
@@ -100,6 +107,7 @@ type WritableWorkspaceTab = WorkspaceTabBase & {
 type WorkspaceTab = WritableWorkspaceTab
   | (WorkspaceTabBase & { readonly kind: 'raster'; readonly raster: RasterDisplayMetadata & { readonly url: string } })
   | (WorkspaceTabBase & { readonly kind: 'external'; readonly limitation: string })
+type WorkspaceOpenDisposition = 'blocked' | 'elsewhere' | 'failed' | 'opened' | 'stale'
 
 const emptyDocument: JSONContent = { content: [{ type: 'paragraph' }], type: 'doc' }
 
@@ -141,6 +149,11 @@ export function DocumentWorkspace({
   const searchBookmark = useRef<SelectionBookmark | undefined>(undefined)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchRequest, setSearchRequest] = useState(0)
+  const [finderOpen, setFinderOpen] = useState(false)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [switcherAdvanceRequest, setSwitcherAdvanceRequest] = useState(0)
+  const recentTabs = useRef<string[]>([])
+  const switcherEditorOrigin = useRef(false)
 
   const updateDocument = useCallback((id: string, editor: Editor) => {
     const baseline = baselineDocuments.current.get(id)
@@ -292,6 +305,13 @@ export function DocumentWorkspace({
   const tabsRef = useRef(tabs)
   tabsRef.current = tabs
   const [activeId, setActiveId] = useState(seeds[0]?.id ?? '')
+
+  useEffect(() => {
+    if (!activeId) return
+    const live = tabs.map((tab) => tab.id)
+    const known = recentTabs.current.filter((id) => id !== activeId && live.includes(id))
+    recentTabs.current = [activeId, ...known, ...live.filter((id) => id !== activeId && !known.includes(id))]
+  }, [activeId, tabs])
   const [rovingId, setRovingId] = useState(seeds[0]?.id ?? '')
 
   useEffect(() => {
@@ -306,10 +326,11 @@ export function DocumentWorkspace({
   }, [])
 
   const active = tabs.find((tab) => tab.id === activeId)
-  const activeIndex = tabs.findIndex((tab) => tab.id === activeId)
   const secondaryPath = useMemo(() => active?.secondaryPath ?? (active?.path && workspace
     ? workspaceSecondaryPath(active.path, workspace.roots)
     : undefined), [active?.path, active?.secondaryPath, workspace])
+  const finderRootLabels = useMemo(() => new Map((workspace ? disambiguateRootLabels(workspace.roots.map((root) => String(root.path))) : [])
+    .map((label, index) => [workspace!.roots[index]!.rootId, label])), [workspace])
 
   const dirty = useCallback(
     (tab: WorkspaceTab) => {
@@ -335,6 +356,8 @@ export function DocumentWorkspace({
   const openSearch = useCallback(() => {
     if (!active || active.preservation || active.kind === 'raster' || active.kind === 'external') return
     if (!searchOpen) searchBookmark.current = active.editor.state.selection.getBookmark()
+    setFinderOpen(false)
+    setSwitcherOpen(false)
     setSearchOpen(true)
     setSearchRequest((value) => value + 1)
   }, [active, searchOpen])
@@ -428,24 +451,29 @@ export function DocumentWorkspace({
     void gateway.createTabId(kind).then(append)
   }, [active, gateway, makeTab])
 
-  const activateFromEditor = useCallback(
-    (offset: number) => {
-      if (tabs.length < 2 || activeIndex < 0) return
-      if (active && !commitStructuredDraft(active)) return
-      const next = tabs[(activeIndex + offset + tabs.length) % tabs.length]
-      if (!next) return
-      setActiveId(next.id)
-      setRovingId(next.id)
-      requestAnimationFrame(() => focusTabEditor(next))
-    },
-    [active, activeIndex, tabs],
-  )
+  const openFinder = useCallback(() => {
+    if (!workspace || document.querySelector('dialog[open]')) return
+    setSearchOpen(false)
+    setSwitcherOpen(false)
+    setFinderOpen(true)
+  }, [workspace])
+
+  const openSwitcher = useCallback((origin: EventTarget | null) => {
+    if (tabs.length < 2 || document.querySelector('dialog[open]')) return
+    switcherEditorOrigin.current = origin instanceof Element && Boolean(origin.closest('.ProseMirror'))
+    setSearchOpen(false)
+    setFinderOpen(false)
+    setSwitcherAdvanceRequest(0)
+    setSwitcherOpen(true)
+  }, [tabs.length])
 
   const handleWorkspaceKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       const modifier = event.metaKey || event.ctrlKey
       if (modifier && event.key === ',') {
         event.preventDefault()
+        setFinderOpen(false)
+        setSwitcherOpen(false)
         onSettingsRequest?.()
         return
       }
@@ -455,11 +483,6 @@ export function DocumentWorkspace({
         return
       }
       if (!(event.target instanceof Element) || !event.target.closest('.ProseMirror')) return
-      if (event.ctrlKey && event.key === 'Tab') {
-        event.preventDefault()
-        activateFromEditor(event.shiftKey ? -1 : 1)
-        return
-      }
       if (event.key === 'ArrowUp' && active && isWritableTab(active) && active.editor.state.selection.from === 1) {
         event.preventDefault()
         const title = document.querySelector<HTMLInputElement>('[data-testid="document-title"]')
@@ -467,8 +490,23 @@ export function DocumentWorkspace({
         title?.setSelectionRange(title.value.length, title.value.length)
       }
     },
-    [activateFromEditor, active, onSettingsRequest, openSearch],
+    [active, onSettingsRequest, openSearch],
   )
+
+  useEffect(() => {
+    const openQuickSurface = (event: globalThis.KeyboardEvent) => {
+      if (event.isComposing) return
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p' && workspace) {
+        event.preventDefault()
+        openFinder()
+      } else if (event.ctrlKey && event.key === 'Tab' && tabs.length > 1) {
+        event.preventDefault()
+        if (!switcherOpen) openSwitcher(event.target)
+      }
+    }
+    window.addEventListener('keydown', openQuickSurface, true)
+    return () => window.removeEventListener('keydown', openQuickSurface, true)
+  }, [openFinder, openSwitcher, switcherOpen, tabs.length, workspace])
 
   const titleValidation = useMemo(
     () => (!active || (!active.title && !active.baselineTitle) ? { valid: true as const } : validateDocumentName(active.title)),
@@ -559,102 +597,104 @@ export function DocumentWorkspace({
     })()
   }, [active, dirty, gateway, makeTab, tabs])
 
-  const openWorkspaceEntry = useCallback((entry: DirectoryEntry, pinned: boolean, rootId: RootId) => {
+  const openWorkspaceEntry = useCallback(async (entry: DirectoryEntry, pinned: boolean, rootId: RootId): Promise<WorkspaceOpenDisposition> => {
     const current = tabsRef.current.find((tab) => tab.id === activeId)
-    if (current && !commitStructuredDraft(current)) return
+    if (current && !commitStructuredDraft(current)) return 'blocked'
     const activation = ++activationIntent.current
-    void (async () => {
+    setWorkspaceRetry(undefined)
+    const previousActiveId = activeId
+    const existing = tabsRef.current.find((tab) => tab.fileKey === entry.fileKey)
+    if (existing) {
+      if (pinned) pinTab(existing.id)
+      setActiveId(existing.id)
+      setRovingId(existing.id)
+      requestAnimationFrame(() => focusTabButton(existing.id))
+      return 'opened'
+    }
+
+    const preview = tabsRef.current.find((tab) => tab.preview)
+    const previewDecision = preparePreviewReplacement(preview ? { dirty: dirty(preview), id: preview.id } : undefined)
+    const reusable = previewDecision.reusableId ? preview : undefined
+    if (preview && previewDecision.pinExisting) pinTab(preview.id)
+    const id = reusable?.id ?? await gateway.createTabId()
+    const generation = (generations.current.get(id) ?? 0) + 1
+    generations.current.set(id, generation)
+    const placeholder = makeTab({
+      fileKey: entry.fileKey,
+      id,
+      path: entry.path,
+      preview: !pinned,
+      title: displaySeedTitle(entry.name),
+    })
+    if (reusable) {
+      setTabs((current) => current.map((tab) => tab.id === reusable.id ? placeholder : tab))
+    } else {
+      setTabs((current) => pinned
+        ? [...insertPinnedBeforePreview(current, placeholder)]
+        : [...current.filter((tab) => !tab.preview), placeholder])
+    }
+    if (activationIntent.current === activation) {
+      setActiveId(id)
+      setRovingId(id)
+    }
+
+    const rootPath = workspace?.roots.find((root) => root.rootId === rootId)?.path
+    if (!rootPath) return 'failed'
+    const result = await gateway.openWorkspace({
+      fileKey: entry.fileKey,
+      generation,
+      id,
+      path: entry.path,
+      relativePath: logicalRelativePath(rootPath, entry.path),
+      rootId,
+    })
+    if (generations.current.get(id) !== generation) return 'stale'
+    if (result.kind === 'collision' && reusable) {
       setWorkspaceRetry(undefined)
-      const previousActiveId = activeId
-      const existing = tabsRef.current.find((tab) => tab.fileKey === entry.fileKey)
-      if (existing) {
-        if (pinned) pinTab(existing.id)
-        setActiveId(existing.id)
-        setRovingId(existing.id)
-        return
-      }
-
-      const preview = tabsRef.current.find((tab) => tab.preview)
-      const previewDecision = preparePreviewReplacement(preview ? { dirty: dirty(preview), id: preview.id } : undefined)
-      const reusable = previewDecision.reusableId ? preview : undefined
-      if (preview && previewDecision.pinExisting) pinTab(preview.id)
-      const id = reusable?.id ?? await gateway.createTabId()
-      const generation = (generations.current.get(id) ?? 0) + 1
-      generations.current.set(id, generation)
-      const placeholder = makeTab({
-        fileKey: entry.fileKey,
-        id,
-        path: entry.path,
-        preview: !pinned,
-        title: displaySeedTitle(entry.name),
-      })
-      if (reusable) {
-        setTabs((current) => current.map((tab) => tab.id === reusable.id ? placeholder : tab))
-      } else {
-        setTabs((current) => pinned
-          ? [...insertPinnedBeforePreview(current, placeholder)]
-          : [...current.filter((tab) => !tab.preview), placeholder])
-      }
-      if (activationIntent.current === activation) {
-        setActiveId(id)
-        setRovingId(id)
-      }
-
-      const rootPath = workspace?.roots.find((root) => root.rootId === rootId)?.path
-      if (!rootPath) return
-      const result = await gateway.openWorkspace({
-        fileKey: entry.fileKey,
-        generation,
-        id,
-        path: entry.path,
-        relativePath: logicalRelativePath(rootPath, entry.path),
-        rootId,
-      })
-      if (generations.current.get(id) !== generation) return
-      if (result.kind === 'collision' && reusable) {
-        disposeTabEditor(placeholder, editors.current, baselineDocuments.current)
-        setTabs((current) => current.map((tab) => tab.id === id ? reusable : tab))
-        setActiveId(reusable.id)
-        setRovingId(reusable.id)
-        return
-      }
-      if (result.kind === 'collision') {
-        closeTab(id)
-        setActiveId(previousActiveId)
-        setRovingId(previousActiveId)
-        return
-      }
-      if (result.kind !== 'opened') {
-        if (reusable) {
-          disposeTabEditor(reusable, editors.current, baselineDocuments.current)
-        }
-        const failed = makeTab({ id, preview: !pinned, title: displaySeedTitle(entry.name) })
-        disposeTabEditor(placeholder, editors.current, baselineDocuments.current)
-        setTabs((current) => current.map((tab) => tab.id === id ? failed : tab))
-        setWorkspaceRetry({ entry, pinned, rootId })
-        setIssue({ kind: 'error', message: 'This file could not be opened. Its identity or workspace access may have changed.' })
-        return
-      }
+      setIssue(undefined)
+      disposeTabEditor(placeholder, editors.current, baselineDocuments.current)
+      if (isWritableTab(reusable)) baselineDocuments.current.set(reusable.id, reusable.editor.state.doc)
+      setTabs((current) => current.map((tab) => tab.id === id ? reusable : tab))
+      setActiveId(reusable.id)
+      setRovingId(reusable.id)
+      return 'elsewhere'
+    }
+    if (result.kind === 'collision') {
+      setWorkspaceRetry(undefined)
+      setIssue(undefined)
+      closeTab(id)
+      setActiveId(previousActiveId)
+      setRovingId(previousActiveId)
+      return 'elsewhere'
+    }
+    if (result.kind !== 'opened') {
       if (reusable) {
         disposeTabEditor(reusable, editors.current, baselineDocuments.current)
       }
-      setWorkspaceRetry(undefined)
-      setIssue(undefined)
-      const duplicate = tabsRef.current.find((tab) => tab.id !== id && tab.fileKey === result.document.fileKey)
-      if (duplicate) {
-        closeTab(id)
-        if (pinned) pinTab(duplicate.id)
-        setActiveId(duplicate.id)
-        setRovingId(duplicate.id)
-        return
-      }
-      const replacement = makeTab({ ...gatewaySeed(result.document), preview: !pinned })
-      setTabs((current) => current.map((tab) => {
-        if (tab.id !== id) return tab
-        disposeTabEditor(tab, editors.current, baselineDocuments.current)
-        return replacement
-      }))
-    })()
+      disposeTabEditor(placeholder, editors.current, baselineDocuments.current)
+      const failed = makeTab({ id, preview: !pinned, title: displaySeedTitle(entry.name) })
+      setTabs((current) => current.map((tab) => tab.id === id ? failed : tab))
+      setWorkspaceRetry({ entry, pinned, rootId })
+      setIssue({ kind: 'error', message: 'This file could not be opened. Its identity or workspace access may have changed.' })
+      return 'failed'
+    }
+    if (reusable) disposeTabEditor(reusable, editors.current, baselineDocuments.current)
+    setWorkspaceRetry(undefined)
+    setIssue(undefined)
+    const duplicate = tabsRef.current.find((tab) => tab.id !== id && tab.fileKey === result.document.fileKey)
+    if (duplicate) {
+      closeTab(id)
+      if (pinned) pinTab(duplicate.id)
+      setActiveId(duplicate.id)
+      setRovingId(duplicate.id)
+      requestAnimationFrame(() => focusTabButton(duplicate.id))
+      return 'opened'
+    }
+    disposeTabEditor(placeholder, editors.current, baselineDocuments.current)
+    const replacement = makeTab({ ...gatewaySeed(result.document), preview: !pinned })
+    setTabs((current) => current.map((tab) => tab.id === id ? replacement : tab))
+    requestAnimationFrame(() => focusTabButton(replacement.id))
+    return 'opened'
   }, [activeId, closeTab, dirty, gateway, makeTab, pinTab, workspace])
 
   const saveTabsSequentially = useCallback(async (dirtyTabs: readonly WorkspaceTab[]): Promise<boolean> => {
@@ -727,8 +767,17 @@ export function DocumentWorkspace({
     if (command === 'close-tab' && active) requestClose(active.id)
     if (command === 'close-window') requestWindowClose()
     if (command === 'find') openSearch()
-    if (command === 'settings') onSettingsRequest?.()
-  }), [active, addTab, dirty, gateway, onSettingsRequest, openDocument, openSearch, requestClose, requestWindowClose, save, saveAs, saveTabsSequentially, tabs])
+    if (command === 'go-to-file') openFinder()
+    if (command === 'settings') {
+      setFinderOpen(false)
+      setSwitcherOpen(false)
+      onSettingsRequest?.()
+    }
+    if (command === 'switch-tab' && tabs.length > 1) {
+      if (switcherOpen) setSwitcherAdvanceRequest((request) => request + 1)
+      else openSwitcher(document.activeElement)
+    }
+  }), [active, addTab, dirty, gateway, onSettingsRequest, openDocument, openFinder, openSearch, openSwitcher, requestClose, requestWindowClose, save, saveAs, saveTabsSequentially, switcherOpen, tabs])
 
   useEffect(() => {
     void gateway.updateMenuState({
@@ -1165,6 +1214,48 @@ export function DocumentWorkspace({
           onSave={saveAndRename}
         />
       ) : null}
+      {finderOpen && workspace ? (
+        <FileFinderDialog
+          onActivate={async (result: FinderResultPayload, pinned: boolean) => {
+            const root = workspace.roots.find((candidate) => candidate.rootId === result.rootId)
+            if (!root) return { message: 'This workspace root is no longer available.', ok: false }
+            const path = asPath(`${String(root.path).replace(/[\\/]$/, '')}/${result.relativePath}`)
+            const disposition = await openWorkspaceEntry({ fileKey: result.fileKey, kind: 'file', name: result.name, path }, pinned, result.rootId)
+            if (disposition === 'opened' || disposition === 'elsewhere') return { ok: true }
+            if (disposition === 'stale') return { ok: false }
+            return {
+              message: disposition === 'blocked'
+                ? 'Complete or cancel the current JSON edit before opening another file.'
+                : 'This file could not be opened. Its identity or workspace access may have changed.',
+              ok: false,
+            }
+          }}
+          onClose={() => setFinderOpen(false)}
+          onQuery={workspace.onQueryFiles}
+          rootLabels={finderRootLabels}
+          status={workspace.finderStatus}
+        />
+      ) : null}
+      {switcherOpen ? (
+        <TabSwitcherDialog
+          advanceRequest={switcherAdvanceRequest}
+          onActivate={(id) => {
+            const tab = tabsRef.current.find((candidate) => candidate.id === id)
+            if (!tab) return 'This tab is no longer available.'
+            if (active && !commitStructuredDraft(active)) return 'Complete or cancel the current JSON edit before switching tabs.'
+            setActiveId(tab.id)
+            setRovingId(tab.id)
+            if (switcherEditorOrigin.current) requestAnimationFrame(() => focusTabEditor(tab))
+            return true
+          }}
+          onClose={() => setSwitcherOpen(false)}
+          releaseToActivate
+          tabs={[...recentTabs.current.filter((id) => id !== activeId), activeId].flatMap((id) => {
+            const tab = tabs.find((candidate) => candidate.id === id)
+            return tab ? [{ dirty: dirty(tab), id: asTabId(tab.id), label: tab.title || 'Untitled', preview: tab.preview, ...(tab.secondaryPath ? { secondaryPath: tab.secondaryPath } : {}) }] : []
+          })}
+        />
+      ) : null}
       </div>
     </div>
   )
@@ -1408,9 +1499,14 @@ function focusJsonTree(): void {
   document.querySelector<HTMLElement>('[data-testid="json-tree"] [role="treeitem"][tabindex="0"]')?.focus()
 }
 
+function focusTabButton(id: string): void {
+  document.querySelector<HTMLButtonElement>(`[data-document-tab="${CSS.escape(id)}"]`)?.focus()
+}
+
 function focusTabEditor(tab: WorkspaceTab, position?: 'start'): void {
   if (tab.kind === 'json') focusJsonTree()
   else if (isWritableTab(tab)) tab.editor.commands.focus(position)
+  else focusTabButton(tab.id)
 }
 
 function withImageIds(document: JSONContent): JSONContent {

@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md), [0010 — First-Class JSON Documents](../specs/0010-first-class-json-documents.md), [0011 — Other File Types](../specs/0011-other-file-types.md)
+**Specs:** [0001 — Secure Runtime & Verification](../specs/0001-secure-runtime-and-verification.md), [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0004 — Everyday Writing Experience](../specs/0004-everyday-writing-experience.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0006 — Remote and Embedded Images](../specs/0006-remote-and-embedded-images.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md), [0010 — First-Class JSON Documents](../specs/0010-first-class-json-documents.md), [0011 — Other File Types](../specs/0011-other-file-types.md), [0014 — Fuzzy File Finder and Tab Quick Switcher](../specs/0014-fuzzy-file-finder-and-tab-switcher.md)
 
 ## Context
 
@@ -37,6 +37,7 @@ The production artifact itself must be exercised by Playwright `_electron`. That
 - The main process allocates every `TabId`, derives `WindowId` from the sender, and resolves `TabId`, `FileKey`, reservation, path, and generation against main-owned registrations before filesystem or window work. Renderer copies of those values are correlation data only.
 - Document request schemas reject unknown keys, wrong primitive/container types, oversized byte payloads, and stale generations. Sender validation runs before these schemas so malformed payloads cannot be used to probe owner state.
 - Open and Save As paths originate in main-owned native dialogs. Renderer-provided display paths never select a read or write destination. Results and watcher events are delivered only through the registered owning frame.
+- Workspace filename lookup is one bounded string-query capability. Main owns collection scans and immutable search snapshots; query results are correlation data and activation still uses the existing revalidated workspace-open intent.
 - Default-app handoff is a dedicated intent for a live main-owned `external`
   registration. Main revalidates its exact path and identity, presents the
   native confirmation, and calls the OS handler itself. The renderer cannot

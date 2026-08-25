@@ -20,6 +20,7 @@ export function buildApplicationMenuTemplate(
       command('Open…', 'CmdOrCtrl+O', 'open', dispatch),
       command('Open Folder…', 'CmdOrCtrl+Shift+O', 'open-folder', dispatch),
       command('Add Folder…', undefined, 'add-folder', dispatch),
+      command('Go to File…', 'CmdOrCtrl+P', 'go-to-file', dispatch),
       { type: 'separator' },
       command('Save', 'CmdOrCtrl+S', 'save', dispatch),
       command('Save As…', 'CmdOrCtrl+Shift+S', 'save-as', dispatch),
@@ -40,6 +41,10 @@ export function buildApplicationMenuTemplate(
       ...(!mac ? [{ type: 'separator' as const }, command('Settings…', 'CmdOrCtrl+,', 'settings', dispatch)] : []),
     ],
   }
+  const windowMenu: MenuItemConstructorOptions = {
+    label: 'Window',
+    submenu: [command('Switch Tab…', 'Ctrl+Tab', 'switch-tab', dispatch)],
+  }
   return [
     ...(mac ? [{ label: 'Markzen', submenu: [
       { role: 'about' as const },
@@ -51,6 +56,7 @@ export function buildApplicationMenuTemplate(
     ] }] : []),
     file,
     edit,
+    windowMenu,
     ...(!mac ? [{ label: 'Help', submenu: [{ role: 'about' as const }] }] : []),
   ]
 }
