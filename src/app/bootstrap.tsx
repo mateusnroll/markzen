@@ -472,9 +472,11 @@ export async function bootstrapApplication(): Promise<BootResult> {
       document.documentElement.dataset.testid = 'fixture-save-status'
       document.documentElement.dataset.fixtureSaveState = 'pending'
       await new Promise<void>((resolve) => setTimeout(resolve, fixture.saveDelay))
-      delete document.documentElement.dataset.fixtureSaveState
-      delete document.documentElement.dataset.testid
-      return super.save(input)
+      try { return await super.save(input) }
+      finally {
+        delete document.documentElement.dataset.fixtureSaveState
+        delete document.documentElement.dataset.testid
+      }
     }
 
     override async openWorkspace(input: import('../documents/gateway').WorkspaceOpenInput) {

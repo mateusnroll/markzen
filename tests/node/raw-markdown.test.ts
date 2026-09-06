@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { DocumentGateway } from '../../src/documents/gateway'
 import { createMemoryPlatform } from '../../src/platform/memory'
 import { mapContentPosition } from '../../src/documents/raw-markdown'
@@ -18,7 +18,20 @@ describe('spec 0015 Raw Markdown', () => {
   test('AC25: unchanged Raw Save performs no write', async () => {
     const memory = createMemoryPlatform({ platform: 'posix', caseSensitive: true })
     const gateway = new DocumentGateway(memory.platform)
-    expect(await gateway.save({ id: 'raw', title: '', kind: 'markdown', raw: '', documentDirty: false, titleDirty: false })).toEqual({ kind: 'unchanged' })
+    memory.harness.mkdir('/notes')
+    const path = memory.harness.path('/notes/raw.md')
+    await memory.platform.fs.create(path, new TextEncoder().encode('$$unsupported'))
+    const opened = await gateway.openPath(path, 'raw')
+    if (opened.kind !== 'opened') throw new Error('Expected Raw fixture')
+    const saved = await gateway.save({ ...opened.document, raw: '$$saved', documentDirty: true, titleDirty: false })
+    if (saved.kind !== 'saved') throw new Error('Expected saved baseline')
+    const write = vi.spyOn(memory.platform.fs, 'atomicReplace')
+    expect(await gateway.save({ ...saved.document, documentDirty: false, titleDirty: false })).toEqual({ kind: 'unchanged' })
+    expect(write).not.toHaveBeenCalled()
+    const read = await memory.platform.fs.read(path)
+    if (!read.ok) throw new Error('Expected saved file')
+    expect(new TextDecoder().decode(read.value.bytes)).toBe('$$saved')
+    write.mockRestore()
   })
   test('AC34: independently authored anchor matches, repeated content, misses and Unicode map deterministically', () => {
     expect(mapContentPosition('hello world', '## hello world\n', 5)).toBe(8)

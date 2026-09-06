@@ -13,12 +13,14 @@ test('spec 0015 AC1 AC2: native Raw command is checked per focused eligible wind
     await app.evaluate(({ Menu }) => { const item = Menu.getApplicationMenu()?.getMenuItemById('markzen-raw-markdown'); item?.click() })
     await expect(page.getByTestId('raw-editor-content')).toBeVisible()
     await expect.poll(() => app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('markzen-raw-markdown')?.checked)).toBe(true)
-    const firstNativeId = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()!.id)
+    const firstWindow = await app.browserWindow(page)
     const secondPromise = app.waitForEvent('window')
     await callMain(app, 'createMarkzenWindow')
     const second = await secondPromise
     await expect(second.getByTestId('rich-editor-content')).toBeVisible()
-    await second.bringToFront()
+    const secondWindow = await app.browserWindow(second)
+    await secondWindow.evaluate((window) => window.focus())
+    await expect.poll(() => secondWindow.evaluate((window) => window.isFocused())).toBe(true)
     await expect.poll(() => app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('markzen-raw-markdown')?.checked)).toBe(false)
     const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
     await second.getByTestId('rich-editor-content').press(`${modifier}+e`)
@@ -32,7 +34,8 @@ test('spec 0015 AC1 AC2: native Raw command is checked per focused eligible wind
       checked: Menu.getApplicationMenu()?.getMenuItemById('markzen-raw-markdown')?.checked,
     }))).toEqual({ enabled: false, checked: false })
     await page.bringToFront()
-    await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)?.focus(), firstNativeId)
+    await firstWindow.evaluate((window) => window.focus())
+    await expect.poll(() => firstWindow.evaluate((window) => window.isFocused())).toBe(true)
     await expect.poll(() => app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('markzen-raw-markdown')?.checked)).toBe(true)
     await app.evaluate(({ BrowserWindow }) => { for (const window of BrowserWindow.getAllWindows()) window.hide() })
     await expect.poll(() => app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('markzen-raw-markdown')?.enabled)).toBe(false)

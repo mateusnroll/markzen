@@ -144,6 +144,7 @@ export function DocumentWorkspace({
   const [issue, setIssue] = useState<{ readonly kind: SaveOutcome['kind']; readonly message: string }>()
   const [pendingExternal, setPendingExternal] = useState<GatewayDocument>()
   const [announcement, setAnnouncement] = useState('')
+  const [rawNoticeAttempt, setRawNoticeAttempt] = useState(0)
   const [workspaceRetry, setWorkspaceRetry] = useState<{ readonly entry: DirectoryEntry; readonly pinned: boolean; readonly rootId: RootId }>()
   const generations = useRef(new Map<string, number>())
   const activationIntent = useRef(0)
@@ -335,6 +336,13 @@ export function DocumentWorkspace({
   }, [])
 
   const active = tabs.find((tab) => tab.id === activeId)
+  const rawNotice = active?.kind === 'markdown' ? active.markdown?.notice ?? '' : ''
+  useEffect(() => {
+    if (!rawNotice) return
+    setAnnouncement('')
+    const frame = requestAnimationFrame(() => setAnnouncement(rawNotice))
+    return () => cancelAnimationFrame(frame)
+  }, [activeId, rawNotice, rawNoticeAttempt])
   const activeIndex = tabs.findIndex((tab) => tab.id === activeId)
   const secondaryPath = useMemo(() => active?.secondaryPath ?? (active?.path && workspace
     ? workspaceSecondaryPath(active.path, workspace.roots)
@@ -374,6 +382,7 @@ export function DocumentWorkspace({
       const parsed = safelyParseRaw(from.state.doc.textContent, state.encoding)
       if (!parsed) {
         state.notice = rawUnavailable
+        setRawNoticeAttempt((attempt) => attempt + 1)
         setTabs((current) => [...current])
         return
       }
@@ -383,6 +392,7 @@ export function DocumentWorkspace({
       try { source = richSource(from.state.doc, state.encoding) }
       catch {
         state.notice = 'This document cannot safely transfer to Raw Markdown.'
+        setRawNoticeAttempt((attempt) => attempt + 1)
         setTabs((current) => [...current])
         return
       }
@@ -1154,7 +1164,7 @@ export function DocumentWorkspace({
               ) : null}
               {active.kind === 'text' ? <p className="text-language-label" data-testid="text-language-label">{active.language ?? 'Plain text'}</p> : null}
             </div> : null}
-            {active.kind === 'markdown' ? <p className="raw-notice" data-testid="raw-notice" role="status">{active.markdown?.notice ?? ''}</p> : null}
+            {active.kind === 'markdown' ? <p aria-live="off" className="raw-notice" data-testid="raw-notice" id="raw-mode-notice" role="status">{active.markdown?.notice ?? ''}</p> : null}
             {isWritableTab(active) && active.markdown?.mode === 'raw' ? (
               <RawEditorPanel key={active.id} editor={active.editor} state={active.markdown} title={active.title || 'Untitled'} />
             ) : active.preservation && active.kind === 'text' ? (
@@ -1625,6 +1635,7 @@ function RawEditorPanel({ editor, state, title }: { readonly editor: Editor; rea
   const [lines, setLines] = useState<readonly { number: number; top: number }[]>([])
   useEffect(() => {
     editor.view.dom.setAttribute('aria-label', `${title} — Raw Markdown`)
+    editor.view.dom.setAttribute('aria-describedby', 'raw-mode-notice')
   }, [editor, title])
   useEffect(() => {
     const surface = scroller.current

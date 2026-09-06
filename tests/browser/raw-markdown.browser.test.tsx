@@ -150,6 +150,23 @@ describe('spec 0015 Raw editor', () => {
     await toggle(gateway)
     expect(element('rich-editor-content').textContent?.match(/文/g)).toHaveLength(1)
   })
+  test('AC5 AC13 AC17: fallback and repeated refused conversions announce without moving focus', async () => {
+    const gateway = await mount([{ id: 'one', title: 'Fallback', raw: '$$x' }])
+    const status = element('workspace-announcement')
+    await expect.poll(() => status.textContent).toContain('Rich mode is unavailable')
+    expect(raw().getAttribute('aria-describedby')).toBe(element('raw-notice').id)
+    raw().focus()
+    const changes: string[] = []
+    const observer = new MutationObserver(() => changes.push(status.textContent ?? ''))
+    observer.observe(status, { childList: true, characterData: true, subtree: true })
+    try {
+      await toggle(gateway)
+      await expect.poll(() => status.textContent).toContain('Rich mode is unavailable')
+      expect(changes).toContain('')
+      expect(document.activeElement).toBe(raw())
+      expect(raw().textContent).toBe('$$x')
+    } finally { observer.disconnect() }
+  })
   test('AC14: failed serialization leaves Rich source and exposes its conversion notice', async () => {
     const gateway = await mount()
     const notice = element('raw-notice')
