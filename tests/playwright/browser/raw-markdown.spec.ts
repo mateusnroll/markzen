@@ -3,7 +3,8 @@ const command = (page: Page, detail: string) => page.evaluate((value) => window.
 
 test('spec 0015 AC3 AC4: shortcut changes only the owning tab and switching restores Raw state', async ({ page }) => {
   await page.goto('/?fixture=basic')
-  await page.getByTestId('rich-editor-content').press('Control+e')
+  const modifier = await page.evaluate(() => navigator.platform.includes('Mac') ? 'Meta' : 'Control')
+  await page.getByTestId('rich-editor-content').press(`${modifier}+e`)
   await expect(page.getByTestId('raw-editor-content')).toBeFocused()
   await page.getByTestId('raw-editor-content').pressSequentially('original')
   await page.getByTestId('tab-add').click()
@@ -62,10 +63,11 @@ test('spec 0015 AC30 AC31 AC32: external reload resets mode while dirty Raw reta
   await expect(page.getByTestId('rich-editor-content')).toContainText('External dirty')
 })
 
-test('spec 0015 AC33: Raw source and failed conversion cannot activate media or navigate', async ({ page }) => {
+test('spec 0015 AC33: Raw source and failed conversion cannot activate media or navigate', async ({ page, baseURL }) => {
   const requests: string[] = []
+  const origin = new URL(baseURL!).origin
+  page.on('request', (request) => { if (new URL(request.url()).origin !== origin) requests.push(request.url()) })
   await page.goto('/?fixture=raw-markdown')
-  page.on('request', (request) => { if (!request.url().startsWith('http://127.0.0.1:')) requests.push(request.url()) })
   await command(page, 'open')
   await page.getByTestId('raw-editor-content').evaluate((element) => { const range = document.createRange(); range.selectNodeContents(element); range.collapse(false); window.getSelection()?.removeAllRanges(); window.getSelection()?.addRange(range) })
   await page.getByTestId('raw-editor-content').pressSequentially('<script>alert(1)</script> ![x](https://example.com/x.png)')
@@ -104,3 +106,19 @@ test('spec 0015 AC12 AC13: fallback notice and Raw editing stay reachable at min
   await page.getByTestId('search-input').fill('reachable')
   await expect(page.getByTestId('search-status')).toHaveText('1 of 1')
 })
+
+for (const action of ['edit', 'new'] as const) {
+  test(`spec 0015 AC28 AC29 AC32: Save All explains interruption by concurrent ${action}`, async ({ page }) => {
+    await page.goto('/?fixture=raw-save-race')
+    await command(page, 'raw-markdown')
+    await page.getByTestId('raw-editor-content').pressSequentially('first')
+    await command(page, 'save-all')
+    await expect(page.getByTestId('fixture-save-status')).toHaveAttribute('data-fixture-save-state', 'pending')
+    if (action === 'edit') await page.getByTestId('raw-editor-content').pressSequentially('later')
+    else {
+      await page.getByTestId('tab-add').click()
+      await page.getByTestId('rich-editor-content').pressSequentially('newer')
+    }
+    await expect(page.getByTestId('document-issue')).toContainText('Save All stopped')
+  })
+}

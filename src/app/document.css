@@ -990,6 +990,7 @@
 .raw-line-numbers { position: absolute; top: 12px; left: 0; width: 3.5rem; user-select: none; pointer-events: none; }
 .raw-line-numbers span { position: absolute; right: 0; }
 .raw-notice { margin: 0; padding: 8px 16px; border-bottom: 1px solid currentColor; font-size: 13px; }
+.raw-notice:empty { padding: 0; border: 0; }
 .document-page:has(.raw-document) { display: flex; flex: 1; min-height: 0; max-width: none; width: 100%; padding: 0; flex-direction: column; }
 .raw-document:focus-within { outline: 1px solid var(--focus-color, currentColor); outline-offset: -1px; }
 @media (forced-colors: active) {

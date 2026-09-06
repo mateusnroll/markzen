@@ -543,7 +543,7 @@ export function DocumentWorkspace({
   const handleWorkspaceKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       const modifier = event.metaKey || event.ctrlKey
-      if (modifier && event.key.toLowerCase() === 'e') {
+      if ((navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey) && event.key.toLowerCase() === 'e' && active?.kind === 'markdown' && !active.preservation) {
         event.preventDefault()
         toggleRaw()
         return
@@ -780,17 +780,27 @@ export function DocumentWorkspace({
         setIssue({ kind: result.kind, message: `Save All stopped at ${tab.title || 'Untitled'}.` })
         return false
       }
-      if ((generations.current.get(tab.id) ?? 0) !== generation) return false
+      if ((generations.current.get(tab.id) ?? 0) !== generation) {
+        setIssue({ kind: 'error', message: `Save All stopped at ${tab.title || 'Untitled'} because another save or document operation took over.` })
+        return false
+      }
       if (result.kind === 'saved' || result.kind === 'cleanup-warning') {
         recordBaseline(tab, snapshot)
         const next = tabsRef.current.map((candidate) => candidate.id === tab.id ? adoptGatewayResult(candidate, result.document, snapshot) : candidate)
         tabsRef.current = next
         setTabs(next)
         const latest = next.find((candidate) => candidate.id === tab.id)
-        if (latest && isTabDirty(latest)) return false
+        if (latest && isTabDirty(latest)) {
+          setIssue({ kind: 'error', message: `Save All stopped at ${tab.title || 'Untitled'} because newer edits still need saving.` })
+          return false
+        }
       }
     }
-    return !tabsRef.current.some((tab) => isWritableTab(tab) && isTabDirty(tab))
+    if (tabsRef.current.some((tab) => isWritableTab(tab) && isTabDirty(tab))) {
+      setIssue({ kind: 'error', message: 'Save All stopped because additional documents now need saving.' })
+      return false
+    }
+    return true
   }, [contentDirty, gateway, recordBaseline])
 
   const requestWindowClose = useCallback(() => {
@@ -1144,6 +1154,7 @@ export function DocumentWorkspace({
               ) : null}
               {active.kind === 'text' ? <p className="text-language-label" data-testid="text-language-label">{active.language ?? 'Plain text'}</p> : null}
             </div> : null}
+            {active.kind === 'markdown' ? <p className="raw-notice" data-testid="raw-notice" role="status">{active.markdown?.notice ?? ''}</p> : null}
             {isWritableTab(active) && active.markdown?.mode === 'raw' ? (
               <RawEditorPanel key={active.id} editor={active.editor} state={active.markdown} title={active.title || 'Untitled'} />
             ) : active.preservation && active.kind === 'text' ? (
@@ -1499,11 +1510,13 @@ function persistentDocumentsEqual(left: ProseMirrorNode, right: ProseMirrorNode)
 
 function commitStructuredDraft(tab: WorkspaceTab): boolean {
   if (isWritableTab(tab) && tab.editor.view.composing) {
+    const wasFocused = tab.editor.view.hasFocus()
     tab.editor.view.dom.blur()
     tab.editor.view.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
     // ProseMirror defers its final composition DOM read; lifecycle capture must flush it synchronously.
     const view = tab.editor.view as typeof tab.editor.view & { domObserver: { flush(): void } }
     view.domObserver.flush()
+    if (wasFocused && document.activeElement === document.body) view.focus()
   }
   return tab.kind !== 'json' || commitJsonDraft(tab.editor)
 }
@@ -1658,7 +1671,6 @@ function RawEditorPanel({ editor, state, title }: { readonly editor: Editor; rea
   }, [editor, state])
   return (
     <>
-      {state.notice ? <p className="raw-notice" data-testid="raw-notice" role="status">{state.notice}</p> : null}
       <div className="raw-document" data-testid="raw-document" onScroll={(event) => { state.scroll.raw = event.currentTarget.scrollTop }} ref={scroller}>
         <div aria-hidden="true" className="raw-line-numbers" data-testid="raw-line-numbers">
           {lines.map((top, index) => <span key={index} style={{ top }}>{index + 1}</span>)}
