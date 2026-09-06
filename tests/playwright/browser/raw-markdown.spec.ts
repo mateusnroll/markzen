@@ -122,3 +122,26 @@ for (const action of ['edit', 'new'] as const) {
     await expect(page.getByTestId('document-issue')).toContainText('Save All stopped')
   })
 }
+
+test('spec 0015 AC8 AC12 AC35: gutter follows wrapped source while keeping offscreen lines out of layout work', async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 320 })
+  await page.goto('/?fixture=basic')
+  await command(page, 'raw-markdown')
+  const source = ['wrapped '.repeat(30), ...Array.from({ length: 399 }, (_, index) => `line ${index + 2}`)].join('\n')
+  await page.getByTestId('raw-editor-content').fill(source)
+  const numbers = page.getByTestId('raw-line-number')
+  await expect.poll(() => numbers.count()).toBeLessThan(100)
+  await page.getByTestId('raw-document').evaluate((element) => { element.scrollTop = element.scrollHeight })
+  await expect(numbers.last()).toHaveText('400')
+  await expect.poll(() => numbers.count()).toBeLessThan(100)
+  await page.getByTestId('raw-document').evaluate((element) => { element.scrollTop = 0 })
+  await expect(numbers.first()).toHaveText('1')
+  const firstTwo = await numbers.evaluateAll((spans) => spans.slice(0, 2).map((span) => span.getBoundingClientRect().top))
+  expect(firstTwo[1]! - firstTwo[0]!).toBeGreaterThan(46)
+  await page.setViewportSize({ width: 1100, height: 740 })
+  await expect.poll(async () => {
+    const tops = await numbers.evaluateAll((spans) => spans.slice(0, 2).map((span) => span.getBoundingClientRect().top))
+    return tops[1]! - tops[0]!
+  }).toBeLessThan(firstTwo[1]! - firstTwo[0]!)
+  await expect(page.getByTestId('raw-editor-content')).toHaveText(source)
+})

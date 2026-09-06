@@ -1622,7 +1622,7 @@ function documentPosition(node: ProseMirrorNode, offset: number): number {
 
 function RawEditorPanel({ editor, state, title }: { readonly editor: Editor; readonly state: MarkdownEditors; readonly title: string }) {
   const scroller = useRef<HTMLDivElement>(null)
-  const [lines, setLines] = useState<readonly number[]>([0])
+  const [lines, setLines] = useState<readonly { number: number; top: number }[]>([])
   useEffect(() => {
     editor.view.dom.setAttribute('aria-label', `${title} — Raw Markdown`)
   }, [editor, title])
@@ -1635,37 +1635,34 @@ function RawEditorPanel({ editor, state, title }: { readonly editor: Editor; rea
       if (editor.isDestroyed) return
       const code = editor.view.dom.querySelector('code')
       if (!code) return
-      const nodes: Text[] = []
-      const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT)
-      let next: globalThis.Node | null
-      while ((next = walker.nextNode())) nodes.push(next as Text)
-      const top = code.getBoundingClientRect().top
+      const bounds = surface.getBoundingClientRect()
+      const codeBounds = code.getBoundingClientRect()
+      if (!bounds.height) return
+      const from = Math.max(0, (editor.view.posAtCoords({ left: codeBounds.left + 1, top: Math.max(bounds.top, codeBounds.top) + 1 })?.pos ?? 1) - 1)
+      const to = Math.max(from, (editor.view.posAtCoords({ left: codeBounds.left + 1, top: Math.min(bounds.bottom, codeBounds.bottom) - 1 })?.pos ?? from + 1) - 1)
       const starts = [0]
       const text = editor.state.doc.textContent
       for (let index = 0; index < text.length; index++) if (text[index] === '\n') starts.push(index + 1)
-      let consumed = 0
-      let nodeIndex = 0
-      const heights = starts.map((offset, lineIndex) => {
-        while (nodes[nodeIndex] && consumed + nodes[nodeIndex]!.length < offset) consumed += nodes[nodeIndex++]!.length
-        const node = nodes[nodeIndex]
-        if (!node) return 0
-        const range = document.createRange()
-        range.setStart(node, Math.min(node.length, offset - consumed))
-        range.collapse(true)
-        const rect = range.getBoundingClientRect()
-        return rect.height ? rect.top - top : lineIndex * parseFloat(getComputedStyle(code).lineHeight)
-      })
-      setLines(heights)
+      const first = Math.max(0, starts.findLastIndex((offset) => offset <= from))
+      const visible: { number: number; top: number }[] = []
+      for (let index = first; index < starts.length; index++) {
+        const offset = starts[index]!
+        visible.push({ number: index + 1, top: editor.view.coordsAtPos(offset + 1).top - codeBounds.top })
+        if (offset > to) break
+      }
+      setLines(visible)
     }
     const schedule = () => { cancelAnimationFrame(pending); pending = requestAnimationFrame(refresh) }
     const observer = new ResizeObserver(schedule)
     observer.observe(surface)
     editor.on('update', schedule)
+    surface.addEventListener('scroll', schedule)
     schedule()
     return () => {
       cancelAnimationFrame(pending)
       observer.disconnect()
       editor.off('update', schedule)
+      surface.removeEventListener('scroll', schedule)
       state.scroll.raw = surface.scrollTop
     }
   }, [editor, state])
@@ -1673,7 +1670,7 @@ function RawEditorPanel({ editor, state, title }: { readonly editor: Editor; rea
     <>
       <div className="raw-document" data-testid="raw-document" onScroll={(event) => { state.scroll.raw = event.currentTarget.scrollTop }} ref={scroller}>
         <div aria-hidden="true" className="raw-line-numbers" data-testid="raw-line-numbers">
-          {lines.map((top, index) => <span key={index} style={{ top }}>{index + 1}</span>)}
+          {lines.map((line) => <span data-testid="raw-line-number" key={line.number} style={{ top: line.top }}>{line.number}</span>)}
         </div>
         <EditorContent data-testid="raw-editor" editor={editor} />
       </div>
