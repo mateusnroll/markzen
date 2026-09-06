@@ -40,6 +40,11 @@ type Fixture = {
 }
 
 const fixtures: Readonly<Record<string, Fixture>> = {
+  'raw-save-race': { files: [], dialogs: [{ kind: 'save', path: '/notes/raw-race.md' }], saveDelay: 800 },
+  'raw-markdown': {
+    files: [{ path: '/notes/raw.md', bytes: '$$unsupported\nsource' }, { path: '/notes/invalid.md', bytesBase64: '/w==', bytes: '' }],
+    dialogs: [{ kind: 'open', path: '/notes/raw.md' }, { kind: 'open', path: '/notes/invalid.md' }],
+  },
   basic: {
     files: [{ bytes: '# Welcome\n', path: '/notes/welcome.md' }],
   },
@@ -53,6 +58,7 @@ const fixtures: Readonly<Record<string, Fixture>> = {
   },
   'writing-search-10k': {
     files: [],
+    dialogs: [{ kind: 'save', path: '/notes/search-performance.md' }],
     initialDocuments: [{
       id: 'writing-search',
       title: 'Search performance',
@@ -532,6 +538,7 @@ function isRendererCommand(value: unknown): value is RendererCommand {
     'close-tab',
     'close-window',
     'find',
+    'raw-markdown',
     'new',
     'new-csv',
     'new-json',

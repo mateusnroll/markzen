@@ -149,7 +149,10 @@ export function JsonTree({
   }, [onError])
 
   const focusRow = useCallback((id: string) => {
-    const focus = () => document.querySelector<HTMLElement>(rowSelector(id))?.focus()
+    const focus = () => {
+      if (document.activeElement?.closest('[data-testid="json-inline-shell"]')) return
+      document.querySelector<HTMLElement>(rowSelector(id))?.focus()
+    }
     focus()
     requestAnimationFrame(focus)
   }, [])

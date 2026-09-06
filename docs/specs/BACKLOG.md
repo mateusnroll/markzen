@@ -12,20 +12,7 @@ an Implemented spec, update and reapprove that affected spec as required.
 
 ## In scope
 
-### 1. Raw Markdown editing
-
-Add raw-Markdown editing as a per-tab mode toggled with Cmd/Ctrl+E. The prior
-design direction used CodeMirror 6, transferred content only when switching
-modes, kept independent rich-text and source-mode undo histories, and required
-malformed Markdown never to throw. That design was never implemented and no
-CodeMirror dependency has landed, so the eventual spec must revalidate the
-dependency and synchronization contract before implementation.
-
-Mode switching must preserve the existing serialization-integrity and
-loss-prevention guarantees. The spec must define dirty state, selection and
-scroll restoration, failed rich-mode parsing, save ownership, external changes,
-and what happens when a tab closes or switches while either mode has pending
-work.
+Raw Markdown editing is promoted to [Draft spec 0015](0015-raw-markdown-editing.md).
 
 ### 2. Remove or reorder sidebar roots and file-tree CRUD
 

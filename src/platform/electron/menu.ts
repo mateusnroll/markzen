@@ -51,6 +51,7 @@ export function buildApplicationMenuTemplate(
     ] }] : []),
     file,
     edit,
+    { label: 'View', submenu: [{ ...command('Raw Markdown', 'CmdOrCtrl+E', 'raw-markdown', dispatch), type: 'checkbox', checked: false, enabled: false }] },
     ...(!mac ? [{ label: 'Help', submenu: [{ role: 'about' as const }] }] : []),
   ]
 }

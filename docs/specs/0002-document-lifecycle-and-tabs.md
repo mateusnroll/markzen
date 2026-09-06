@@ -1,6 +1,9 @@
 # Spec 0002: Document Lifecycle & Tabs
 
 **Status:** Implemented   **Date:** 2026-08
+**Writer:** `codex:01a074ce-6348-75b2-97c0-49123faf9a39`
+**Approver:** `spec-approver:9f5446e3-ebc4-40c7-8e5b-7d8fd0ee7113:f1a7e8bb-7098-45f8-b9e4-6b209d578a3a`
+**Approval digest:** `sha256:83889cb13858176c8baa229636f3b1fa31bca2d16a21b086145f44a1729e7187` (exact reviewed Draft before lifecycle metadata; change set `sha256:7330838036fa4b01e04a19d2e6799fe3f2e2e75677c46e0b85d561b72f8b7f1d`; review `9f5446e3-ebc4-40c7-8e5b-7d8fd0ee7113`)
 **Origin:** Consolidates old specs 0002 (Rich Markdown Editing Core), 0003 (File Operations & Native Menu), 0004 (Tab System), and most of 0011 (Filename Field & Rename); old repo `RichEditor.tsx`, `fileOperations.ts`, `setupMenu.ts`, `tabsStore.ts`, `tabSwitch.ts`, `FilenameField.tsx`, `renameFile.ts`, `FilenameNavigation`, Markdown fixtures and link/table/image extensions; commits `31848ad`, `ca3347c`, `20f0fbe`, `28d1115`, `68d2387`, `0850d7b`, `23b21c7`, `093e3ab`, `5e81b15`, `54e8aee`, `0c858e8`, `f3e8b16`, `8a58532`. Returned to Draft in 2026-08 after the user accepted spec 0011/code-review findings that reclassified `.txt` as generic text and revised shared Open filters, invalid-byte scope, title/extension behavior, Save As defaults, and view-only command eligibility; specs 0002, 0003, 0009, and 0011 return to Implemented together after their revised proof is green.
 
 ## Problem
@@ -12,7 +15,7 @@ The product needs one loss-resistant document lifecycle: parse Markdown into a r
 - Folder windows, multi-root trees, relative-path title context, preview/peeking tabs, or directory-tree watching (later specs).
 - Automatic merging of editor and external disk edits. This spec detects external document changes and offers explicit keep-editor, keep-disk, or preserve-both decisions.
 - Toolbar and popover UX, following links, visual table manipulation, image picking or local-image rendering. This spec owns only the baseline link, table, and image document models, inert rendering, and serialization.
-- General source/raw-Markdown editing. A read-only whole-document preservation fallback is a safety state, not source mode.
+- General source/raw-Markdown editing is specified separately by spec 0015; this milestone owns Rich parsing and exact-byte preservation.
 - Semantic editing of frontmatter, footnotes, math, raw HTML, or unknown Markdown extensions. Lossless opaque preservation is in scope.
 - Auto-save, recent files, session restore, tab drag-reordering, split views, file-tree CRUD, or deriving filenames from headings.
 - Enforcing performance thresholds in CI or selecting the dedicated target machine that will eventually gate them. This milestone records comparable measurements in CI without failing the build on their values.
@@ -58,8 +61,8 @@ The product needs one loss-resistant document lifecycle: parse Markdown into a r
 - AC32: Given an opaque raw node selected as a whole node, when the user explicitly deletes it, then only that node's preserved source slice is removed.
 - AC33: Given malformed Markdown that cannot be segmented without guessing, when it is opened, then the parser selects whole-document preservation fallback instead of producing a partial rich document.
 - AC34: Given source for which parse coverage cannot account for every source byte as supported syntax or an opaque node, when it is opened, then the parser selects whole-document preservation fallback.
-- AC35: Given whole-document preservation fallback, when it is displayed, then the complete literal source is visible in a read-only preservation view with an inline explanation that rich editing is disabled to prevent data loss.
-- AC36: Given a tab in whole-document preservation fallback, when Save is invoked without a pending rename, then no disk write occurs; when Save As is invoked, its exact original bytes may be copied to a new document and adopted by the tab; rich content editing remains blocked.
+- AC35: Given whole-document preservation fallback, when it is displayed, then editable UTF-8 Markdown enters the editable Raw mode and explanation specified by spec 0015; exact-byte preservation remains read-only with its complete escaped source and data-loss explanation.
+- AC36: Given a tab in read-only exact-byte preservation fallback, when Save is invoked without a pending rename, then no disk write occurs; when Save As is invoked, its exact original bytes may be copied to a new document and adopted by the tab; rich content editing remains blocked.
 
 #### Markdown fixture contract
 

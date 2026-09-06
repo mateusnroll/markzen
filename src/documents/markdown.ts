@@ -308,7 +308,7 @@ function mapNode(value: RichNode, visit: (node: RichNode) => RichNode): RichNode
   return visit({ ...value, ...(children ? { content: children } : {}), ...(marks ? { marks } : {}) })
 }
 
-function detectNewline(value: string): 'lf' | 'crlf' {
+export function detectNewline(value: string): 'lf' | 'crlf' {
   const sequences = value.match(/\r\n|\n/g) ?? []
   const crlf = sequences.filter((sequence) => sequence === '\r\n').length
   const lf = sequences.length - crlf

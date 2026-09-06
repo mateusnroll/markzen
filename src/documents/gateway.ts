@@ -1,5 +1,5 @@
 import { displayDocumentStem, deriveDocumentFilename, getRecognizedExtension } from './filename'
-import { parseDocumentBytes, serializeRichDocument, type DocumentEncoding, type RichDocument } from './markdown'
+import { applyDocumentEncoding, detectNewline, parseDocumentBytes, serializeRichDocument, type DocumentEncoding, type RichDocument } from './markdown'
 import { csvPreservationMessage, parseCsvBytes, serializeCsvDocument, type CsvDocument } from './csv'
 import { jsonPreservationMessage, parseJsonBytes, serializeJsonDocument, type JsonDocument } from './json'
 import { classifyDocumentName, GENERIC_TEXT_EXTENSIONS, RASTER_EXTENSIONS, rasterDisplayMetadata, SPECIALIZED_DOCUMENT_EXTENSIONS, type RasterDisplayMetadata } from './file-types'
@@ -21,6 +21,7 @@ import {
 } from '../platform/contracts'
 
 export type GatewayDocument = {
+  readonly raw?: string
   readonly assetsRevoked?: boolean
   readonly diskVersion?: DiskVersion
   readonly document?: RichDocument
@@ -91,7 +92,7 @@ export interface DocumentGatewayPort {
 
 export class DocumentGateway implements DocumentGatewayPort {
   readonly #externalListeners = new Set<(event: ExternalGatewayEvent) => void>()
-  readonly #saveCoordinators = new Map<string, SaveCoordinator<() => Promise<SaveOutcome>, SaveOutcome, number>>()
+  readonly #saveCoordinators = new Map<string, SaveCoordinator<() => Promise<SaveOutcome>, SaveOutcome, string>>()
   readonly #watchState = new DocumentWatchState()
   readonly #watchTokens = new Map<string, WatchToken>()
   readonly #watchDisposers = new Map<string, () => void>()
@@ -241,7 +242,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async #overwriteExternal(input: SaveInput, diskVersion: DiskVersion): Promise<SaveOutcome> {
-    if (!input.path || (!input.document && !input.csv && !input.json && !input.text)) return { kind: 'error' }
+    if (!input.path || (input.raw === undefined && !input.document && !input.csv && !input.json && !input.text)) return { kind: 'error' }
     const bytes = gatewayBytes(input)
     const replaced = await this.platform.fs.atomicReplace(input.path, bytes, diskVersion)
     return replaced.ok ? this.#saved(input, replaced.value) : failure(replaced.error.code)
@@ -367,13 +368,15 @@ export class DocumentGateway implements DocumentGatewayPort {
     const parsed = parseDocumentBytes(read.value.bytes)
     const outcome: OpenOutcome = parsed.mode === 'rich' ? {
       document: { ...identity, document: parsed.document, encoding: parsed.encoding, kind: 'markdown' }, kind: 'opened',
+    } : parsed.mode === 'preserve-text' ? {
+      document: { ...identity, kind: 'markdown', ...rawFallback(parsed.bytes, parsed.text) }, kind: 'opened',
     } : {
       document: {
         ...identity,
         kind: 'markdown',
         preservation: {
           bytes: parsed.bytes,
-          display: parsed.mode === 'preserve-bytes' ? parsed.escaped : parsed.text,
+          display: parsed.escaped,
           kind: parsed.mode === 'preserve-bytes' ? 'bytes' : 'text',
         },
       },
@@ -397,7 +400,7 @@ export class DocumentGateway implements DocumentGatewayPort {
       const moved = await this.platform.fs.move(input.path, join(dirname(input.path), targetName), input.diskVersion)
       return moved.ok ? this.#saved(input, moved.value) : failure(moved.error.code)
     }
-    if (!input.document && !input.csv && !input.json && !input.text) return { kind: 'unchanged' }
+    if (input.raw === undefined && !input.document && !input.csv && !input.json && !input.text) return { kind: 'unchanged' }
     const bytes = gatewayBytes(input)
     const replaced = await this.platform.fs.atomicReplace(input.path, bytes, input.diskVersion)
     return replaced.ok ? this.#saved(input, replaced.value) : failure(replaced.error.code)
@@ -408,7 +411,7 @@ export class DocumentGateway implements DocumentGatewayPort {
   }
 
   async #saveAndRename(input: SaveInput): Promise<SaveOutcome> {
-    if (!input.path || !input.diskVersion || (!input.document && !input.csv && !input.json && !input.text)) return { kind: 'error' }
+    if (!input.path || !input.diskVersion || (input.raw === undefined && !input.document && !input.csv && !input.json && !input.text)) return { kind: 'error' }
     const latest = await this.platform.fs.read(input.path)
     if (!latest.ok) return failure(latest.error.code)
     if (latest.value.diskVersion !== input.diskVersion) return { kind: 'conflict' }
@@ -535,7 +538,7 @@ export class DocumentGateway implements DocumentGatewayPort {
       )
       this.#saveCoordinators.set(input.id, coordinator)
     }
-    return coordinator.save({ revision: input.revision ?? 0, snapshot: operation })
+    return coordinator.save({ revision: `${input.revision ?? 0}:${input.raw === undefined ? 'rich' : 'raw'}`, snapshot: operation })
   }
 }
 
@@ -789,9 +792,10 @@ function parseRemoteFile(file: import('../platform/contracts').DocumentFilePaylo
   }
   const parsed = parseDocumentBytes(file.bytes)
   if (parsed.mode === 'rich') return { document: { ...identity, document: parsed.document, encoding: parsed.encoding, kind }, kind: 'opened' }
+  if (parsed.mode === 'preserve-text') return { document: { ...identity, kind, ...rawFallback(parsed.bytes, parsed.text) }, kind: 'opened' }
   return { document: { ...identity, kind, preservation: {
     bytes: parsed.bytes,
-    display: parsed.mode === 'preserve-bytes' ? parsed.escaped : parsed.text,
+    display: parsed.escaped,
     kind: parsed.mode === 'preserve-bytes' ? 'bytes' : 'text',
   } }, kind: 'opened' }
 }
@@ -825,6 +829,7 @@ function remoteSaveOutcome(
 const failure = (code: string): SaveOutcome => ({ kind: code === 'conflict' ? 'conflict' : code === 'not-found' ? 'missing' : code === 'already-exists' ? 'collision' : 'error' })
 
 function gatewayBytes(document: GatewayDocument): Uint8Array {
+  if (document.raw !== undefined) return applyDocumentEncoding(document.raw, document.encoding ?? { bom: false, newline: 'lf' })
   if (document.preservation?.bytes) return document.preservation.bytes
   if (document.csv) return serializeCsvDocument(document.csv)
   if (document.json) return serializeJsonDocument(document.json)
@@ -854,4 +859,9 @@ function rebaseMemoryDocument(
     return { ...node, attrs: { ...node.attrs, assetUrl: null, internal: false, src: rebased.source }, ...(content ? { content } : {}) }
   }
   return { document: visit(document) as RichDocument, sourceRebases }
+}
+
+function rawFallback(bytes: Uint8Array, text: string): Pick<GatewayDocument, 'raw' | 'encoding'> {
+  const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
+  return { raw: text.replaceAll('\r\n', '\n').replaceAll('\r', '\n'), encoding: { bom, newline: detectNewline(text) } }
 }
