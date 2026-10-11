@@ -152,4 +152,14 @@ describe('spec 0001 repository verification contract', () => {
     expect(preload).not.toContain('moveStructuralContent')
     expect(Object.keys(packageJson.dependencies).some((name) => /drag|dnd|sortable/i.test(name))).toBe(false)
   })
+
+  test('spec 0014 AC41: finder uses only pinned fuzzysort and the closed workspace query capability', async () => {
+    const packageJson = await readJson<{ dependencies: Record<string, string> }>('package.json')
+    const contracts = await readFile('src/platform/contracts.ts', 'utf8')
+    const preload = await readFile('src/platform/electron/preload.ts', 'utf8')
+    expect(packageJson.dependencies.fuzzysort).toBe('4.0.2')
+    expect(contracts).toContain('queryFiles(query: string)')
+    expect(preload).toContain('queryFiles: (query: string)')
+    expect(preload).not.toMatch(/buildCollection|scanWorkspace|rawSearchPath/)
+  })
 })

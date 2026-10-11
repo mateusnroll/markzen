@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-07-12
-**Spec:** [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md)
+**Specs:** [0003 — Folder Workspaces](../specs/0003-folder-workspaces.md), [0014 — Fuzzy File Finder and Tab Quick Switcher](../specs/0014-fuzzy-file-finder-and-tab-switcher.md)
 
 ## Context
 
@@ -16,6 +16,7 @@ Folder workspaces add main-owned roots, lazy directory trees, preview-tab identi
 - `Platform.fs.list` performs one batched directory read. It returns entry name, kind, logical path, and opaque Platform-issued `FileKey`, never a canonical target path.
 - For ordinary children, the Platform derives identity from the already-canonical parent plus the entry name under the volume's case rules. Only symlinks require target resolution.
 - A list result is a temporary snapshot. Watcher invalidation marks the owning directory snapshot stale; it never patches tree nodes directly.
+- The same batched watcher invalidation marks the workspace file-search snapshot stale and schedules a complete generation rebuild. The prior immutable search snapshot remains queryable until atomic replacement.
 - Every file activation revalidates the registered root, logical relative path, current type, FileKey, and canonical containment. The renderer cannot turn a snapshot path or key into authority.
 
 ### Symlinks and containment

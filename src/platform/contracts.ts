@@ -166,6 +166,7 @@ export type BootstrapPayload = {
   readonly kind: WindowKind
   readonly initialDocumentKind?: 'csv' | 'json' | 'markdown'
   readonly appearance: EffectiveTheme
+  readonly finderStatus?: FinderStatusPayload
   readonly platformName: PlatformName
   readonly roots: readonly WorkspaceRootPayload[]
   readonly settings: SettingsSnapshotPayload
@@ -180,6 +181,27 @@ export type WorkspaceRootPayload = {
   readonly rootId: RootId
 }
 
+export type FinderStatusPayload = {
+  readonly generation: number
+  readonly incompleteRootIds?: readonly RootId[]
+  readonly indexedCount?: number
+  readonly kind: 'indexing' | 'ready' | 'stale'
+}
+
+export type FinderResultPayload = {
+  readonly fileKey: FileKey
+  readonly name: string
+  readonly parentPath: string
+  readonly relativePath: string
+  readonly rootId: RootId
+  readonly score: number
+}
+
+export type FinderQueryOutcome = FinderStatusPayload & {
+  readonly results: readonly FinderResultPayload[]
+  readonly total: number
+}
+
 export type SettingsSnapshotPayload = {
   readonly revision: number
   readonly schemaVersion: 1
@@ -192,6 +214,7 @@ export type WorkspaceEventPayload =
   | { readonly generation: number; readonly kind: 'invalidated' | 'root-recovered'; readonly relativePath: string; readonly rootId: RootId }
   | { readonly generation: number; readonly kind: 'root-error' | 'watch-warning'; readonly rootId: RootId }
   | { readonly generation: number; readonly kind: 'root-added'; readonly root: WorkspaceRootPayload }
+  | { readonly kind: 'finder-status'; readonly status: FinderStatusPayload }
 
 export type WorkspaceRootOutcome =
   | { readonly kind: 'added' | 'duplicate'; readonly root: WorkspaceRootPayload }
@@ -227,7 +250,7 @@ export type DocumentWriteRequest = {
   readonly model?: unknown
 }
 export type DocumentCommand = 'close-tab' | 'close-window' | 'new' | 'new-csv' | 'new-json' | 'open' | 'save' | 'save-all' | 'save-all-for-quit' | 'save-as'
-export type RendererCommand = DocumentCommand | 'find' | 'settings'
+export type RendererCommand = DocumentCommand | 'find' | 'go-to-file' | 'settings' | 'switch-tab'
 export type ApplicationCommand = RendererCommand | 'add-folder' | 'open-folder'
 export type ExternalOpenResult = { readonly kind: 'cancelled' | 'error' | 'opened' | 'unsupported' }
 export type DocumentMenuState = {
@@ -294,6 +317,7 @@ export interface MarkzenWorkspaceCapability {
   list(rootId: RootId, relativePath: string, generation: number): Promise<PlatformResult<readonly DirectoryEntry[]>>
   onEvent(listener: (event: WorkspaceEventPayload) => void): () => void
   open(tabId: TabId, rootId: RootId, relativePath: string, fileKey: FileKey, generation: number): Promise<PlatformResult<DocumentIntentOutcome>>
+  queryFiles(query: string): Promise<PlatformResult<FinderQueryOutcome>>
   retryRoot(rootId: RootId, generation: number): Promise<PlatformResult<WorkspaceRootOutcome>>
 }
 

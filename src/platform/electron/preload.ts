@@ -23,6 +23,7 @@ import {
   type WorkspaceEventPayload,
   type WorkspaceRootOutcome,
   type ImageIntentOutcome,
+  type FinderQueryOutcome,
 } from '../contracts'
 import { channels } from './channels'
 
@@ -117,6 +118,7 @@ const api: MarkzenApi = deepFreeze({
     },
     open: (tabId: TabId, rootId: RootId, relativePath: string, fileKey: FileKey, generation: number) =>
       invoke<DocumentIntentOutcome>(channels.workspaceOpen, { fileKey, generation, relativePath, rootId, tabId }),
+    queryFiles: (query: string) => invoke<FinderQueryOutcome>(channels.workspaceQueryFiles, { query }),
     retryRoot: (rootId: RootId, generation: number) =>
       invoke<WorkspaceRootOutcome>(channels.workspaceRetryRoot, { generation, rootId }),
   },

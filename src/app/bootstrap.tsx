@@ -16,6 +16,7 @@ import {
 import { createMemoryPlatform } from '../platform/memory'
 import type { DialogResult } from '../platform/contracts'
 import { DEFAULT_SETTINGS } from '../settings/settings'
+import { WorkspaceFinder } from '../workspaces/finder'
 
 type BootResult =
   | { readonly ok: true; readonly element: React.ReactElement }
@@ -42,6 +43,27 @@ type Fixture = {
 const fixtures: Readonly<Record<string, Fixture>> = {
   basic: {
     files: [{ bytes: '# Welcome\n', path: '/notes/welcome.md' }],
+  },
+  'finder-workspace': {
+    directories: ['/notes/nested'],
+    files: [
+      { bytes: '# Guide\n', path: '/notes/nested/Guide.md' },
+      { bytes: 'name,value\none,1\n', path: '/notes/data.csv' },
+    ],
+    workspaceRoots: ['/notes'],
+  },
+  'finder-tabs': {
+    files: [],
+    initialDocuments: [
+      { id: 'one', title: 'one.md' },
+      { id: 'two', preview: true, title: 'two.md' },
+      { id: 'three', title: 'three.md' },
+    ],
+  },
+  'finder-performance': {
+    files: [],
+    generatedWorkspace: { entriesPerRoot: 50_000, roots: 1 },
+    initialDocuments: Array.from({ length: 100 }, (_, index) => ({ id: `performance-${index}`, title: `tab-${index}.md` })),
   },
   'writing-link': {
     files: [],
@@ -485,6 +507,16 @@ export async function bootstrapApplication(): Promise<BootResult> {
     if (!listed.ok) throw new Error(`Could not list fixture root: ${path}`)
     return { entries: listed.value, path: memory.harness.path(path), rootId: asRootId(`fixture-root-${index + 1}`) }
   }))
+  const rootPaths = new Map(workspaceRoots.map((root) => [root.rootId, root.path]))
+  const finder = new WorkspaceFinder(async (rootId, relativePath) => {
+    const rootPath = rootPaths.get(rootId)
+    if (!rootPath) throw new Error('Unknown workspace root')
+    const path = memory.harness.path(relativePath ? `${String(rootPath).replace(/\/$/, '')}/${relativePath}` : String(rootPath))
+    const listed = await memory.platform.fs.list(path)
+    if (!listed.ok) throw new Error(listed.error.code)
+    return listed.value
+  })
+  await finder.rebuild(workspaceRoots)
   return {
     element: createElement(ShellApp, {
       environment: browserEnvironment(),
@@ -512,11 +544,13 @@ export async function bootstrapApplication(): Promise<BootResult> {
       windowPort: memory.platform.window,
       ...(workspaceRoots.length ? {
         workspace: {
+          finderStatus: finder.status(),
           onList: async (_rootId: import('../platform/contracts').RootId, path: import('../platform/contracts').Path) => {
             const listed = await memory.platform.fs.list(path)
             if (!listed.ok) throw new Error(listed.error.code)
             return listed.value
           },
+          onQueryFiles: async (query: string) => finder.query(query),
           onWidthChange: () => undefined,
           roots: workspaceRoots,
           width: 240,
@@ -532,6 +566,7 @@ function isRendererCommand(value: unknown): value is RendererCommand {
     'close-tab',
     'close-window',
     'find',
+    'go-to-file',
     'new',
     'new-csv',
     'new-json',
@@ -541,6 +576,7 @@ function isRendererCommand(value: unknown): value is RendererCommand {
     'save-all-for-quit',
     'save-as',
     'settings',
+    'switch-tab',
   ].includes(value)
 }
 
@@ -581,6 +617,7 @@ async function bootstrapElectron(api: MarkzenApi): Promise<BootResult> {
       windowPort,
       ...(boot.value.kind === 'workspace' ? {
         workspace: {
+          finderStatus: boot.value.finderStatus ?? { generation: 0, kind: 'indexing' as const },
           onList: async (rootId: import('../platform/contracts').RootId, path: import('../platform/contracts').Path) => {
             const rootPath = rootPaths.get(rootId)
             if (!rootPath) throw new Error('Unknown workspace root')
@@ -588,6 +625,10 @@ async function bootstrapElectron(api: MarkzenApi): Promise<BootResult> {
             const result = await api.workspace.list(rootId, relativeLogicalPath(rootPath, path), workspaceGeneration)
             if (!result.ok) throw new Error(result.error.code)
             return result.value
+          },
+          onQueryFiles: async (query: string) => {
+            const result = await api.workspace.queryFiles(query)
+            return result.ok ? result.value : { generation: 0, kind: 'indexing' as const, results: [], total: 0 }
           },
           onEvent: (listener: (event: import('../platform/contracts').WorkspaceEventPayload) => void) => api.workspace.onEvent((event) => {
             if (event.kind === 'root-added') rootPaths.set(event.root.rootId, event.root.path)

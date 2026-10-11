@@ -33,6 +33,7 @@ export const channels = {
   workspaceEvent: 'markzen:workspace:event',
   workspaceList: 'markzen:workspace:list',
   workspaceOpen: 'markzen:workspace:open',
+  workspaceQueryFiles: 'markzen:workspace:query-files',
   workspaceRetryRoot: 'markzen:workspace:retry-root',
   windowClose: 'markzen:window:close',
   windowGetState: 'markzen:window:get-state',

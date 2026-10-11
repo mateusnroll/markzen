@@ -39,22 +39,7 @@ and pinned tabs, watcher invalidation, cross-window ownership, the shared save
 transaction, external-conflict handling, and loss-safe behavior for open or
 dirty documents affected by a tree operation.
 
-### 3. Fuzzy file finder and tab quick switcher
-
-Add Cmd/Ctrl+P subsequence matching in the style of VS Code over a flat list of
-openable files in the workspace, together with a tab-switcher modal. The old
-ADR 0011 selected `fuzzysort` and a watcher-maintained flat-file scan, but that
-design was never implemented and must be re-evaluated before adding a
-dependency.
-
-The finder must span all roots in a multi-root workspace and, by this point in
-the sequence, account for the approved CSV, JSON, code, text, and view-only
-document types rather than assuming a Markdown-only workspace. The eventual
-spec must define ranking, path disambiguation, large-workspace performance,
-watcher freshness, preview versus pinned activation, keyboard behavior, and
-accessible result state.
-
-### 4. Expanded settings
+### 3. Expanded settings
 
 Add font family and size, line width, auto-save with a configurable delay, and
 spell check. The old ADR 0013 explored persistence for these settings, while
@@ -66,7 +51,7 @@ Auto-save requires particular care because it extends milestone 0002's dirty
 state, shared save transaction, external-conflict behavior, failure reporting,
 and pending-rename rules.
 
-### 5. Auto-update
+### 4. Auto-update
 
 Ship updates through **electron-updater** with **GitHub Releases as the update
 feed**. CI should publish platform artifacts and update metadata for tagged
