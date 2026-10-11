@@ -608,7 +608,6 @@ export function DocumentWorkspace({
       if (pinned) pinTab(existing.id)
       setActiveId(existing.id)
       setRovingId(existing.id)
-      requestAnimationFrame(() => focusTabButton(existing.id))
       return 'opened'
     }
 
@@ -687,13 +686,11 @@ export function DocumentWorkspace({
       if (pinned) pinTab(duplicate.id)
       setActiveId(duplicate.id)
       setRovingId(duplicate.id)
-      requestAnimationFrame(() => focusTabButton(duplicate.id))
       return 'opened'
     }
     disposeTabEditor(placeholder, editors.current, baselineDocuments.current)
     const replacement = makeTab({ ...gatewaySeed(result.document), preview: !pinned })
     setTabs((current) => current.map((tab) => tab.id === id ? replacement : tab))
-    requestAnimationFrame(() => focusTabButton(replacement.id))
     return 'opened'
   }, [activeId, closeTab, dirty, gateway, makeTab, pinTab, workspace])
 
@@ -1221,7 +1218,11 @@ export function DocumentWorkspace({
             if (!root) return { message: 'This workspace root is no longer available.', ok: false }
             const path = asPath(`${String(root.path).replace(/[\\/]$/, '')}/${result.relativePath}`)
             const disposition = await openWorkspaceEntry({ fileKey: result.fileKey, kind: 'file', name: result.name, path }, pinned, result.rootId)
-            if (disposition === 'opened' || disposition === 'elsewhere') return { ok: true }
+            if (disposition === 'opened') {
+              requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-testid="document-tab"][aria-selected="true"]')?.focus())
+              return { ok: true }
+            }
+            if (disposition === 'elsewhere') return { ok: true }
             if (disposition === 'stale') return { ok: false }
             return {
               message: disposition === 'blocked'

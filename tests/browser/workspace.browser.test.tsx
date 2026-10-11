@@ -274,13 +274,29 @@ describe('spec 0003 preview tabs', () => {
     await delay(220)
     await frame()
     expect(document.querySelectorAll('[data-testid="document-tab"]')).toHaveLength(2)
-    document.querySelector<HTMLButtonElement>('[data-document-tab="pinned"]')!.click()
+    const pinnedTab = document.querySelector<HTMLButtonElement>('[data-document-tab="pinned"]')!
+    pinnedTab.focus()
+    pinnedTab.click()
     await frame()
     expect(document.querySelector<HTMLInputElement>('[data-testid="document-title"]')?.value).toBe('Pinned')
     gateway.resolveWorkspaceOpen()
     await frame()
     await frame()
     expect(document.querySelector<HTMLInputElement>('[data-testid="document-title"]')?.value).toBe('Pinned')
+    expect(document.activeElement).toBe(pinnedTab)
+  })
+
+  test('AC69: Enter on a focused tree file opens a preview while focus stays on that tree item', async () => {
+    const gateway = new WorkspaceFakeGateway()
+    await renderDocumentWorkspace(gateway, [], roots({ path: '/notes', entries: [entry('b.md')] }))
+    const treeFile = await vi.waitFor(() => byLabel('b.md'))
+    treeFile.focus()
+    await userEvent.keyboard('{Enter}')
+    await vi.waitFor(() => expect(gateway.workspaceOpens).toBe(1))
+    await frame()
+    await frame()
+    expect(document.querySelector<HTMLInputElement>('[data-testid="document-title"]')?.value).toBe('b')
+    expect(document.activeElement).toBe(treeFile)
   })
 
   test('AC60: preview B resolving first makes preview A stale permanently', async () => {
