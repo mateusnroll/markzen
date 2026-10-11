@@ -951,23 +951,23 @@
   white-space: nowrap;
 }
 
-.text-document :where(.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-link) {
+:is(.text-document, .raw-document) :where(.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-link) {
   color: var(--mz-code-keyword);
 }
 
-.text-document :where(.hljs-string, .hljs-title, .hljs-name, .hljs-type, .hljs-built_in, .hljs-attr, .hljs-attribute, .hljs-symbol, .hljs-bullet, .hljs-addition, .hljs-variable, .hljs-template-tag, .hljs-template-variable) {
+:is(.text-document, .raw-document) :where(.hljs-string, .hljs-title, .hljs-name, .hljs-type, .hljs-built_in, .hljs-attr, .hljs-attribute, .hljs-symbol, .hljs-bullet, .hljs-addition, .hljs-variable, .hljs-template-tag, .hljs-template-variable) {
   color: var(--mz-code-name);
 }
 
-.text-document :where(.hljs-comment, .hljs-quote, .hljs-deletion, .hljs-meta) {
+:is(.text-document, .raw-document) :where(.hljs-comment, .hljs-quote, .hljs-deletion, .hljs-meta) {
   color: var(--mz-code-comment);
 }
 
-.text-document :where(.hljs-number, .hljs-regexp, .hljs-selector-id, .hljs-selector-class) {
+:is(.text-document, .raw-document) :where(.hljs-number, .hljs-regexp, .hljs-selector-id, .hljs-selector-class) {
   color: var(--mz-code-number);
 }
 
-.app-shell[data-theme="dark"] .text-document {
+.app-shell[data-theme="dark"] :is(.text-document, .raw-document) {
   --mz-code-keyword: #d2a8ff;
   --mz-code-name: #7ee787;
   --mz-code-comment: #8b949e;
@@ -981,4 +981,43 @@
   max-height: calc(100vh - 16rem);
   max-width: 100%;
   object-fit: contain;
+}
+
+.raw-document {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+  padding: 12px 16px 24px 4.5rem;
+  --mz-code-keyword: #8250df;
+  --mz-code-name: #116329;
+  --mz-code-comment: #57606a;
+  --mz-code-number: #0550ae;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.65;
+  text-align: left;
+}
+.raw-document .ProseMirror { min-height: 100%; outline: none; font: inherit; }
+.raw-document pre, .raw-document code {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+.raw-line-numbers { position: absolute; top: 12px; left: 0; width: 3.5rem; user-select: none; pointer-events: none; }
+.raw-line-numbers span { position: absolute; right: 0; }
+.raw-notice { margin: 0; padding: 8px 16px; border-bottom: 1px solid currentColor; font-size: 13px; }
+.raw-notice:empty { padding: 0; border: 0; }
+.document-page:has(.raw-document) { display: flex; flex: 1; min-height: 0; max-width: none; width: 100%; padding: 0; flex-direction: column; }
+.raw-document:focus-within { outline: 1px solid var(--focus-color, currentColor); outline-offset: -1px; }
+@media (forced-colors: active) {
+  .raw-document, .raw-document [class^="hljs-"] { color: CanvasText; }
+  .raw-document ::selection { background: Highlight; color: HighlightText; }
 }

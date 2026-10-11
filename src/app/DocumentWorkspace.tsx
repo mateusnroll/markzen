@@ -3,7 +3,8 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { EditorContent } from '@tiptap/react'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type WheelEvent } from 'react'
-import type { SelectionBookmark } from '@tiptap/pm/state'
+import { EditorState, TextSelection, type SelectionBookmark } from '@tiptap/pm/state'
+import { mapContentPosition } from '../documents/raw-markdown'
 
 import { validateDocumentName } from '../documents/filename'
 import type { DocumentGatewayPort, ExternalGatewayEvent, GatewayDocument, SaveOutcome } from '../documents/gateway'
@@ -14,7 +15,7 @@ import {
   jsonRootFromEditor,
   type JsonDocument,
 } from '../documents/json'
-import { createDocumentExtensions, type RichDocument } from '../documents/markdown'
+import { applyDocumentEncoding, createDocumentExtensions, parseDocumentBytes, serializeRichDocument, type DocumentEncoding, type RichDocument } from '../documents/markdown'
 import { acceptTabBaseline, createTabBaseline, editTabDocument, editTabTitle, isTabDirty } from '../documents/tab-state'
 import {
   asTabId,
@@ -60,7 +61,7 @@ type DocumentSeedBase = {
 }
 
 export type DocumentSeed =
-  | (DocumentSeedBase & { readonly document?: JSONContent; readonly kind?: 'markdown' })
+  | (DocumentSeedBase & { readonly document?: JSONContent; readonly encoding?: DocumentEncoding; readonly raw?: string; readonly kind?: 'markdown' })
   | (DocumentSeedBase & { readonly csv?: CsvDocument; readonly kind: 'csv' })
   | (DocumentSeedBase & { readonly json?: JsonDocument; readonly kind: 'json' })
   | (DocumentSeedBase & { readonly kind: 'text'; readonly language: string; readonly managedExtension?: string; readonly text?: TextDocument })
@@ -95,6 +96,7 @@ type WorkspaceTabBase = {
 }
 
 type WritableWorkspaceTab = WorkspaceTabBase & {
+  readonly markdown?: MarkdownEditors
   readonly csv?: CsvDocument
   readonly editor: Editor
   readonly json?: JsonDocument
@@ -108,6 +110,18 @@ type WorkspaceTab = WritableWorkspaceTab
   | (WorkspaceTabBase & { readonly kind: 'raster'; readonly raster: RasterDisplayMetadata & { readonly url: string } })
   | (WorkspaceTabBase & { readonly kind: 'external'; readonly limitation: string })
 type WorkspaceOpenDisposition = 'blocked' | 'elsewhere' | 'failed' | 'opened' | 'stale'
+
+type MarkdownEditors = {
+  mode: 'rich' | 'raw'
+  readonly rich: Editor
+  raw?: Editor
+  baseline: ProseMirrorNode
+  readonly encoding: DocumentEncoding
+  notice: string
+  readonly scroll: { rich: number; raw: number }
+}
+
+const rawUnavailable = 'Rich mode is unavailable for this source. Edit the Raw Markdown to repair it, or save the source as written.'
 
 const emptyDocument: JSONContent = { content: [{ type: 'paragraph' }], type: 'doc' }
 
@@ -138,6 +152,7 @@ export function DocumentWorkspace({
   const [issue, setIssue] = useState<{ readonly kind: SaveOutcome['kind']; readonly message: string }>()
   const [pendingExternal, setPendingExternal] = useState<GatewayDocument>()
   const [announcement, setAnnouncement] = useState('')
+  const [rawNoticeAttempt, setRawNoticeAttempt] = useState(0)
   const [workspaceRetry, setWorkspaceRetry] = useState<{ readonly entry: DirectoryEntry; readonly pinned: boolean; readonly rootId: RootId }>()
   const generations = useRef(new Map<string, number>())
   const activationIntent = useRef(0)
@@ -158,7 +173,7 @@ export function DocumentWorkspace({
   const updateDocument = useCallback((id: string, editor: Editor) => {
     const baseline = baselineDocuments.current.get(id)
     setTabs((current) => current.map((tab) => (
-      tab.id === id ? { ...editTabDocument(tab, baseline ? persistentDocumentsEqual(editor.state.doc, baseline) : false), preview: false } : tab
+      tab.id === id && isWritableTab(tab) && tab.editor === editor ? { ...editTabDocument(tab, baseline ? persistentDocumentsEqual(editor.state.doc, baseline) : false), preview: false } : tab
     )))
   }, [])
 
@@ -278,17 +293,30 @@ export function DocumentWorkspace({
         onUpdate: ({ editor: updated }) => updateDocument(seed.id, updated),
       })
       editors.current.add(editor)
-      baselineDocuments.current.set(seed.id, editor.state.doc)
+      const markdown: MarkdownEditors = {
+        mode: 'rich', rich: editor, baseline: editor.state.doc,
+        encoding: seed.encoding ?? { bom: false, newline: 'lf' }, notice: '', scroll: { rich: 0, raw: 0 },
+      }
+      const initialRaw = seed.raw ?? (seed.preservation?.kind === 'text' ? seed.preservation.display : undefined)
+      if (initialRaw !== undefined) {
+        markdown.raw = createRawEditor(initialRaw, (updated) => updateDocument(seed.id, updated))
+        editors.current.add(markdown.raw)
+        markdown.mode = 'raw'
+        markdown.notice = rawUnavailable
+        markdown.baseline = markdown.raw.state.doc
+      }
+      baselineDocuments.current.set(seed.id, markdown.baseline)
       return {
         ...createTabBaseline(seed.title),
-        editor,
+        markdown,
+        editor: markdown.raw ?? editor,
         ...(seed.diskVersion ? { diskVersion: seed.diskVersion } : {}),
         ...(seed.fileKey ? { fileKey: seed.fileKey } : {}),
         header: false,
         id: seed.id,
         kind: 'markdown',
         ...(seed.path ? { path: seed.path } : {}),
-        ...(seed.preservation ? { preservation: seed.preservation } : {}),
+        ...(seed.preservation?.kind === 'bytes' ? { preservation: seed.preservation } : {}),
         preview: seed.preview ?? false,
         ...(seed.secondaryPath ? { secondaryPath: seed.secondaryPath } : {}),
         title: seed.title,
@@ -305,6 +333,8 @@ export function DocumentWorkspace({
   const tabsRef = useRef(tabs)
   tabsRef.current = tabs
   const [activeId, setActiveId] = useState(seeds[0]?.id ?? '')
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
 
   useEffect(() => {
     if (!activeId) return
@@ -326,6 +356,13 @@ export function DocumentWorkspace({
   }, [])
 
   const active = tabs.find((tab) => tab.id === activeId)
+  const rawNotice = active?.kind === 'markdown' ? active.markdown?.notice ?? '' : ''
+  useEffect(() => {
+    if (!rawNotice) return
+    setAnnouncement('')
+    const frame = requestAnimationFrame(() => setAnnouncement(rawNotice))
+    return () => cancelAnimationFrame(frame)
+  }, [activeId, rawNotice, rawNoticeAttempt])
   const secondaryPath = useMemo(() => active?.secondaryPath ?? (active?.path && workspace
     ? workspaceSecondaryPath(active.path, workspace.roots)
     : undefined), [active?.path, active?.secondaryPath, workspace])
@@ -335,7 +372,6 @@ export function DocumentWorkspace({
   const dirty = useCallback(
     (tab: WorkspaceTab) => {
       if (tab.kind === 'raster' || tab.kind === 'external') return false
-      if (tab.kind === 'markdown') return isTabDirty(tab)
       const baseline = baselineDocuments.current.get(tab.id)
       return isTabDirty(tab) || Boolean(baseline && !persistentDocumentsEqual(tab.editor.state.doc, baseline))
     },
@@ -344,10 +380,83 @@ export function DocumentWorkspace({
 
   const contentDirty = useCallback((tab: WorkspaceTab) => {
     if (tab.kind === 'raster' || tab.kind === 'external') return false
-    if (tab.kind === 'markdown') return tab.contentDirty
     const baseline = baselineDocuments.current.get(tab.id)
     return tab.contentDirty || Boolean(baseline && !persistentDocumentsEqual(tab.editor.state.doc, baseline))
   }, [])
+
+  const recordBaseline = useCallback((tab: WritableWorkspaceTab, snapshot: ProseMirrorNode) => {
+    if (tab.markdown) tab.markdown.baseline = snapshot
+    const baseline = tab.markdown ? markdownBaseline(tab.markdown, tab.markdown.mode) : snapshot
+    if (baseline) baselineDocuments.current.set(tab.id, baseline)
+    else baselineDocuments.current.delete(tab.id)
+  }, [])
+
+  const toggleRaw = useCallback(() => {
+    const tab = tabsRef.current.find((candidate) => candidate.id === activeIdRef.current)
+    if (!tab || !isWritableTab(tab) || !tab.markdown || tab.preservation || !commitStructuredDraft(tab)) return
+    const state = tab.markdown
+    const beforeDirty = contentDirty(tab)
+    const from = tab.editor
+    const destinationMode = state.mode === 'rich' ? 'raw' : 'rich'
+    let incoming: JSONContent
+    if (destinationMode === 'rich') {
+      const parsed = safelyParseRaw(from.state.doc.textContent, state.encoding)
+      if (!parsed) {
+        state.notice = rawUnavailable
+        setRawNoticeAttempt((attempt) => attempt + 1)
+        setTabs((current) => [...current])
+        return
+      }
+      incoming = withImageIds(parsed.content.length ? parsed as JSONContent : emptyDocument)
+    } else {
+      let source: string
+      try { source = richSource(from.state.doc, state.encoding) }
+      catch {
+        state.notice = 'This document cannot safely transfer to Raw Markdown.'
+        setRawNoticeAttempt((attempt) => attempt + 1)
+        setTabs((current) => [...current])
+        return
+      }
+      incoming = rawJson(source)
+      if (!state.raw) {
+        state.raw = createRawEditor(source, (updated) => updateDocument(tab.id, updated))
+        editors.current.add(state.raw)
+      }
+    }
+    const destination = destinationMode === 'raw' ? state.raw! : state.rich
+    const node = destination.schema.nodeFromJSON(incoming)
+    const changed = !persistentDocumentsEqual(destination.state.doc, node)
+    const scroller = document.querySelector<HTMLElement>('[data-testid="raw-document"]') ?? document.querySelector<HTMLElement>('[data-testid="active-document-panel"]')
+    state.scroll[state.mode] = scroller?.scrollTop ?? 0
+    if (changed) {
+      const fromPosition = contentPosition(from.state.doc, from.state.selection.from)
+      const toPosition = contentPosition(from.state.doc, from.state.selection.to)
+      const sourceText = contentText(from.state.doc)
+      const targetText = contentText(node)
+      const first = documentPosition(node, mapContentPosition(sourceText, targetText, fromPosition))
+      const last = documentPosition(node, mapContentPosition(sourceText, targetText, toPosition))
+      const selection = TextSelection.between(node.resolve(Math.min(first, last)), node.resolve(Math.max(first, last)))
+      destination.view.updateState(EditorState.create({ doc: node, plugins: destination.state.plugins, selection }))
+      state.scroll[destinationMode] = 0
+    }
+    state.mode = destinationMode
+    state.notice = ''
+    const baseline = markdownBaseline(state, destinationMode)
+    if (baseline) baselineDocuments.current.set(tab.id, baseline)
+    else baselineDocuments.current.delete(tab.id)
+    setSearchOpen(false)
+    searchBookmark.current = undefined
+    const updated = { ...tab, editor: destination, contentDirty: beforeDirty }
+    tabsRef.current = tabsRef.current.map((candidate) => candidate.id === tab.id ? updated : candidate)
+    setTabs((current) => current.map((candidate) => candidate.id === tab.id ? updated : candidate))
+    requestAnimationFrame(() => {
+      if (activeIdRef.current !== tab.id || destination.isDestroyed || state.mode !== destinationMode) return
+      destination.commands.focus(undefined, { scrollIntoView: false })
+      const target = document.querySelector<HTMLElement>('[data-testid="raw-document"]') ?? document.querySelector<HTMLElement>('[data-testid="active-document-panel"]')
+      if (target) target.scrollTop = state.scroll[destinationMode]
+      if (changed) destination.commands.scrollIntoView()
+    })
+  }, [contentDirty, updateDocument])
 
   const pinTab = useCallback((id: string) => {
     setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, preview: false } : tab))
@@ -423,7 +532,7 @@ export function DocumentWorkspace({
         }).then((result) => {
           if (result.kind === 'saved' || result.kind === 'cleanup-warning') {
             if (generations.current.get(tab.id) !== generation) return
-            baselineDocuments.current.set(tab.id, snapshot)
+            recordBaseline(tab, snapshot)
             setTabs((current) => current.map((candidate) => (
               candidate.id === tab.id ? adoptGatewayResult(candidate, result.document, snapshot) : candidate
             )))
@@ -435,7 +544,7 @@ export function DocumentWorkspace({
         })
       })
     },
-    [closeTab, contentDirty, dirty, gateway, tabs],
+    [closeTab, contentDirty, dirty, gateway, recordBaseline, tabs],
   )
 
   const addTab = useCallback((kind: 'csv' | 'json' | 'markdown' = 'markdown') => {
@@ -470,6 +579,11 @@ export function DocumentWorkspace({
   const handleWorkspaceKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       const modifier = event.metaKey || event.ctrlKey
+      if ((navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey) && event.key.toLowerCase() === 'e' && active?.kind === 'markdown' && !active.preservation) {
+        event.preventDefault()
+        toggleRaw()
+        return
+      }
       if (modifier && event.key === ',') {
         event.preventDefault()
         setFinderOpen(false)
@@ -490,7 +604,7 @@ export function DocumentWorkspace({
         title?.setSelectionRange(title.value.length, title.value.length)
       }
     },
-    [active, onSettingsRequest, openSearch],
+    [active, onSettingsRequest, openSearch, toggleRaw],
   )
 
   useEffect(() => {
@@ -529,7 +643,7 @@ export function DocumentWorkspace({
         applySourceRebases(tab.editor, result.document.sourceRebases ?? [], true)
         if (result.document.document) baseline = tab.editor.schema.nodeFromJSON(result.document.document)
       }
-      baselineDocuments.current.set(tab.id, baseline)
+      recordBaseline(tab, baseline)
       setTabs((current) => current.map((candidate) => (
         candidate.id === tab.id ? adoptGatewayResult(candidate, result.document, baseline) : candidate
       )))
@@ -545,7 +659,7 @@ export function DocumentWorkspace({
     }
     setIssue({ kind: result.kind, message: messages[result.kind] ?? 'The document could not be saved.' })
     if (result.kind === 'rename-decision') setRenameCandidate(tab.id)
-  }, [])
+  }, [recordBaseline])
 
   const save = useCallback(() => {
     if (!active || active.kind === 'raster' || active.kind === 'external' || !titleValidation.valid || !commitStructuredDraft(active)) return
@@ -695,8 +809,10 @@ export function DocumentWorkspace({
   }, [activeId, closeTab, dirty, gateway, makeTab, pinTab, workspace])
 
   const saveTabsSequentially = useCallback(async (dirtyTabs: readonly WorkspaceTab[]): Promise<boolean> => {
-    for (const tab of dirtyTabs) {
-      if (!isWritableTab(tab)) continue
+    for (const requested of dirtyTabs) {
+      const tab = tabsRef.current.find((candidate) => candidate.id === requested.id)
+      if (!tab || !isWritableTab(tab)) continue
+      const generation = generations.current.get(tab.id) ?? 0
       if (!commitStructuredDraft(tab)) {
         setIssue({ kind: 'error', message: `Save All stopped at ${tab.title || 'Untitled'} because a JSON number is incomplete.` })
         return false
@@ -711,15 +827,28 @@ export function DocumentWorkspace({
         setIssue({ kind: result.kind, message: `Save All stopped at ${tab.title || 'Untitled'}.` })
         return false
       }
+      if ((generations.current.get(tab.id) ?? 0) !== generation) {
+        setIssue({ kind: 'error', message: `Save All stopped at ${tab.title || 'Untitled'} because another save or document operation took over.` })
+        return false
+      }
       if (result.kind === 'saved' || result.kind === 'cleanup-warning') {
-        baselineDocuments.current.set(tab.id, snapshot)
-        setTabs((current) => current.map((candidate) => (
-          candidate.id === tab.id ? adoptGatewayResult(candidate, result.document, snapshot) : candidate
-        )))
+        recordBaseline(tab, snapshot)
+        const next = tabsRef.current.map((candidate) => candidate.id === tab.id ? adoptGatewayResult(candidate, result.document, snapshot) : candidate)
+        tabsRef.current = next
+        setTabs(next)
+        const latest = next.find((candidate) => candidate.id === tab.id)
+        if (latest && isTabDirty(latest)) {
+          setIssue({ kind: 'error', message: `Save All stopped at ${tab.title || 'Untitled'} because newer edits still need saving.` })
+          return false
+        }
       }
     }
+    if (tabsRef.current.some((tab) => isWritableTab(tab) && isTabDirty(tab))) {
+      setIssue({ kind: 'error', message: 'Save All stopped because additional documents now need saving.' })
+      return false
+    }
     return true
-  }, [contentDirty, gateway])
+  }, [contentDirty, gateway, recordBaseline])
 
   const requestWindowClose = useCallback(() => {
     const dirtyTabs = tabs.filter(dirty)
@@ -735,7 +864,7 @@ export function DocumentWorkspace({
       }
       if (await saveTabsSequentially(dirtyTabs)) onCloseWindow?.()
     })
-  }, [dirty, gateway, onCloseWindow, saveTabsSequentially, tabs])
+  }, [dirty, gateway, onCloseWindow, saveTabsSequentially, tabs, toggleRaw])
 
   useEffect(() => {
     if (closeRequest > handledCloseRequest.current) {
@@ -751,6 +880,7 @@ export function DocumentWorkspace({
 
   useEffect(() => gateway.onCommand((command) => {
     if (active?.kind === 'csv') document.querySelector<HTMLTextAreaElement>('[data-testid="csv-cell-editor"]')?.blur()
+    if (command === 'raw-markdown') toggleRaw()
     if (command === 'new') addTab('markdown')
     if (command === 'new-csv') addTab('csv')
     if (command === 'new-json') addTab('json')
@@ -782,6 +912,7 @@ export function DocumentWorkspace({
       tabs: tabs.map((tab) => ({
         dirty: dirty(tab),
         preservation: Boolean(tab.preservation),
+        rawMarkdown: isWritableTab(tab) && tab.markdown?.mode === 'raw',
         tabId: asTabId(tab.id),
         title: tab.title || 'Untitled',
         titleValid: validateDocumentName(tab.title).valid || (!tab.title && !tab.baselineTitle),
@@ -805,8 +936,8 @@ export function DocumentWorkspace({
       if (tab.id === activeId) setIssue({ kind: 'conflict', message: 'This file changed on disk. Choose how to resolve the conflict.' })
       return
     }
-    const replacement = makeTab(gatewaySeed(event.document))
     disposeTabEditor(tab, editors.current, baselineDocuments.current)
+    const replacement = makeTab(gatewaySeed(event.document))
     setTabs((current) => current.map((candidate) => candidate.id === tab.id ? replacement : candidate))
     void gateway.acceptExternal(event.document)
     setAnnouncement('Document reloaded from disk.')
@@ -814,8 +945,8 @@ export function DocumentWorkspace({
 
   const reloadExternal = useCallback(() => {
     if (!active || !pendingExternal || active.id !== pendingExternal.id) return
-    const replacement = makeTab(gatewaySeed(pendingExternal))
     disposeTabEditor(active, editors.current, baselineDocuments.current)
+    const replacement = makeTab(gatewaySeed(pendingExternal))
     setTabs((current) => current.map((candidate) => candidate.id === active.id ? replacement : candidate))
     void gateway.acceptExternal(pendingExternal)
     setPendingExternal(undefined)
@@ -976,7 +1107,7 @@ export function DocumentWorkspace({
         <div aria-hidden="true" className="tab-drag-space" />
       </div>
 
-      {active && active.kind === 'markdown' && !active.preservation ? (
+      {active && active.kind === 'markdown' && active.markdown?.mode !== 'raw' && !active.preservation ? (
         <WritingToolbar
           editor={active.editor}
           key={`toolbar-${active.id}`}
@@ -993,11 +1124,11 @@ export function DocumentWorkspace({
       {active ? (
         <section
           aria-label={active.title || 'Untitled document'}
-          className={`document-surface${active.kind === 'csv' || active.kind === 'json' || active.kind === 'text' ? ' document-surface-full-panel' : ''}`}
+          className={`document-surface${active.kind === 'csv' || active.kind === 'json' || active.kind === 'text' || (isWritableTab(active) && active.markdown?.mode === 'raw') ? ' document-surface-full-panel' : ''}`}
           data-testid="active-document-panel"
           id="active-document-panel"
           onMouseDown={(event) => {
-            if (active.preservation || active.kind !== 'markdown' || event.button !== 0 || !(event.target instanceof Element)) return
+            if (active.preservation || active.kind !== 'markdown' || active.markdown?.mode === 'raw' || event.button !== 0 || !(event.target instanceof Element)) return
             const surface = event.currentTarget
             if (event.clientX >= surface.getBoundingClientRect().left + surface.clientWidth) return
             if (event.target.closest('button, input, textarea, select, a, dialog, [role="menu"], [role="toolbar"], .document-issue, .preservation-panel')) return
@@ -1018,7 +1149,7 @@ export function DocumentWorkspace({
           role="tabpanel"
         >
           <div
-            className={`document-page${active.kind === 'csv' || active.kind === 'json' || active.kind === 'text' ? ' document-page-full-panel' : ''}`}
+            className={`document-page${active.kind === 'csv' || active.kind === 'json' || active.kind === 'text' || (isWritableTab(active) && active.markdown?.mode === 'raw') ? ' document-page-full-panel' : ''}`}
             data-testid="document-page"
           >
             {active.kind !== 'raster' && active.kind !== 'external' ? <div
@@ -1079,7 +1210,10 @@ export function DocumentWorkspace({
               ) : null}
               {active.kind === 'text' ? <p className="text-language-label" data-testid="text-language-label">{active.language ?? 'Plain text'}</p> : null}
             </div> : null}
-            {active.preservation && active.kind === 'text' ? (
+            {active.kind === 'markdown' ? <p aria-live="off" className="raw-notice" data-testid="raw-notice" id="raw-mode-notice" role="status">{active.markdown?.notice ?? ''}</p> : null}
+            {isWritableTab(active) && active.markdown?.mode === 'raw' ? (
+              <RawEditorPanel key={active.id} editor={active.editor} state={active.markdown} title={active.title || 'Untitled'} />
+            ) : active.preservation && active.kind === 'text' ? (
               <div className="preservation-panel">
                 <p data-testid="preservation-explanation">{active.preservation.display}</p>
                 <button data-testid="open-in-default-app" onClick={() => void gateway.openInDefaultApp(active.id)} type="button">Open in Default App</button>
@@ -1130,7 +1264,7 @@ export function DocumentWorkspace({
             ) : (
               <EditorContent data-testid="rich-editor" editor={active.editor} />
             )}
-            {!active.preservation && active.kind === 'markdown' ? (
+            {!active.preservation && active.kind === 'markdown' && active.markdown?.mode !== 'raw' ? (
               <TableActions
                 editor={active.editor}
                 key={`tables-${active.id}`}
@@ -1138,7 +1272,7 @@ export function DocumentWorkspace({
                 onPointerMove={(kind, event) => moveController.current?.startPointer(kind, event)}
               />
             ) : null}
-            {!active.preservation && active.kind === 'markdown' ? (
+            {!active.preservation && active.kind === 'markdown' && active.markdown?.mode !== 'raw' ? (
               <ImageActions
                 editor={active.editor}
                 gateway={gateway}
@@ -1150,7 +1284,7 @@ export function DocumentWorkspace({
                 tabId={active.id}
               />
             ) : null}
-            {!active.preservation && active.kind === 'markdown' ? (
+            {!active.preservation && active.kind === 'markdown' && active.markdown?.mode !== 'raw' ? (
               <MoveController
                 editor={active.editor}
                 key={`move-${active.id}`}
@@ -1159,7 +1293,7 @@ export function DocumentWorkspace({
                 ref={moveController}
               />
             ) : null}
-            {!active.preservation && active.kind === 'markdown' ? (
+            {!active.preservation && active.kind === 'markdown' && active.markdown?.mode !== 'raw' ? (
               <LinkActions
                 editor={active.editor}
                 key={`links-${active.id}`}
@@ -1367,7 +1501,7 @@ function gatewayDocument(tab: WorkspaceTab, documentDirty = tab.contentDirty): G
             },
           }
           : tab.kind === 'markdown'
-            ? { document: tab.editor.getJSON() as RichDocument }
+            ? { ...(tab.markdown?.mode === 'raw' ? { raw: textFromEditor(tab.editor) } : { document: tab.editor.getJSON() as RichDocument }), encoding: tab.markdown?.encoding ?? { bom: false, newline: 'lf' } }
             : {}),
     ...(tab.fileKey ? { fileKey: tab.fileKey } : {}),
     id: tab.id,
@@ -1406,7 +1540,7 @@ function gatewaySeed(document: GatewayDocument): DocumentSeed {
     raster: document.raster ?? { animated: false, format: 'PNG', height: 0, url: '', width: 0 },
   }
   if (kind === 'external') return { ...common, kind, limitation: document.limitation ?? 'Markzen cannot edit or preview this file type.' }
-  return { ...common, ...(document.document ? { document: document.document as JSONContent } : {}), kind: 'markdown' }
+  return { ...common, ...(document.document ? { document: document.document as JSONContent } : {}), ...(document.raw !== undefined ? { raw: document.raw } : {}), ...(document.encoding ? { encoding: document.encoding } : {}), kind: 'markdown' }
 }
 
 const displaySeedTitle = (name: string): string => name.replace(/\.(md|markdown|txt|csv|json)$/i, '')
@@ -1431,7 +1565,7 @@ function adoptGatewayResult(tab: WorkspaceTab, document: GatewayDocument, snapsh
   if (!isWritableTab(tab)) return tab
   return {
     ...acceptTabBaseline(tab, document.title),
-    contentDirty: !persistentDocumentsEqual(tab.editor.state.doc, snapshot),
+    contentDirty: !persistentDocumentsEqual(tab.editor.state.doc, (tab.markdown ? markdownBaseline(tab.markdown, tab.markdown.mode) : snapshot) ?? snapshot),
     ...(document.csv ? { csv: document.csv } : {}),
     ...(document.json ? { json: document.json } : {}),
     ...(document.diskVersion ? { diskVersion: document.diskVersion } : {}),
@@ -1455,7 +1589,7 @@ function focusEditorAtClosestLine(editor: Editor, clientY: number): void {
 }
 
 function persistentDocumentsEqual(left: ProseMirrorNode, right: ProseMirrorNode): boolean {
-  if (left.type !== right.type || left.text !== right.text || left.childCount !== right.childCount || left.marks.length !== right.marks.length) return false
+  if (left.type.name !== right.type.name || left.text !== right.text || left.childCount !== right.childCount || left.marks.length !== right.marks.length) return false
   const leftAttrs = { ...left.attrs }
   const rightAttrs = { ...right.attrs }
   delete leftAttrs.assetUrl
@@ -1471,12 +1605,21 @@ function persistentDocumentsEqual(left: ProseMirrorNode, right: ProseMirrorNode)
   delete rightAttrs.sourceKind
   delete rightAttrs.id
   if (JSON.stringify(leftAttrs) !== JSON.stringify(rightAttrs)) return false
-  for (let index = 0; index < left.marks.length; index += 1) if (!left.marks[index]?.eq(right.marks[index]!)) return false
+  for (let index = 0; index < left.marks.length; index += 1) if (JSON.stringify(left.marks[index]?.toJSON()) !== JSON.stringify(right.marks[index]?.toJSON())) return false
   for (let index = 0; index < left.childCount; index += 1) if (!persistentDocumentsEqual(left.child(index), right.child(index))) return false
   return true
 }
 
 function commitStructuredDraft(tab: WorkspaceTab): boolean {
+  if (isWritableTab(tab) && tab.editor.view.composing) {
+    const wasFocused = tab.editor.view.hasFocus()
+    tab.editor.view.dom.blur()
+    tab.editor.view.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    // ProseMirror defers its final composition DOM read; lifecycle capture must flush it synchronously.
+    const view = tab.editor.view as typeof tab.editor.view & { domObserver: { flush(): void } }
+    view.domObserver.flush()
+    if (wasFocused && document.activeElement === document.body) view.focus()
+  }
   return tab.kind !== 'json' || commitJsonDraft(tab.editor)
 }
 
@@ -1490,8 +1633,11 @@ function disposeTabEditor(
   baselines: Map<string, ProseMirrorNode>,
 ): void {
   if (isWritableTab(tab)) {
-    tab.editor.destroy()
-    editors.delete(tab.editor)
+    const owned = tab.markdown ? [tab.markdown.rich, tab.markdown.raw] : [tab.editor]
+    for (const editor of owned) {
+      editor?.destroy()
+      if (editor) editors.delete(editor)
+    }
   }
   baselines.delete(tab.id)
 }
@@ -1517,4 +1663,125 @@ function withImageIds(document: JSONContent): JSONContent {
     ...(node.content ? { content: node.content.map(visit) } : {}),
   })
   return visit(document)
+}
+
+function rawJson(text: string): JSONContent {
+  return { type: 'doc', content: [{ type: 'codeBlock', attrs: { language: 'markdown' }, ...(text ? { content: [{ type: 'text', text }] } : {}) }] }
+}
+
+function createRawEditor(text: string, onUpdate: (editor: Editor) => void): Editor {
+  return createTextEditor({ text, edited: false, encoding: { bom: false, newline: 'lf' }, originalBytes: new Uint8Array() }, 'Markdown', onUpdate, undefined, true)
+}
+
+function richSource(node: ProseMirrorNode, encoding: DocumentEncoding): string {
+  return new TextDecoder().decode(serializeRichDocument(node.toJSON() as RichDocument, encoding)).replaceAll('\r\n', '\n').replaceAll('\r', '\n')
+}
+
+function safelyParseRaw(source: string, encoding: DocumentEncoding): RichDocument | undefined {
+  try {
+    const parsed = parseDocumentBytes(applyDocumentEncoding(source, encoding))
+    return parsed.mode === 'rich' ? parsed.document : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function markdownBaseline(state: MarkdownEditors, mode: 'rich' | 'raw'): ProseMirrorNode | undefined {
+  const wasRaw = state.raw && state.baseline.type.schema === state.raw.schema
+  if (mode === 'raw') {
+    if (wasRaw) return state.baseline
+    return state.raw?.schema.nodeFromJSON(rawJson(richSource(state.baseline, state.encoding)))
+  }
+  if (!wasRaw) return state.baseline
+  const parsed = safelyParseRaw(state.baseline.textContent, state.encoding)
+  return parsed ? state.rich.schema.nodeFromJSON(parsed.content.length ? parsed : emptyDocument) : undefined
+}
+
+function contentMap(node: ProseMirrorNode): { text: string; positions: number[] } {
+  const pieces: string[] = []
+  const positions: number[] = []
+  let block = false
+  node.descendants((child, position) => {
+    if (child.isTextblock) {
+      if (block) { pieces.push('\n'); positions.push(position + 1) }
+      block = true
+    }
+    if (child.isText && child.text) {
+      pieces.push(child.text)
+      for (let index = 0; index < child.text.length; index++) positions.push(position + index)
+    } else if (child.isLeaf && !child.isText) {
+      pieces.push('\ufffc'); positions.push(position)
+    }
+  })
+  positions.push(Math.max(1, node.content.size - 1))
+  return { text: pieces.join(''), positions }
+}
+const contentText = (node: ProseMirrorNode): string => contentMap(node).text
+function contentPosition(node: ProseMirrorNode, position: number): number {
+  const map = contentMap(node)
+  const found = map.positions.findIndex((value) => value >= position)
+  return found < 0 ? map.text.length : found
+}
+function documentPosition(node: ProseMirrorNode, offset: number): number {
+  const map = contentMap(node)
+  return Math.min(node.content.size, map.positions[offset] ?? node.content.size)
+}
+
+function RawEditorPanel({ editor, state, title }: { readonly editor: Editor; readonly state: MarkdownEditors; readonly title: string }) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const [lines, setLines] = useState<readonly { number: number; top: number }[]>([])
+  useEffect(() => {
+    editor.view.dom.setAttribute('aria-label', `${title} — Raw Markdown`)
+    editor.view.dom.setAttribute('aria-describedby', 'raw-mode-notice')
+  }, [editor, title])
+  useEffect(() => {
+    const surface = scroller.current
+    if (!surface) return
+    surface.scrollTop = state.scroll.raw
+    let pending = 0
+    const refresh = () => {
+      if (editor.isDestroyed) return
+      const code = editor.view.dom.querySelector('code')
+      if (!code) return
+      const bounds = surface.getBoundingClientRect()
+      const codeBounds = code.getBoundingClientRect()
+      if (!bounds.height) return
+      const from = Math.max(0, (editor.view.posAtCoords({ left: codeBounds.left + 1, top: Math.max(bounds.top, codeBounds.top) + 1 })?.pos ?? 1) - 1)
+      const to = Math.max(from, (editor.view.posAtCoords({ left: codeBounds.left + 1, top: Math.min(bounds.bottom, codeBounds.bottom) - 1 })?.pos ?? from + 1) - 1)
+      const starts = [0]
+      const text = editor.state.doc.textContent
+      for (let index = 0; index < text.length; index++) if (text[index] === '\n') starts.push(index + 1)
+      const first = Math.max(0, starts.findLastIndex((offset) => offset <= from))
+      const visible: { number: number; top: number }[] = []
+      for (let index = first; index < starts.length; index++) {
+        const offset = starts[index]!
+        visible.push({ number: index + 1, top: editor.view.coordsAtPos(offset + 1).top - codeBounds.top })
+        if (offset > to) break
+      }
+      setLines(visible)
+    }
+    const schedule = () => { cancelAnimationFrame(pending); pending = requestAnimationFrame(refresh) }
+    const observer = new ResizeObserver(schedule)
+    observer.observe(surface)
+    editor.on('update', schedule)
+    surface.addEventListener('scroll', schedule)
+    schedule()
+    return () => {
+      cancelAnimationFrame(pending)
+      observer.disconnect()
+      editor.off('update', schedule)
+      surface.removeEventListener('scroll', schedule)
+      state.scroll.raw = surface.scrollTop
+    }
+  }, [editor, state])
+  return (
+    <>
+      <div className="raw-document" data-testid="raw-document" onScroll={(event) => { state.scroll.raw = event.currentTarget.scrollTop }} ref={scroller}>
+        <div aria-hidden="true" className="raw-line-numbers" data-testid="raw-line-numbers">
+          {lines.map((line) => <span data-testid="raw-line-number" key={line.number} style={{ top: line.top }}>{line.number}</span>)}
+        </div>
+        <EditorContent data-testid="raw-editor" editor={editor} />
+      </div>
+    </>
+  )
 }

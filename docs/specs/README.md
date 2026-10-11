@@ -49,6 +49,10 @@ Post-rewrite feature specs continue the same lifecycle:
 | 0013 | [Table and image reordering](0013-table-and-image-reordering.md) | Implemented |
 | 0014 | [Fuzzy file finder and tab quick switcher](0014-fuzzy-file-finder-and-tab-switcher.md) | Implemented |
 
+Spec 0014 is reserved by open PR #32. [Spec 0015 — Raw Markdown editing](0015-raw-markdown-editing.md) is Implemented.
+
+Spec 0002 was revised with 0015 to route editable UTF-8 fallback into Raw mode. Both returned to Implemented after independent approval, mapped tests, simplicity review, and browser plus packaged-shell verification.
+
 ## Scenario routing
 
 - Observable and in scope → numbered AC.

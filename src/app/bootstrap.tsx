@@ -41,6 +41,11 @@ type Fixture = {
 }
 
 const fixtures: Readonly<Record<string, Fixture>> = {
+  'raw-save-race': { files: [], dialogs: [{ kind: 'save', path: '/notes/raw-race.md' }], saveDelay: 800 },
+  'raw-markdown': {
+    files: [{ path: '/notes/raw.md', bytes: '$$unsupported\nsource' }, { path: '/notes/invalid.md', bytesBase64: '/w==', bytes: '' }],
+    dialogs: [{ kind: 'open', path: '/notes/raw.md' }, { kind: 'open', path: '/notes/invalid.md' }],
+  },
   basic: {
     files: [{ bytes: '# Welcome\n', path: '/notes/welcome.md' }],
   },
@@ -75,6 +80,7 @@ const fixtures: Readonly<Record<string, Fixture>> = {
   },
   'writing-search-10k': {
     files: [],
+    dialogs: [{ kind: 'save', path: '/notes/search-performance.md' }],
     initialDocuments: [{
       id: 'writing-search',
       title: 'Search performance',
@@ -488,9 +494,11 @@ export async function bootstrapApplication(): Promise<BootResult> {
       document.documentElement.dataset.testid = 'fixture-save-status'
       document.documentElement.dataset.fixtureSaveState = 'pending'
       await new Promise<void>((resolve) => setTimeout(resolve, fixture.saveDelay))
-      delete document.documentElement.dataset.fixtureSaveState
-      delete document.documentElement.dataset.testid
-      return super.save(input)
+      try { return await super.save(input) }
+      finally {
+        delete document.documentElement.dataset.fixtureSaveState
+        delete document.documentElement.dataset.testid
+      }
     }
 
     override async openWorkspace(input: import('../documents/gateway').WorkspaceOpenInput) {
@@ -571,6 +579,7 @@ function isRendererCommand(value: unknown): value is RendererCommand {
     'new-csv',
     'new-json',
     'open',
+    'raw-markdown',
     'save',
     'save-all',
     'save-all-for-quit',

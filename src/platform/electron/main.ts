@@ -364,7 +364,11 @@ function updateMenuEnablement(): void {
   const active = state?.tabs.find((tab) => tab.tabId === state.activeTabId)
   const activeDocument = active ? documents.get(active.tabId) : undefined
   const activeWritable = Boolean(activeDocument && documentKindAllowsWrite(activeDocument.kind))
+  const rawEligible = Boolean(focused && active && activeDocument?.kind === 'markdown' && !active.preservation)
+  const rawItem = menu.getMenuItemById('markzen-raw-markdown')
+  if (rawItem) rawItem.checked = rawEligible && active?.rawMarkdown === true
   const enabled: Readonly<Record<string, boolean>> = {
+    'raw-markdown': rawEligible,
     'add-folder': record?.kind === 'workspace',
     'close-tab': Boolean(state?.tabs.length),
     'close-window': Boolean(record),
@@ -1808,11 +1812,12 @@ function validateMenuState(payload: unknown, windowId: WindowId): DocumentMenuSt
   for (const candidate of value.tabs) {
     if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) return undefined
     const tab = candidate as Record<string, unknown>
-    if (Object.keys(tab).sort().join(',') !== 'dirty,preservation,tabId,title,titleValid') return undefined
+    if (Object.keys(tab).filter((key) => key !== 'rawMarkdown').sort().join(',') !== 'dirty,preservation,tabId,title,titleValid') return undefined
+    if (tab.rawMarkdown !== undefined && typeof tab.rawMarkdown !== 'boolean') return undefined
     if (typeof tab.tabId !== 'string' || documents.get(asTabId(tab.tabId))?.windowId !== windowId) return undefined
     if (typeof tab.dirty !== 'boolean' || typeof tab.preservation !== 'boolean' || typeof tab.titleValid !== 'boolean') return undefined
     if (typeof tab.title !== 'string' || tab.title.length > 255) return undefined
-    tabs.push({ dirty: tab.dirty, preservation: tab.preservation, tabId: asTabId(tab.tabId), title: tab.title, titleValid: tab.titleValid })
+    tabs.push({ dirty: tab.dirty, preservation: tab.preservation, rawMarkdown: tab.rawMarkdown === true, tabId: asTabId(tab.tabId), title: tab.title, titleValid: tab.titleValid })
   }
   const activeTabId = typeof value.activeTabId === 'string' ? asTabId(value.activeTabId) : undefined
   if (activeTabId && !tabs.some((tab) => tab.tabId === activeTabId)) return undefined

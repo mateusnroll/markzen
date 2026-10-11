@@ -250,7 +250,7 @@ export type DocumentWriteRequest = {
   readonly model?: unknown
 }
 export type DocumentCommand = 'close-tab' | 'close-window' | 'new' | 'new-csv' | 'new-json' | 'open' | 'save' | 'save-all' | 'save-all-for-quit' | 'save-as'
-export type RendererCommand = DocumentCommand | 'find' | 'go-to-file' | 'settings' | 'switch-tab'
+export type RendererCommand = DocumentCommand | 'find' | 'go-to-file' | 'settings' | 'switch-tab' | 'raw-markdown'
 export type ApplicationCommand = RendererCommand | 'add-folder' | 'open-folder'
 export type ExternalOpenResult = { readonly kind: 'cancelled' | 'error' | 'opened' | 'unsupported' }
 export type DocumentMenuState = {
@@ -258,6 +258,7 @@ export type DocumentMenuState = {
   readonly tabs: readonly {
     readonly dirty: boolean
     readonly preservation: boolean
+    readonly rawMarkdown?: boolean
     readonly tabId: TabId
     readonly title: string
     readonly titleValid: boolean

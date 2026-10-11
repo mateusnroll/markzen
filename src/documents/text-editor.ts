@@ -15,8 +15,9 @@ export function createTextEditor(
   language: string,
   onUpdate?: (editor: Editor) => void,
   onRejected?: (reason: TextBoundsResult & { readonly ok: false }) => void,
+  rawMarkdown = false,
 ): Editor {
-  const grammar = grammarForLanguage(language)
+  const grammar = rawMarkdown ? 'markdown' : grammarForLanguage(language)
   const bounds = Extension.create({
     name: 'textDocumentBounds',
     addProseMirrorPlugins: () => [new Plugin({
@@ -32,8 +33,9 @@ export function createTextEditor(
     content: textJson(document.text, grammar),
     editorProps: {
       attributes: {
-        'aria-label': 'Text document editor',
-        'data-testid': 'text-editor-content',
+        'aria-label': rawMarkdown ? 'Raw Markdown editor' : 'Text document editor',
+        'aria-multiline': 'true',
+        'data-testid': rawMarkdown ? 'raw-editor-content' : 'text-editor-content',
         role: 'textbox',
         spellcheck: 'false',
       },
@@ -55,7 +57,7 @@ export function createTextEditor(
         strike: false,
       }),
       ...(grammar ? [CodeBlockLowlight.configure({ lowlight })] : []),
-      bounds,
+      ...(!rawMarkdown ? [bounds] : []),
       SearchExtension,
     ],
     onUpdate: ({ editor }) => onUpdate?.(editor),

@@ -33,7 +33,7 @@ TipTap's editor model is semantic while Markdown contains alternate spellings, u
 
 ## Consequences
 
-- Some valid Markdown opens read-only until a later schema supports it, favoring data safety over partial editing.
+- Spec 0015 proposes editable Raw fallback for valid UTF-8 that cannot enter Rich; until that spec is Implemented, such Markdown retains the read-only fallback. Invalid UTF-8 remains in exact-byte preservation.
 - Canonical output may change harmless source spelling for supported edited content, while opaque source remains exact.
 - Whole-document preservation and byte preservation share Save As/rename mechanics but never enter rich editing.
 
