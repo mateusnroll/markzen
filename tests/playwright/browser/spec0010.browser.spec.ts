@@ -9,7 +9,7 @@ test('AC5 AC21 AC59-AC62: JSON workspace activation, exact-copy Save As, save, w
   await page.getByTestId('json-inline-editor').fill('Changed')
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
   await expect(page.getByTestId('json-inline-editor')).toBeFocused()
-  await page.getByRole('button', { name: 'Apply' }).click()
+  await page.getByTestId('json-apply').click()
   await expect(page.getByTestId('document-tab')).toHaveAttribute('aria-label', 'data, dirty')
   await sendCommand(page, 'save')
   await expect(page.getByTestId('document-tab')).toHaveAttribute('aria-label', 'data')

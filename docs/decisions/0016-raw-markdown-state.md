@@ -1,4 +1,4 @@
-# ADR 0015: Raw Markdown editor state
+# ADR 0016: Raw Markdown editor state
 
 **Status:** Accepted  
 **Date:** 2026-09-06  

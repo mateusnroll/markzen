@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-07-11  
-**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md), [0010 — First-Class JSON Documents](../specs/0010-first-class-json-documents.md), [0011 — Other File Types](../specs/0011-other-file-types.md), [0013 — Table and Image Reordering](../specs/0013-table-and-image-reordering.md)
+**Specs:** [0002 — Document Lifecycle & Tabs](../specs/0002-document-lifecycle-and-tabs.md), [0005 — Structured Content and Local Assets](../specs/0005-structured-content-and-assets.md), [0009 — First-Class CSV Documents](../specs/0009-first-class-csv-documents.md), [0010 — First-Class JSON Documents](../specs/0010-first-class-json-documents.md), [0011 — Other File Types](../specs/0011-other-file-types.md), [0013 — Table and Image Reordering](../specs/0013-table-and-image-reordering.md), [0014 — Fuzzy File Finder and Tab Quick Switcher](../specs/0014-fuzzy-file-finder-and-tab-switcher.md)
 
 ## Context
 
@@ -26,6 +26,7 @@ Each tab needs independent ProseMirror state, history, selection, scroll, title,
 
 - Activation captures the originating tab selection and scroll synchronously and restores the destination state. Generation tokens guard any async measurement.
 - Tab-list activation leaves focus on the selected tab; switching initiated while the editor owns focus restores editor focus.
+- A renderer-local MRU list references live `TabId` values only. The tab switcher changes selection without activating until commit, then routes through the same structured-draft, IME, selection, scroll, and focus boundaries as other tab activation paths; MRU order never changes tab-strip order or persistence.
 - Composition start records the originating tab. Save, switch, and close requested during composition are deferred until one composition-end commit, then resume against the captured owner. They never retarget the subsequently active tab.
 - CSV cell editing keeps one transient textarea draft only while edit mode is
   active. Escape cancels it; every other action that leaves the cell commits it

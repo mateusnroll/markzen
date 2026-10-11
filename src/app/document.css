@@ -571,6 +571,30 @@
   box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
 }
 
+.quick-open {
+  background: var(--surface, #fff);
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 10px;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 22%);
+  color: inherit;
+  inset: 12vh auto auto 50%;
+  max-height: min(70vh, 34rem);
+  overflow: auto;
+  padding: 0.5rem;
+  position: fixed;
+  transform: translateX(-50%);
+  width: min(38rem, calc(100vw - 2rem));
+  z-index: 100;
+}
+
+.quick-open input { box-sizing: border-box; font: inherit; padding: 0.65rem 0.75rem; width: 100%; }
+.quick-open [role='listbox'] { display: grid; gap: 2px; margin-top: 0.4rem; }
+.quick-open [role='option'] { align-items: center; background: transparent; border: 0; color: inherit; display: flex; font: inherit; justify-content: space-between; min-height: 2.25rem; padding: 0.4rem 0.6rem; text-align: left; width: 100%; }
+.quick-open [role='option'][aria-selected='true'] { background: color-mix(in srgb, currentColor 12%, transparent); }
+.quick-open small { opacity: 0.65; padding-left: 1rem; }
+.quick-open p { font-size: 0.8rem; margin: 0.4rem 0.6rem 0; }
+.quick-open-actions { display: flex; gap: 0.4rem; justify-content: flex-end; margin-top: 0.5rem; }
+
 .search-match {
   color: inherit;
   background: var(--mz-search);

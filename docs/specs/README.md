@@ -47,6 +47,7 @@ Post-rewrite feature specs continue the same lifecycle:
 | 0011 | [Other file types](0011-other-file-types.md) | Implemented |
 | 0012 | [Nested list presentation](0012-nested-list-presentation.md) | Implemented |
 | 0013 | [Table and image reordering](0013-table-and-image-reordering.md) | Implemented |
+| 0014 | [Fuzzy file finder and tab quick switcher](0014-fuzzy-file-finder-and-tab-switcher.md) | Implemented |
 
 Spec 0014 is reserved by open PR #32. [Spec 0015 — Raw Markdown editing](0015-raw-markdown-editing.md) is Implemented.
 
