@@ -41,7 +41,7 @@ Post-rewrite feature specs continue the same lifecycle:
 |---|---|---|
 | 0006 | [Remote and embedded images](0006-remote-and-embedded-images.md) | Implemented |
 | 0007 | [Native chrome and editor polish](0007-native-chrome-and-editor-polish.md) | Implemented |
-| 0008 | [Opt-in pseudonymous usage and crash diagnostics](0008-opt-in-pseudonymous-telemetry.md) | Draft |
+| 0008 | [Opt-in usage and crash diagnostics](https://github.com/mateusnroll/markzen/issues/46) — number reserved | Migrated Draft |
 | 0009 | [First-class CSV documents](0009-first-class-csv-documents.md) | Implemented |
 | 0010 | [First-class JSON documents](0010-first-class-json-documents.md) | Implemented |
 | 0011 | [Other file types](0011-other-file-types.md) | Implemented |
@@ -49,7 +49,7 @@ Post-rewrite feature specs continue the same lifecycle:
 | 0013 | [Table and image reordering](0013-table-and-image-reordering.md) | Implemented |
 | 0014 | [Fuzzy file finder and tab quick switcher](0014-fuzzy-file-finder-and-tab-switcher.md) | Implemented |
 
-Spec 0014 is reserved by open PR #32. [Spec 0015 — Raw Markdown editing](0015-raw-markdown-editing.md) is Implemented.
+Spec 0014 was implemented in merged PR #32. [Spec 0015 — Raw Markdown editing](0015-raw-markdown-editing.md) is Implemented in merged PR #34. The next unallocated number is 0016; migrated number 0008 remains reserved.
 
 Spec 0002 was revised with 0015 to route editable UTF-8 fallback into Raw mode. Both returned to Implemented after independent approval, mapped tests, simplicity review, and browser plus packaged-shell verification.
 
@@ -60,7 +60,7 @@ Spec 0002 was revised with 0015 to route editable UTF-8 fallback into Raw mode. 
 - Unresolved → Open question.
 - Implementation-shaping invariant → Constraint.
 - Architectural rationale → ADR in `docs/decisions/`.
-- Deferred behavior → [BACKLOG.md](BACKLOG.md).
+- Deferred product work → a complete [GitHub issue](https://github.com/mateusnroll/markzen/issues).
 
 There is no separate Edge Cases section. Failure, cancellation, concurrency, accessibility, security, privacy, recovery, platform, and performance behavior must be ACs when applicable. Split an AC whenever its outcomes can fail independently or need different proof layers.
 
@@ -77,11 +77,11 @@ Each AC maps to one primary layer: the lowest layer that can prove the whole cri
 | Shell smoke | Playwright `_electron` | Native integration only: Electron security, IPC, menus, windows, real filesystem |
 | CI | GitHub Actions | Verification orchestration, platform matrix, and required artifacts |
 
-Tests are named after the AC: `test('AC12: a later edit remains dirty after save completes')`.
+New tests are named after the AC: `test('AC-12: a later edit remains dirty after save completes')`. Existing contracts retain their established `AC12` spelling.
 
 ## Workflow
 
-1. **Draft** — use [TEMPLATE.md](TEMPLATE.md), resolve decisions, sweep related specs and backlog entries, run an independent simplicity challenge, and leave status Draft.
+1. **Draft** — use [TEMPLATE.md](TEMPLATE.md), resolve decisions, trace the source issue requirements and sweep related specs, run an independent simplicity challenge, and leave status Draft.
 2. **Approve** — someone other than the writer reviews the exact spec digest against the approval checklist, records the approval, and changes status to Approved.
 3. **Implement** — write mapped AC tests first, implement, add required ADRs, and run `npm run verify` plus mapped shell smoke.
 4. **Review** — after the first green verification, run an independent simplicity review, apply or rebut every finding, and rerun required verification after edits.
@@ -95,16 +95,22 @@ Tests are named after the AC: `test('AC12: a later edit remains dirty after save
 - Failure/recovery, cancellation, concurrency, platform behavior, and performance are resolved where applicable.
 - Accessibility, security, and privacy have been reviewed and expressed as ACs where applicable.
 - The independent simplicity challenge is dispositioned; current behavior is necessary, and existing, standard, or native alternatives have been considered.
-- Cross-spec references, backlog entries, and required ADRs are accurate.
+- Source issue requirement traceability, cross-spec references and required ADRs are accurate.
 
 ## Approval policy
 
-A spec must be approved by someone other than its writer. The approver may be a human or an independent Review Agent.
+Someone other than the writer approves the exact contract. A human may approve a standalone candidate; issue implementation uses the installed specification reviewer and verified official receipt under [ISSUE-WORKFLOW.md](../ISSUE-WORKFLOW.md). The reviewer evaluates fidelity/completeness and never invents unresolved product decisions.
 
-- Record the writer identity, approver identity, and exact spec digest in the spec.
-- Self-approval is invalid.
-- Approval applies only to the recorded digest. Changing normative content invalidates approval: return the spec to Draft and clear the approver and approval digest until a new approval is recorded.
-- A Review Agent evaluates completeness and fidelity but does not invent unresolved product decisions. A spec with unresolved product decisions remains Draft.
+New candidate files remain byte-identical after independent approval. Record lifecycle and approval evidence in the table below, outside the hashed candidate: path, source issue, writer, distinct approver, full SHA-256, proposed change-set digest and official receipt/provenance. Recompute exact digests immediately before approval and implementation. Draft/Approved/Implemented refer to those exact bytes, not merely a filename.
+
+Lifecycle-only registry updates are evidence metadata outside the normative proposed change set; do not hash receipt/digest fields into their own approval. When the index's process rules also change, freeze and review those normative bytes separately from the registry entry. Verify materialized candidate and normative ancillary documents against the frozen change set; approval does not permit later substantive index edits.
+
+| Candidate | Source issue | Status | Writer | Approver | Candidate SHA-256 | Change-set SHA-256 | Receipt/provenance |
+|-----------|--------------|--------|--------|----------|------------------|-------------------|--------------------|
+
+Changing normative content invalidates approval. Preserve the superseded snapshot and receipt, register the replacement as Draft, resolve decisions and obtain independent approval of the new bytes; never reuse or reset exhausted review budgets. Metadata alone does not grant implementation authority.
+
+Legacy specs 0001–0015 retain their original in-file metadata and historical approval conventions; do not rewrite or fabricate receipts to fit the new template. When amended, record the exact reviewed revision/change set and its convention. Their historical Implemented status is not blanket approval for new behavior. A migrated unapproved draft reserves its number but grants no implementation authority.
 
 ## Decisions and local research
 
@@ -114,4 +120,4 @@ The old repository may be consulted locally when present, but no old code, fixtu
 
 ## Future work
 
-Future candidates live in [BACKLOG.md](BACKLOG.md). Picking one up means drafting the next free spec and deleting or narrowing its backlog entry.
+Future product requirements and priorities live only in [GitHub issues](https://github.com/mateusnroll/markzen/issues). Follow [ISSUE-WORKFLOW.md](../ISSUE-WORKFLOW.md) and `$implement #N` for discovery through one reviewed, verified, unmerged PR. The retired backlog and telemetry Draft remain available in Git history and their migrated issues; historical candidates remain byte-preserved. The [retired backlog](https://github.com/mateusnroll/markzen/blob/9efb1945bc7cf44abecaa06424f941a04a06bcc7/docs/specs/BACKLOG.md) and [telemetry Draft](https://github.com/mateusnroll/markzen/blob/9efb1945bc7cf44abecaa06424f941a04a06bcc7/docs/specs/0008-opt-in-pseudonymous-telemetry.md) are pinned here to their migration baseline; old Origin/path mentions are historical, not live workflow dependencies.

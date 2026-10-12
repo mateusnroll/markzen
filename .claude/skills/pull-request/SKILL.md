@@ -7,6 +7,12 @@ description: Publish the entire current Markzen worktree to GitHub by creating o
 
 Publish the complete worktree as one focused pull request to `main`. Do not implement new product changes while publishing.
 
+## Reviewed-checkpoint mode
+
+When called by the issue workflow or Automode, read `docs/ISSUE-WORKFLOW.md` and the run's active official OCR receipt. The checkpoint is already committed: require a clean worktree and HEAD equal to the validated OCR final SHA. Reuse its recorded topic branch and PR; never create another PR or commit lifecycle/body/evidence changes into the reviewed tree. Push exactly that SHA, include the frozen source issue/spec/digests and active `code-review.md` verbatim, upload required inspected screenshots outside Git, and attach the PR to the current Codex chat. Do not force-push. The caller owns exact-head CI and bounded repair. If source, base or review inputs changed, return to the caller for affected verification/review instead of publishing an unreviewed commit.
+
+For standalone publication, the ordinary workflow below applies. A product implementation still requires the issue workflow's review gates; this skill cannot bypass a blocked reviewer. Pure documentation work uses applicable document checks and does not fabricate runtime/OCR evidence.
+
 ## Preflight
 
 1. Read `CLAUDE.md` and relevant specs or ADRs. Run `git status --short --branch`, inspect all tracked and untracked changes, and read the complete diff. Treat invocation of this skill as approval to include the entire worktree.
@@ -60,4 +66,4 @@ Keep `Summary`, `Changes`, and `Verification`. Include `Decisions` only when the
 2. Prefer the connected GitHub app for creation or update. If it cannot express the repository or branch cleanly, pass the generated Markdown through standard input. Create with `gh pr create --base main --head <branch> --title <title> --body-file -`, adding `--draft` only when the user explicitly requests a draft; update the discovered PR with `gh pr edit <PR> --title <title> --body-file -`.
 3. Open a ready-for-review PR unless the user explicitly asks for a draft.
 4. If push or PR creation fails, preserve the completed local state, report exactly what succeeded, and do not claim a PR exists.
-5. Return the branch, commit SHA, PR URL and target, draft status, and verification performed.
+5. Attach every created PR to the current Codex chat using the app's `attach_artifact` tool. Return the branch, commit SHA, PR URL and target, draft status, and verification performed. Use a non-closing issue reference when external acceptance remains; a PR does not itself complete an issue.
