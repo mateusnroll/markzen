@@ -9,7 +9,7 @@ Find code or proposed behavior that does not need to exist. Review only; do not 
 
 ## Read the contract
 
-Read `CLAUDE.md`, `docs/specs/README.md`, the target spec, the current diff, and relevant source. For a Draft-spec review, also read prerequisite specs and affected backlog entries. Derive evidence from these artifacts; do not ask for or rely on the author's rationale.
+Read `AGENTS.md`, `docs/specs/README.md`, the target spec, the current diff, and relevant source. For a Draft-spec review, also read prerequisite specs and the frozen requirements source (GitHub issue or standalone polish's human-agreed external snapshot). Derive evidence from these artifacts; do not ask for or rely on the author's rationale.
 
 Trace the behavior and its trust, data-loss, accessibility, platform, and async boundaries before suggesting a cut.
 
