@@ -14,7 +14,7 @@ Record product approval separately from the frozen requirements payload. Snapsho
 
 ## Discovery and authorization
 
-`$implement #N` or an explicit request to implement an issue starts discovery and, once its requirements and concrete scope are settled, the authorized issue-to-PR run. Read `CLAUDE.md`, the spec process, this workflow, the live issue and comments, dependency PRs, and any existing branch/PR/evidence. Reuse decisions and authorization from the human's current or recorded approved scope. Gather foreseeable questions together with recommendations before implementation. Do not ask routine stage confirmations after scope authorization.
+`$implement #N` or an explicit request to implement an issue starts discovery and, once its requirements and concrete scope are settled, the authorized issue-to-PR run. Read `AGENTS.md`, the spec process, this workflow, the live issue and comments, dependency PRs, and any existing branch/PR/evidence. Reuse decisions and authorization from the human's current or recorded approved scope. Gather foreseeable questions together with recommendations before implementation. Do not ask routine stage confirmations after scope authorization.
 
 An implementation request covers that issue's local branch/worktree, requirements/spec drafting, installed specification and OCR reviews within their current bounds, dependency installation in the project, verification, commits, one PR, and the bounded CI repair below. Record the actual repository, base, checkout, artifact path, reviewer stages/bounds and exclusions before paid execution; ask only for authority not already provided or a changed material boundary. A bare issue reference or “what's next?” authorizes read-only discovery and interviewing, not paid construction. Select the next work through the live delivery plan below.
 
@@ -22,7 +22,7 @@ Merge, deployment, signing, release publication, billing/provider setup, authent
 
 ## Answering “what's next?”
 
-[Delivery plan #52](https://github.com/mateusnroll/markzen/issues/52) owns the explicit execution order, stage completion evidence and milestone proposal. It is coordination metadata, never a product implementation target. Keep the queue on GitHub; milestones group work but do not determine its order.
+[Delivery plan #52](https://github.com/mateusnroll/markzen/issues/52) owns the explicit execution order, stage completion evidence and milestone grouping. It is coordination metadata, never a product implementation target. Keep the queue on GitHub; milestones group work but do not determine its order.
 
 1. Read the live plan, referenced issues and relevant comments, approval provenance, prerequisites, linked PRs and acceptance evidence. Reconcile the plan's bootstrap gate and active worktree/run handoffs first; preserve active ownership and consumed review budgets.
 2. Select the lowest unfinished stage in the plan's explicit order. Verify completion against that stage's evidence: issue closure, a local Implemented spec or a green unmerged PR is insufficient. Preparation stages can finish while their release issue stays open; later publication stages require actual external acceptance. A missing future technical spec is work to do inside the issue workflow, not a reason to skip the issue.

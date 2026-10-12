@@ -14,9 +14,9 @@ If Implemented behavior changes, return the spec to Draft, update and reapprove 
 
 ### Polish prototype exception
 
-`$polish` may explore visual presentation, existing-control interactions, accessibility states, and shell chrome as an uncommitted prototype before drafting the final behavior contract. `CLAUDE.md` defines the exact boundary. A session may retain a current implementation branch after committing its complete `$implement` worktree, or create a dedicated polish branch for standalone work. The selected branch must keep its baseline `HEAD` unchanged and may not commit or push prototype changes; publication from an implementation baseline updates its existing branch and PR.
+`$polish` may explore visual presentation, existing-control interactions, accessibility states, and shell chrome as an uncommitted prototype before drafting the final behavior contract. `AGENTS.md` defines the exact boundary. A session may retain a current implementation branch after committing its complete `$implement` worktree, or create a dedicated polish branch for standalone work. The selected branch must keep its baseline `HEAD` unchanged and may not commit or push prototype changes; publication from an implementation baseline updates its existing branch and PR.
 
-When the user ends the session, the normal lifecycle resumes at Draft. Approval, AC coverage, baseline-failure proof, verification, review, and close remain mandatory as defined by `CLAUDE.md` and the repository skills.
+When the user ends the session, the normal lifecycle resumes at Draft. Approval, AC coverage, baseline-failure proof, verification, review, and close remain mandatory as defined by `AGENTS.md` and the repository skills.
 
 ## Milestones
 

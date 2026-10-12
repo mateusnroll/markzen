@@ -9,7 +9,7 @@ Iterate with the user against the running app. Treat every pre-spec edit as a di
 
 ## Start the session
 
-1. Read `CLAUDE.md` and `docs/specs/README.md`, including the Polish prototype exception.
+1. Read `AGENTS.md` and `docs/specs/README.md`, including the Polish prototype exception.
 2. Inspect `git status`, the current branch, and `origin/main`. Fetch before a new session, then choose one baseline:
    - If the current non-default branch contains the intended, just-completed `$implement` work, stay on it. Confirm the worktree contains only that implementation unit. If it is dirty, stage everything, inspect the staged diff and `git diff --cached --check`, then commit the complete implementation before starting the prototype. Do not create a second polish branch or push merely to start the session.
    - Otherwise require a clean worktree, update it without discarding work, and create `codex/polish-<short-slug>` unless already on a dedicated polish branch. If changes are unrelated or their ownership is ambiguous, stop and ask how to isolate them.

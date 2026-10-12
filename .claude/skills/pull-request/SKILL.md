@@ -15,7 +15,7 @@ For standalone publication, the ordinary workflow below applies. A product imple
 
 ## Preflight
 
-1. Read `CLAUDE.md` and relevant specs or ADRs. Run `git status --short --branch`, inspect all tracked and untracked changes, and read the complete diff. Treat invocation of this skill as approval to include the entire worktree.
+1. Read `AGENTS.md` and relevant specs or ADRs. Run `git status --short --branch`, inspect all tracked and untracked changes, and read the complete diff. Treat invocation of this skill as approval to include the entire worktree.
 2. Stop before staging if inspection finds a likely secret, generated or binary bulk, a submodule change, or work that plainly belongs to another task. Otherwise do not ask for file-by-file confirmation.
 3. Confirm `origin` is the intended GitHub repository and `origin/main` exists. Fetch `origin` and compare the worktree base with `origin/main`. If the base moved and cannot be reconciled safely without rewriting or risking local changes, stop and explain the blocker.
 4. Derive the intended remote branch without creating it. If HEAD is detached or the current branch is `main`, choose an unused `codex/<slug>` locally and on `origin`, adding a numeric suffix when needed; otherwise use the current non-default branch. Never reuse an existing branch when starting from detached HEAD or `main`.

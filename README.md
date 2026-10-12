@@ -5,7 +5,7 @@ A simple Markdown editor
 
 Product requirements and priorities live in [GitHub issues](https://github.com/mateusnroll/markzen/issues). Start a bounded issue-to-PR session with `$implement #N`; the [issue workflow](docs/ISSUE-WORKFLOW.md) covers missing decisions, independent specification approval, implementation, review, verification and CI. Numbered [specifications](docs/specs/README.md) and [ADRs](docs/decisions/README.md) remain the versioned technical contracts. PRs stay open for human review and merge.
 
-Ask “what's next?” to identify the next issue and pending gate from the live [delivery plan](https://github.com/mateusnroll/markzen/issues/52). The plan keeps execution order and proposed milestones on GitHub, including separate release preparation and publication stages.
+Ask “what's next?” to identify the next issue and pending gate from the live [delivery plan](https://github.com/mateusnroll/markzen/issues/52). The plan keeps execution order and milestones on GitHub, including separate release preparation and publication stages.
 
 ## Demo workspace
 
