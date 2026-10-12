@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Take a Markzen GitHub issue from requirements discovery through independent spec approval, tests, implementation, bounded code review and CI to one open PR. Also supplies the local implementation phase for an Approved spec, Automode or polish.
+description: Identify the next Markzen issue from the live delivery plan, or take a selected GitHub issue from requirements discovery through independent spec approval, tests, implementation, bounded code review and CI to one open PR. Also supplies the local implementation phase for an Approved spec, Automode or polish.
 ---
 
 # Implement one Markzen issue
@@ -9,6 +9,7 @@ Read `CLAUDE.md`, `docs/specs/README.md` and [the issue workflow](../../../docs/
 
 ## Route the request
 
+- **Next-work discovery:** for “what's next?”, follow the issue workflow's live delivery-plan selection before entering any implementation gate. Return one issue and stage with its earliest incomplete gate, including active PRs or external blockers. Keep the queue on GitHub and remain in discovery until the human requests implementation.
 - **Issue entry:** retrieve the live issue and relevant comments, dependencies, approved requirements and any existing branch/PR/receipts. Research facts, interview missing material decisions with recommendations, and record scope and approval provenance. Follow the complete issue workflow: freeze inputs, `$spec`, installed `$spec-approver`, local implementation below, installed `$ocr-pr-review`, `$pull-request` at the reviewed checkpoint, exact-head CI and issue handoff. Do not stop at local green or ask routine milestone confirmations. Stop for a new material decision, missing authority/capability, invalid evidence or exhausted bounds.
 - **Approved-spec/local entry:** when called by Automode, a parent orchestrator, or `$polish` in its finish gate, perform only the local steps below and return the proof/evidence. The caller owns paid reviews, commit/publication and CI; never recursively launch another issue run or publish a polish prototype.
 - **Planning entry:** unresolved requirements remain Draft. Complete useful discovery and ask remaining questions; no product implementation before the independent technical approval gate.

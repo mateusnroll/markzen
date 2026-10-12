@@ -35,6 +35,7 @@ Corollaries:
 - Each AC has one primary proof layer; additional integration coverage is optional and explicit.
 - Bug fixes need a regression test. If behavior changes, update and reapprove the affected spec.
 - GitHub issues own future product requirements and priority. Follow [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md); `$implement #N` gathers missing decisions and autonomously delivers one reviewed, verified, unmerged PR within the authorized issue scope. Numbered specs and ADRs remain versioned implementation contracts.
+- For “what's next?”, follow the workflow's live GitHub delivery plan and report the next issue, stage and incomplete gate. Respect active handoffs and explicit execution order; the question starts discovery only.
 - New spec candidates stay byte-identical after approval. Record their lifecycle, writer/approver, exact SHA-256 and official receipt in `docs/specs/README.md`, outside the candidate. Preserve legacy in-file approval conventions and historical receipts; changing their normative behavior still requires reapproval.
 - Architecture decisions live in `docs/decisions/`. Milestone 0001 creates the directory and its first ADR; later milestones add decisions when they become executable.
 - Local `~/dev/markzen-old` material may be researched when available, but do not copy its code, fixtures, ADRs, or documents into this repository.
